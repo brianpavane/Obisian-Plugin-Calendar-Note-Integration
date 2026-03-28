@@ -1,3 +1,15 @@
+/**
+ * @file main.ts
+ * @description Entry point for the Google Calendar Note Integration plugin.
+ *
+ * Responsibilities:
+ *   - Register Obsidian commands and the ribbon icon.
+ *   - Manage OAuth token lifecycle (obtain, refresh, persist).
+ *   - Run a startup sweep and a recurring poll to auto-create meeting notes
+ *     for events starting within the configured advance window.
+ *   - Expose the settings tab.
+ */
+
 import { Notice, Plugin, TFile } from "obsidian";
 import {
   GoogleCalendarSettings,
@@ -9,48 +21,57 @@ import { GoogleCalendarApi, CalendarEvent } from "./calendarApi";
 import { EventSuggestModal } from "./eventModal";
 import { createNoteFile } from "./noteCreator";
 
+/**
+ * Main plugin class for Google Calendar Note Integration.
+ *
+ * Lifecycle:
+ *   `onload` → registers UI, starts background polling
+ *   Obsidian calls `onunload` automatically; registered intervals are
+ *   cleaned up by Obsidian via `registerInterval`.
+ */
 export default class GoogleCalendarPlugin extends Plugin {
-  settings: GoogleCalendarSettings;
+  /** Persisted plugin configuration. Loaded in `onload`, saved on change. */
+  settings!: GoogleCalendarSettings;
 
-  async onload() {
+  async onload(): Promise<void> {
     await this.loadSettings();
 
-    // Ribbon icon — quick access to the event picker
+    // ----- Ribbon icon -------------------------------------------------------
     this.addRibbonIcon(
       "calendar-days",
       "Create note from Google Calendar event",
       () => this.pickEventAndCreateNote()
     );
 
-    // Command: pick from upcoming events
+    // ----- Commands ----------------------------------------------------------
     this.addCommand({
       id: "create-note-from-event",
       name: "Create note from Google Calendar event",
       callback: () => this.pickEventAndCreateNote(),
     });
 
-    // Command: create a note for the very next upcoming event (no picker)
     this.addCommand({
       id: "create-note-for-next-event",
       name: "Create note for next upcoming event",
       callback: () => this.createNoteForNextEvent(),
     });
 
-    // Command: manually trigger the auto-create sweep right now
     this.addCommand({
       id: "auto-create-upcoming-notes",
       name: "Auto-create notes for events in the next N hours",
       callback: () => this.autoCreateUpcomingNotes(true),
     });
 
-    // Settings tab
+    // ----- Settings tab ------------------------------------------------------
     this.addSettingTab(new GoogleCalendarSettingTab(this.app, this));
 
-    // On startup: create notes for events already within the advance window.
-    // Delay by 5 s to let the vault finish loading before touching files.
+    // ----- Startup sweep -----------------------------------------------------
+    // Delay 5 s to let the vault finish indexing before writing files.
     setTimeout(() => this.autoCreateUpcomingNotes(false), 5_000);
 
-    // Recurring poll — uses registerInterval so Obsidian cleans it up on unload.
+    // ----- Recurring poll ----------------------------------------------------
+    // `registerInterval` wraps `window.setInterval` and automatically clears
+    // the interval when the plugin is unloaded — no manual `onunload` needed.
     this.registerInterval(
       window.setInterval(
         () => this.autoCreateUpcomingNotes(false),
@@ -60,14 +81,22 @@ export default class GoogleCalendarPlugin extends Plugin {
   }
 
   // ---------------------------------------------------------------------------
-  // Settings
+  // Settings persistence
   // ---------------------------------------------------------------------------
 
-  async loadSettings() {
+  /**
+   * Load settings from Obsidian's plugin data store, merging with defaults
+   * so that new settings added in future versions are always initialised.
+   */
+  async loadSettings(): Promise<void> {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
   }
 
-  async saveSettings() {
+  /**
+   * Persist the current settings to Obsidian's plugin data store.
+   * Should be called after every settings mutation.
+   */
+  async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
   }
 
@@ -76,49 +105,54 @@ export default class GoogleCalendarPlugin extends Plugin {
   // ---------------------------------------------------------------------------
 
   /**
-   * Return a valid access token for silent background use.
-   * Returns null without showing any Notice if credentials are absent — this
-   * prevents noisy errors on startup before the user has authenticated.
+   * Refresh the stored access token using the refresh token.
+   * Persists the new token data to settings on success.
+   *
+   * @returns `true` on success, `false` if the refresh failed.
+   * @param showError When `true`, shows a Notice on failure (interactive use).
    */
-  private async getValidAccessTokenSilent(): Promise<string | null> {
-    if (!this.settings.clientId || !this.settings.clientSecret) return null;
-    if (!this.settings.refreshToken) return null;
-
-    if (Date.now() >= this.settings.tokenExpiry - 60_000) {
-      try {
-        const auth = new GoogleAuth(
-          this.settings.clientId,
-          this.settings.clientSecret
-        );
-        const tokens = await auth.refreshAccessToken(
-          this.settings.refreshToken
-        );
-        this.settings.accessToken = tokens.access_token;
-        this.settings.tokenExpiry = tokens.expiry_date;
-        if (tokens.refresh_token) {
-          this.settings.refreshToken = tokens.refresh_token;
-        }
-        await this.saveSettings();
-      } catch {
-        return null;
+  private async refreshTokens(showError: boolean): Promise<boolean> {
+    try {
+      const auth = new GoogleAuth(
+        this.settings.clientId,
+        this.settings.clientSecret
+      );
+      const tokens = await auth.refreshAccessToken(this.settings.refreshToken);
+      this.settings.accessToken = tokens.access_token;
+      this.settings.tokenExpiry = tokens.expiry_date;
+      // Google may issue a new refresh token; always persist it when present.
+      if (tokens.refresh_token) {
+        this.settings.refreshToken = tokens.refresh_token;
       }
+      await this.saveSettings();
+      return true;
+    } catch (err) {
+      if (showError) {
+        new Notice(
+          `Google Calendar: Failed to refresh token — ${(err as Error).message}. ` +
+            "Please re-authenticate in Settings."
+        );
+      }
+      return false;
     }
-
-    return this.settings.accessToken || null;
   }
 
   /**
-   * Return a valid access token, refreshing it if needed.
-   * Shows a Notice and returns null if credentials are missing or refresh fails.
+   * Obtain a valid access token for interactive commands.
+   *
+   * Shows descriptive Notices when credentials are missing or refresh fails,
+   * so the user knows exactly what action to take.
+   *
+   * @returns A non-empty access token string, or `null` on any failure.
    */
   private async getValidAccessToken(): Promise<string | null> {
     if (!this.settings.clientId || !this.settings.clientSecret) {
       new Notice(
-        "Google Calendar: Please configure your API credentials in Settings → Google Calendar Note Integration."
+        "Google Calendar: Please configure your API credentials in " +
+          "Settings → Google Calendar Note Integration."
       );
       return null;
     }
-
     if (!this.settings.refreshToken) {
       new Notice(
         "Google Calendar: Please authenticate with Google in the plugin settings."
@@ -126,32 +160,33 @@ export default class GoogleCalendarPlugin extends Plugin {
       return null;
     }
 
-    // Refresh if the access token is expired or about to expire (within 60 s)
+    // Refresh proactively if the token expires within 60 s.
     if (Date.now() >= this.settings.tokenExpiry - 60_000) {
-      try {
-        const auth = new GoogleAuth(
-          this.settings.clientId,
-          this.settings.clientSecret
-        );
-        const tokens = await auth.refreshAccessToken(
-          this.settings.refreshToken
-        );
-        this.settings.accessToken = tokens.access_token;
-        this.settings.tokenExpiry = tokens.expiry_date;
-        // Google may return a new refresh token; persist it if so
-        if (tokens.refresh_token) {
-          this.settings.refreshToken = tokens.refresh_token;
-        }
-        await this.saveSettings();
-      } catch (err) {
-        new Notice(
-          `Google Calendar: Failed to refresh token — ${err.message}. Please re-authenticate in settings.`
-        );
-        return null;
-      }
+      const ok = await this.refreshTokens(true);
+      if (!ok) return null;
     }
 
-    return this.settings.accessToken;
+    return this.settings.accessToken || null;
+  }
+
+  /**
+   * Obtain a valid access token for silent background operations.
+   *
+   * Returns `null` without any Notice when credentials are absent — prevents
+   * noisy errors during the startup sweep before the user has authenticated.
+   *
+   * @returns A non-empty access token string, or `null` on any failure.
+   */
+  private async getValidAccessTokenSilent(): Promise<string | null> {
+    if (!this.settings.clientId || !this.settings.clientSecret) return null;
+    if (!this.settings.refreshToken) return null;
+
+    if (Date.now() >= this.settings.tokenExpiry - 60_000) {
+      const ok = await this.refreshTokens(false);
+      if (!ok) return null;
+    }
+
+    return this.settings.accessToken || null;
   }
 
   // ---------------------------------------------------------------------------
@@ -159,14 +194,22 @@ export default class GoogleCalendarPlugin extends Plugin {
   // ---------------------------------------------------------------------------
 
   /**
-   * Silently fetch events starting within the next `hoursInAdvance` hours and
-   * create a note for each one that doesn't have one yet.
+   * Fetch events starting within the next `hoursInAdvance` hours and create
+   * a meeting note for each one that does not already have one.
    *
-   * @param verbose  When true (manual trigger), show a summary Notice.
+   * This method is called:
+   *   - Once at startup (after a 5 s delay), with `verbose = false`.
+   *   - Every `pollIntervalMinutes` minutes, with `verbose = false`.
+   *   - By the manual command, with `verbose = true`.
+   *
+   * Notes are created idempotently — existing files are never overwritten.
+   *
+   * @param verbose When `true`, always shows a summary Notice on completion.
+   *                When `false`, only shows a Notice when new notes are created.
    */
-  async autoCreateUpcomingNotes(verbose: boolean) {
+  async autoCreateUpcomingNotes(verbose: boolean): Promise<void> {
     const token = await this.getValidAccessTokenSilent();
-    if (!token) return; // not authenticated yet — skip silently
+    if (!token) return;
 
     const now = new Date();
     const windowEnd = new Date(
@@ -182,40 +225,36 @@ export default class GoogleCalendarPlugin extends Plugin {
         windowEnd
       );
     } catch (err) {
-      if (verbose) new Notice(`Google Calendar: ${err.message}`);
+      if (verbose) {
+        new Notice(`Google Calendar: ${(err as Error).message}`);
+      }
       return;
     }
 
     let created = 0;
     for (const event of events) {
       try {
-        const file = await createNoteFile(
+        const result = await createNoteFile(
           this.app,
           event,
           this.settings.noteFolder
         );
-        // createNoteFile returns an existing file if the note already exists,
-        // so check the creation time to see if this was newly made.
-        const stat = await this.app.vault.adapter.stat(file.path);
-        const isNew = stat ? Date.now() - stat.mtime < 10_000 : false;
-        if (isNew) created++;
+        if (result.wasCreated) created++;
       } catch {
-        // Skip individual failures silently
+        // Skip individual failures silently; one bad event should not
+        // prevent notes being created for the remaining events.
       }
     }
 
     if (verbose) {
-      if (created > 0) {
-        new Notice(
-          `Google Calendar: Created ${created} new note${created !== 1 ? "s" : ""} for events in the next ${this.settings.hoursInAdvance} hours.`
-        );
-      } else {
-        new Notice(
-          `Google Calendar: No new notes needed — all events in the next ${this.settings.hoursInAdvance} hours already have notes.`
-        );
-      }
+      new Notice(
+        created > 0
+          ? `Google Calendar: Created ${created} new note${created !== 1 ? "s" : ""} ` +
+            `for events in the next ${this.settings.hoursInAdvance} hour${this.settings.hoursInAdvance !== 1 ? "s" : ""}.`
+          : `Google Calendar: No new notes needed — all events in the next ` +
+            `${this.settings.hoursInAdvance} hour${this.settings.hoursInAdvance !== 1 ? "s" : ""} already have notes.`
+      );
     } else if (created > 0) {
-      // Quiet notification for background creation
       new Notice(
         `Google Calendar: Auto-created ${created} meeting note${created !== 1 ? "s" : ""}.`,
         4_000
@@ -224,11 +263,15 @@ export default class GoogleCalendarPlugin extends Plugin {
   }
 
   // ---------------------------------------------------------------------------
-  // Commands
+  // Interactive commands
   // ---------------------------------------------------------------------------
 
-  /** Fetch upcoming events and let the user pick one via fuzzy search. */
-  async pickEventAndCreateNote() {
+  /**
+   * Fetch upcoming events (within the `daysAhead` window) and open the
+   * fuzzy-search picker so the user can choose which event to create a
+   * note for.
+   */
+  async pickEventAndCreateNote(): Promise<void> {
     const token = await this.getValidAccessToken();
     if (!token) return;
 
@@ -241,12 +284,12 @@ export default class GoogleCalendarPlugin extends Plugin {
         this.settings.maxEvents,
         this.settings.daysAhead
       );
-
       loadingNotice.hide();
 
       if (events.length === 0) {
         new Notice(
-          `No upcoming events found in the next ${this.settings.daysAhead} day${this.settings.daysAhead !== 1 ? "s" : ""}.`
+          `No upcoming events found in the next ${this.settings.daysAhead} ` +
+            `day${this.settings.daysAhead !== 1 ? "s" : ""}.`
         );
         return;
       }
@@ -256,12 +299,15 @@ export default class GoogleCalendarPlugin extends Plugin {
       ).open();
     } catch (err) {
       loadingNotice.hide();
-      new Notice(`Google Calendar: ${err.message}`);
+      new Notice(`Google Calendar: ${(err as Error).message}`);
     }
   }
 
-  /** Fetch only the next upcoming event and create a note for it immediately. */
-  async createNoteForNextEvent() {
+  /**
+   * Immediately create (or open) a note for the next upcoming event without
+   * showing the picker.
+   */
+  async createNoteForNextEvent(): Promise<void> {
     const token = await this.getValidAccessToken();
     if (!token) return;
 
@@ -274,7 +320,6 @@ export default class GoogleCalendarPlugin extends Plugin {
         1,
         this.settings.daysAhead
       );
-
       loadingNotice.hide();
 
       if (events.length === 0) {
@@ -285,28 +330,34 @@ export default class GoogleCalendarPlugin extends Plugin {
       await this.createAndOpenNote(events[0]);
     } catch (err) {
       loadingNotice.hide();
-      new Notice(`Google Calendar: ${err.message}`);
+      new Notice(`Google Calendar: ${(err as Error).message}`);
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Note creation
+  // Note creation helpers
   // ---------------------------------------------------------------------------
 
-  private async createAndOpenNote(event: CalendarEvent) {
+  /**
+   * Create (or retrieve) the meeting note for `event` and open it in the
+   * current editor leaf.
+   *
+   * @param event The calendar event to create a note for.
+   */
+  private async createAndOpenNote(event: CalendarEvent): Promise<void> {
     try {
-      const file: TFile = await createNoteFile(
+      const { file } = await createNoteFile(
         this.app,
         event,
         this.settings.noteFolder
       );
 
-      // Open the note in the current leaf
-      await this.app.workspace.getLeaf(false).openFile(file);
-
+      await this.app.workspace.getLeaf(false).openFile(file as TFile);
       new Notice(`Note ready: ${file.name}`);
     } catch (err) {
-      new Notice(`Google Calendar: Failed to create note — ${err.message}`);
+      new Notice(
+        `Google Calendar: Failed to create note — ${(err as Error).message}`
+      );
     }
   }
 }
