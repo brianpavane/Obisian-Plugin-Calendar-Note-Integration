@@ -113,21 +113,22 @@ function getEventTiming(event: CalendarEvent): EventTiming {
 
 type ResponseStatus = "accepted" | "declined" | "tentative" | "needsAction";
 
-const RESPONSE_LABEL: Record<ResponseStatus, string> = {
-  accepted: "Accepted",
-  declined: "Declined",
-  tentative: "Tentative",
-  needsAction: "Awaiting",
+/** Colored circle emoji used as the status icon in the attendees table. */
+const RESPONSE_ICON: Record<ResponseStatus, string> = {
+  accepted:    "🟢", // green  — accepted
+  declined:    "🔴", // red    — declined
+  tentative:   "🟡", // yellow — tentative
+  needsAction: "⚪", // grey   — no response yet
 };
 
-function responseLabel(status: string | undefined): string {
-  return RESPONSE_LABEL[(status ?? "needsAction") as ResponseStatus] ?? "Awaiting";
+function responseIcon(status: string | undefined): string {
+  return RESPONSE_ICON[(status ?? "needsAction") as ResponseStatus] ?? "⚪";
 }
 
 interface AttendeeRow {
+  icon: string;
   name: string;
   email: string;
-  response: string;
 }
 
 function buildAttendeeRows(event: CalendarEvent): AttendeeRow[] {
@@ -140,9 +141,9 @@ function buildAttendeeRows(event: CalendarEvent): AttendeeRow[] {
     );
     if (!alreadyListed) {
       rows.push({
-        name: event.organizer.displayName?.trim() || event.organizer.email,
+        icon: "🔷", // blue diamond — organizer without explicit RSVP entry
+        name: (event.organizer.displayName?.trim() || event.organizer.email) + " *(organizer)*",
         email: event.organizer.email,
-        response: "Organizer",
       });
     }
   }
@@ -150,31 +151,31 @@ function buildAttendeeRows(event: CalendarEvent): AttendeeRow[] {
   // All non-self attendees
   for (const a of event.attendees ?? []) {
     if (a.self) continue;
-    const label = a.organizer
-      ? `Organizer · ${responseLabel(a.responseStatus)}`
-      : responseLabel(a.responseStatus);
-    rows.push({
-      name: a.displayName?.trim() || a.email,
-      email: a.email,
-      response: label,
-    });
+    const icon = responseIcon(a.responseStatus);
+    const name = a.organizer
+      ? (a.displayName?.trim() || a.email) + " *(organizer)*"
+      : a.displayName?.trim() || a.email;
+    rows.push({ icon, name, email: a.email });
   }
 
   return rows;
 }
 
 /**
- * Render attendees as a Markdown table showing name, email, and RSVP status.
+ * Render attendees as a Markdown table:
+ *   | 🟢/🔴/🟡/⚪ | Name | Email |
+ *
+ * Icons: 🟢 Accepted · 🔴 Declined · 🟡 Tentative · ⚪ Awaiting · 🔷 Organizer
  */
 function renderAttendeesTable(rows: AttendeeRow[]): string {
   if (rows.length === 0) return "";
 
   const lines = [
-    "| Name | Email | Response |",
-    "|:-----|:------|:---------|",
+    "|   | Name | Email |",
+    "|:-:|:-----|:------|",
   ];
   for (const row of rows) {
-    lines.push(`| ${row.name} | ${row.email} | ${row.response} |`);
+    lines.push(`| ${row.icon} | ${row.name} | ${row.email} |`);
   }
   return lines.join("\n");
 }
@@ -231,9 +232,11 @@ export function createNoteContent(event: CalendarEvent): string {
   }
   if (attendeeRows.length > 0) {
     frontmatterLines.push("attendees:");
-    attendeeRows.forEach((a) =>
-      frontmatterLines.push(`  - "${a.name.replace(/"/g, '\\"')} <${a.email}>"`)
-    );
+    attendeeRows.forEach((a) => {
+      // Strip any Markdown from the name before writing to YAML
+      const plainName = a.name.replace(/\s*\*\(organizer\)\*/g, "").trim();
+      frontmatterLines.push(`  - "${plainName.replace(/"/g, '\\"')} <${a.email}>"`);
+    });
   }
   if (event.conferenceData?.conferenceSolution?.name) {
     frontmatterLines.push(
