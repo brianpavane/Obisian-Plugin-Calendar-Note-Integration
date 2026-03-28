@@ -17,9 +17,15 @@
  *   - Fetch calls to Google's token endpoint have a 10-second timeout.
  *   - Token response fields are validated before use.
  *   - The local server binds to 127.0.0.1 only, not 0.0.0.0.
+ *   - Port 0 is passed to the OS so an available ephemeral port is assigned
+ *     automatically, eliminating fixed-port conflicts.
+ *   - Non-GET requests are rejected with 405.
+ *   - Requests with a non-localhost `Origin` header are rejected with 403 to
+ *     block cross-origin fetch attacks from malicious web pages.
  */
 
 import * as http from "http";
+import * as net from "net";
 // Electron is available in Obsidian's desktop environment.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { shell } = require("electron") as typeof import("electron");
@@ -34,13 +40,6 @@ const GOOGLE_REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke";
 
 /** Read-only access to Google Calendar is all this plugin requires. */
 const SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"];
-
-/**
- * Port for the local OAuth redirect server.
- * Must match the redirect URI registered in Google Cloud Console.
- * Using a high, fixed port avoids conflicts with common services.
- */
-const REDIRECT_PORT = 42813;
 
 /** Milliseconds to wait for the user to complete the browser auth flow. */
 const AUTH_TIMEOUT_MS = 5 * 60 * 1_000; // 5 minutes
@@ -122,6 +121,12 @@ export class GoogleAuth {
   private state = "";
 
   /**
+   * The OS-assigned local port for the current auth attempt.
+   * Set after the server starts listening; used to build the redirect URI.
+   */
+  private redirectPort = 0;
+
+  /**
    * @param clientId     OAuth 2.0 Client ID (from Google Cloud Console).
    * @param clientSecret OAuth 2.0 Client Secret (from Google Cloud Console).
    */
@@ -155,7 +160,39 @@ export class GoogleAuth {
           return;
         }
 
-        const url = new URL(req.url, `http://127.0.0.1:${REDIRECT_PORT}`);
+        // --- HTTP method check ------------------------------------------
+        // The OAuth redirect is always a GET. Reject anything else.
+        if (req.method !== "GET") {
+          res.writeHead(405, { Allow: "GET" });
+          res.end();
+          return;
+        }
+
+        // --- Origin header check ----------------------------------------
+        // Browser navigations (the redirect from Google) do not send an
+        // Origin header.  A cross-origin fetch from a malicious page would
+        // include a non-localhost Origin — reject those requests.
+        const origin = req.headers["origin"];
+        if (origin !== undefined) {
+          try {
+            const originUrl = new URL(origin);
+            const isLocalhost =
+              originUrl.hostname === "127.0.0.1" ||
+              originUrl.hostname === "localhost" ||
+              originUrl.hostname === "[::1]";
+            if (!isLocalhost) {
+              res.writeHead(403, { "Content-Type": "text/plain" });
+              res.end("Forbidden");
+              return;
+            }
+          } catch {
+            res.writeHead(403, { "Content-Type": "text/plain" });
+            res.end("Forbidden");
+            return;
+          }
+        }
+
+        const url = new URL(req.url, `http://127.0.0.1:${this.redirectPort}`);
         const error = url.searchParams.get("error");
         const code = url.searchParams.get("code");
         const returnedState = url.searchParams.get("state");
@@ -221,8 +258,12 @@ export class GoogleAuth {
         );
       });
 
-      server.listen(REDIRECT_PORT, "127.0.0.1", () => {
-        // Build the auth URL only after the server is ready.
+      // Port 0 asks the OS to assign an available ephemeral port, avoiding
+      // conflicts with other applications on a fixed port number.
+      server.listen(0, "127.0.0.1", () => {
+        // Resolve the OS-assigned port before opening the browser.
+        const addr = server.address() as net.AddressInfo;
+        this.redirectPort = addr.port;
         const authUrl = this.buildAuthUrl();
         shell.openExternal(authUrl);
       });
@@ -230,8 +271,7 @@ export class GoogleAuth {
       server.on("error", (err: NodeJS.ErrnoException) => {
         reject(
           new Error(
-            `Failed to start local auth server on port ${REDIRECT_PORT}: ${err.message}. ` +
-              "Another application may be using that port."
+            `Failed to start local auth server: ${err.message}`
           )
         );
       });
@@ -320,7 +360,7 @@ export class GoogleAuth {
   private buildAuthUrl(): string {
     const params = new URLSearchParams({
       client_id: this.clientId,
-      redirect_uri: `http://127.0.0.1:${REDIRECT_PORT}`,
+      redirect_uri: `http://127.0.0.1:${this.redirectPort}`,
       response_type: "code",
       scope: SCOPES.join(" "),
       access_type: "offline",
@@ -343,7 +383,7 @@ export class GoogleAuth {
         code,
         client_id: this.clientId,
         client_secret: this.clientSecret,
-        redirect_uri: `http://127.0.0.1:${REDIRECT_PORT}`,
+        redirect_uri: `http://127.0.0.1:${this.redirectPort}`,
         grant_type: "authorization_code",
       }),
     });

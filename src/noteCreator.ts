@@ -94,32 +94,53 @@ function isSafeHttpsUrl(uri: string): boolean {
  * Convert an HTML string (as returned by Google Calendar event descriptions)
  * to clean plain text, preserving logical line breaks and list structure.
  *
- * Google Calendar stores rich-text descriptions as HTML; this converts them
- * to the plain text needed for Markdown bullet lists.
+ * Uses the browser's `DOMParser` API (available in Obsidian's Electron
+ * environment) for robust, spec-compliant HTML parsing instead of regex.
+ * Regex-based tag stripping is unreliable against malformed or nested tags
+ * and does not safely handle all entity encodings.
+ *
+ * Block-level elements (p, div, br, li, h1–h6) are preceded by a newline
+ * so that visual paragraph structure is preserved in the plain-text output.
  */
 function stripHtml(html: string): string {
-  return html
-    // Block-level closing tags → newlines
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<\/div>/gi, "\n")
-    .replace(/<\/h[1-6]>/gi, "\n")
-    .replace(/<\/li>/gi, "\n")
-    // Opening list-item tags carry no useful text
-    .replace(/<li[^>]*>/gi, "")
-    // Strip all remaining tags
-    .replace(/<[^>]+>/g, "")
-    // Decode common HTML entities
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    // Collapse runs of 3+ blank lines to at most 2
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  try {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+
+    /**
+     * Recursively walk DOM nodes, collecting text and inserting newlines
+     * before block-level elements.
+     */
+    function walk(node: Node): string {
+      if (node.nodeType === Node.TEXT_NODE) {
+        return node.textContent ?? "";
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) {
+        return "";
+      }
+      const el = node as Element;
+      const tag = el.tagName.toLowerCase();
+
+      // Insert a newline before block-level and list elements.
+      const blockTags = new Set([
+        "p", "div", "br", "li", "h1", "h2", "h3", "h4", "h5", "h6",
+        "tr", "blockquote", "pre",
+      ]);
+      const prefix = blockTags.has(tag) ? "\n" : "";
+
+      let inner = "";
+      for (const child of Array.from(el.childNodes)) {
+        inner += walk(child);
+      }
+      return prefix + inner;
+    }
+
+    return walk(doc.body)
+      .replace(/\n{3,}/g, "\n\n") // collapse 3+ blank lines to at most 2
+      .trim();
+  } catch {
+    // Fallback: strip tags with a simple regex if DOMParser is unavailable.
+    return html.replace(/<[^>]+>/g, " ").trim();
+  }
 }
 
 /**
@@ -174,9 +195,17 @@ function formatTime(isoDateTime: string): string {
 
 /**
  * Extract the `YYYY-MM-DD` date portion from an ISO date or date-time string.
+ *
+ * Parses the value through the `Date` constructor so that timezone offsets
+ * are handled correctly, and guards against "Invalid Date" (e.g. from a
+ * malformed API response) by falling back to today's date.
  */
 function formatIsoDate(isoDateOrDateTime: string): string {
-  return isoDateOrDateTime.slice(0, 10);
+  const d = new Date(isoDateOrDateTime);
+  if (isNaN(d.getTime())) {
+    return new Date().toISOString().slice(0, 10);
+  }
+  return d.toISOString().slice(0, 10);
 }
 
 /** Timing data derived from a calendar event. */
@@ -205,8 +234,9 @@ function getEventTiming(event: CalendarEvent): EventTiming {
     };
   }
 
-  const startDt = event.start.dateTime!;
-  const endDt = event.end.dateTime!;
+  // Fall back to the current time when dateTime is absent (malformed event).
+  const startDt = event.start.dateTime ?? new Date().toISOString();
+  const endDt = event.end.dateTime ?? startDt;
   return {
     dateLong: formatDateLong(startDt),
     timeRange: `${formatTime(startDt)} – ${formatTime(endDt)}`,
@@ -489,7 +519,12 @@ export function createNoteContent(event: CalendarEvent): string {
  */
 export function generateNoteFilename(event: CalendarEvent): string {
   const raw = event.summary?.trim() || "Untitled Event";
-  const safe = raw.replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ").trim();
+  const safe = raw
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    // Strip leading dots so the file isn't treated as a hidden file on Unix.
+    .replace(/^\.+/, "") || "Untitled Event";
 
   const dateIso = event.start.dateTime
     ? formatIsoDate(event.start.dateTime)

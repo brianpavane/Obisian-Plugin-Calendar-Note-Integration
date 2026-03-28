@@ -429,6 +429,13 @@ Ensure **Note folder** in Settings contains only valid folder characters. Leave 
 
 This plugin communicates **only** with Google's Calendar API using your own OAuth credentials. No data is sent to any third-party server. Tokens are stored locally in Obsidian's plugin data file and are never transmitted anywhere other than `oauth2.googleapis.com` and `www.googleapis.com`.
 
+### Vault access and credential security
+
+- **OAuth tokens are encrypted at rest** using Electron's `safeStorage` API, which delegates to the OS credential store (macOS Keychain, Windows DPAPI, Linux Secret Service / kwallet). Tokens are stored as opaque encrypted blobs in `data.json`; they cannot be read by another OS user or process without your user account credentials.
+- **Encrypted tokens are machine-bound.** If you move your vault to a different machine or OS user account, stored tokens will fail to decrypt and the plugin will prompt you to re-authenticate. No data is lost — only the tokens need to be refreshed.
+- **Vault folder access control.** Meeting notes (including any agenda text copied from your calendar invites) are written to the configured note folder inside your vault. Ensure your vault directory is not shared with untrusted users or synced to a public location, as calendar details will appear in plain text in the generated `.md` files.
+- **On Linux without a keyring daemon** (e.g., `gnome-keyring` or `kwallet`), `safeStorage` may fall back to a basic cipher. A warning is printed to the developer console in this case. Running a keyring daemon is recommended for full protection.
+
 ---
 
 ## License

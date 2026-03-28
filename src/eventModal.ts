@@ -12,8 +12,9 @@ function formatEventDateTime(event: CalendarEvent): string {
     }) + " · All day";
   }
 
-  const start = new Date(event.start.dateTime!);
-  const end = new Date(event.end.dateTime!);
+  const startIso = event.start.dateTime ?? new Date().toISOString();
+  const start = new Date(startIso);
+  const end = new Date(event.end.dateTime ?? startIso);
 
   const datePart = start.toLocaleDateString("en-US", {
     weekday: "short",

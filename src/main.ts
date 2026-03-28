@@ -20,6 +20,7 @@ import { GoogleAuth } from "./googleAuth";
 import { GoogleCalendarApi, CalendarEvent } from "./calendarApi";
 import { EventSuggestModal } from "./eventModal";
 import { createNoteFile } from "./noteCreator";
+import { encrypt, decrypt } from "./secureStorage";
 
 /**
  * Clamp a number to an inclusive [min, max] range.
@@ -27,6 +28,19 @@ import { createNoteFile } from "./noteCreator";
  */
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+/**
+ * Extract a safe, one-line error message from an unknown thrown value.
+ *
+ * Truncates to 200 characters and strips newlines so the message cannot
+ * span multiple lines in an Obsidian Notice or inject misleading content.
+ *
+ * @param err The caught value (may be any type).
+ */
+function safeErrorMessage(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.replace(/[\r\n]+/g, " ").slice(0, 200);
 }
 
 /**
@@ -115,12 +129,25 @@ export default class GoogleCalendarPlugin extends Plugin {
    * Load settings from Obsidian's plugin data store, merging with defaults
    * so that new settings added in future versions are always initialised.
    *
-   * Numeric fields are validated and clamped to their legal ranges after
-   * loading, preventing a corrupted or hand-edited `data.json` from causing
-   * runaway polling loops or out-of-range API requests.
+   * Sensitive credential fields are decrypted using {@link decrypt} from
+   * `secureStorage.ts`. Legacy plaintext values (from older plugin versions)
+   * are returned unchanged and will be encrypted on the next `saveSettings()`
+   * call — migration is fully automatic.
+   *
+   * Numeric fields are validated and clamped to their legal ranges, preventing
+   * a corrupted or hand-edited `data.json` from causing runaway polling loops
+   * or out-of-range API requests.
    */
   async loadSettings(): Promise<void> {
-    const stored = (await this.loadData()) as Partial<GoogleCalendarSettings> ?? {};
+    const stored =
+      ((await this.loadData()) as Partial<GoogleCalendarSettings>) ?? {};
+
+    // Decrypt sensitive fields. decrypt() handles both "enc:<base64>" values
+    // and legacy plaintext transparently.
+    if (stored.accessToken)  stored.accessToken  = decrypt(stored.accessToken);
+    if (stored.refreshToken) stored.refreshToken = decrypt(stored.refreshToken);
+    if (stored.clientSecret) stored.clientSecret = decrypt(stored.clientSecret);
+
     const merged = Object.assign({}, DEFAULT_SETTINGS, stored);
 
     // Clamp numeric values to safe ranges. Number() coerces NaN-producing
@@ -145,10 +172,21 @@ export default class GoogleCalendarPlugin extends Plugin {
 
   /**
    * Persist the current settings to Obsidian's plugin data store.
+   *
+   * Sensitive credential fields (access token, refresh token, client secret)
+   * are encrypted with {@link encrypt} before writing to disk. In-memory
+   * settings remain as plaintext throughout the session.
+   *
    * Should be called after every settings mutation.
    */
   async saveSettings(): Promise<void> {
-    await this.saveData(this.settings);
+    // Shallow-copy the settings so we encrypt only the disk copy, not the
+    // in-memory object that the rest of the plugin reads.
+    const toSave: GoogleCalendarSettings = { ...this.settings };
+    if (toSave.accessToken)  toSave.accessToken  = encrypt(toSave.accessToken);
+    if (toSave.refreshToken) toSave.refreshToken = encrypt(toSave.refreshToken);
+    if (toSave.clientSecret) toSave.clientSecret = encrypt(toSave.clientSecret);
+    await this.saveData(toSave);
   }
 
   // ---------------------------------------------------------------------------
@@ -180,7 +218,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     } catch (err) {
       if (showError) {
         new Notice(
-          `Google Calendar: Failed to refresh token — ${(err as Error).message}. ` +
+          `Google Calendar: Failed to refresh token — ${safeErrorMessage(err)}. ` +
             "Please re-authenticate in Settings."
         );
       }
@@ -277,7 +315,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       );
     } catch (err) {
       if (verbose) {
-        new Notice(`Google Calendar: ${(err as Error).message}`);
+        new Notice(`Google Calendar: ${safeErrorMessage(err)}`);
       }
       return;
     }
@@ -291,9 +329,10 @@ export default class GoogleCalendarPlugin extends Plugin {
           this.settings.noteFolder
         );
         if (result.wasCreated) created++;
-      } catch {
+      } catch (err) {
         // Skip individual failures silently; one bad event should not
         // prevent notes being created for the remaining events.
+        console.debug("[gcal-notes] Failed to create note for event:", err);
       }
     }
 
@@ -350,7 +389,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       ).open();
     } catch (err) {
       loadingNotice.hide();
-      new Notice(`Google Calendar: ${(err as Error).message}`);
+      new Notice(`Google Calendar: ${safeErrorMessage(err)}`);
     }
   }
 
@@ -381,7 +420,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       await this.createAndOpenNote(events[0]);
     } catch (err) {
       loadingNotice.hide();
-      new Notice(`Google Calendar: ${(err as Error).message}`);
+      new Notice(`Google Calendar: ${safeErrorMessage(err)}`);
     }
   }
 
@@ -407,7 +446,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       new Notice(`Note ready: ${file.name}`);
     } catch (err) {
       new Notice(
-        `Google Calendar: Failed to create note — ${(err as Error).message}`
+        `Google Calendar: Failed to create note — ${safeErrorMessage(err)}`
       );
     }
   }
