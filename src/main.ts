@@ -36,8 +36,27 @@ export default class GoogleCalendarPlugin extends Plugin {
       callback: () => this.createNoteForNextEvent(),
     });
 
+    // Command: manually trigger the auto-create sweep right now
+    this.addCommand({
+      id: "auto-create-upcoming-notes",
+      name: "Auto-create notes for events in the next N hours",
+      callback: () => this.autoCreateUpcomingNotes(true),
+    });
+
     // Settings tab
     this.addSettingTab(new GoogleCalendarSettingTab(this.app, this));
+
+    // On startup: create notes for events already within the advance window.
+    // Delay by 5 s to let the vault finish loading before touching files.
+    setTimeout(() => this.autoCreateUpcomingNotes(false), 5_000);
+
+    // Recurring poll — uses registerInterval so Obsidian cleans it up on unload.
+    this.registerInterval(
+      window.setInterval(
+        () => this.autoCreateUpcomingNotes(false),
+        this.settings.pollIntervalMinutes * 60 * 1_000
+      )
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -55,6 +74,38 @@ export default class GoogleCalendarPlugin extends Plugin {
   // ---------------------------------------------------------------------------
   // Token management
   // ---------------------------------------------------------------------------
+
+  /**
+   * Return a valid access token for silent background use.
+   * Returns null without showing any Notice if credentials are absent — this
+   * prevents noisy errors on startup before the user has authenticated.
+   */
+  private async getValidAccessTokenSilent(): Promise<string | null> {
+    if (!this.settings.clientId || !this.settings.clientSecret) return null;
+    if (!this.settings.refreshToken) return null;
+
+    if (Date.now() >= this.settings.tokenExpiry - 60_000) {
+      try {
+        const auth = new GoogleAuth(
+          this.settings.clientId,
+          this.settings.clientSecret
+        );
+        const tokens = await auth.refreshAccessToken(
+          this.settings.refreshToken
+        );
+        this.settings.accessToken = tokens.access_token;
+        this.settings.tokenExpiry = tokens.expiry_date;
+        if (tokens.refresh_token) {
+          this.settings.refreshToken = tokens.refresh_token;
+        }
+        await this.saveSettings();
+      } catch {
+        return null;
+      }
+    }
+
+    return this.settings.accessToken || null;
+  }
 
   /**
    * Return a valid access token, refreshing it if needed.
@@ -101,6 +152,75 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
 
     return this.settings.accessToken;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Auto-create: startup + polling
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Silently fetch events starting within the next `hoursInAdvance` hours and
+   * create a note for each one that doesn't have one yet.
+   *
+   * @param verbose  When true (manual trigger), show a summary Notice.
+   */
+  async autoCreateUpcomingNotes(verbose: boolean) {
+    const token = await this.getValidAccessTokenSilent();
+    if (!token) return; // not authenticated yet — skip silently
+
+    const now = new Date();
+    const windowEnd = new Date(
+      now.getTime() + this.settings.hoursInAdvance * 60 * 60 * 1_000
+    );
+
+    let events: CalendarEvent[];
+    try {
+      const api = new GoogleCalendarApi(token);
+      events = await api.listEventsInTimeWindow(
+        this.settings.calendarId,
+        now,
+        windowEnd
+      );
+    } catch (err) {
+      if (verbose) new Notice(`Google Calendar: ${err.message}`);
+      return;
+    }
+
+    let created = 0;
+    for (const event of events) {
+      try {
+        const file = await createNoteFile(
+          this.app,
+          event,
+          this.settings.noteFolder
+        );
+        // createNoteFile returns an existing file if the note already exists,
+        // so check the creation time to see if this was newly made.
+        const stat = await this.app.vault.adapter.stat(file.path);
+        const isNew = stat ? Date.now() - stat.mtime < 10_000 : false;
+        if (isNew) created++;
+      } catch {
+        // Skip individual failures silently
+      }
+    }
+
+    if (verbose) {
+      if (created > 0) {
+        new Notice(
+          `Google Calendar: Created ${created} new note${created !== 1 ? "s" : ""} for events in the next ${this.settings.hoursInAdvance} hours.`
+        );
+      } else {
+        new Notice(
+          `Google Calendar: No new notes needed — all events in the next ${this.settings.hoursInAdvance} hours already have notes.`
+        );
+      }
+    } else if (created > 0) {
+      // Quiet notification for background creation
+      new Notice(
+        `Google Calendar: Auto-created ${created} meeting note${created !== 1 ? "s" : ""}.`,
+        4_000
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------

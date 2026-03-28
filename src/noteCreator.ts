@@ -108,6 +108,78 @@ function getEventTiming(event: CalendarEvent): EventTiming {
 }
 
 // ---------------------------------------------------------------------------
+// Attendee helpers
+// ---------------------------------------------------------------------------
+
+type ResponseStatus = "accepted" | "declined" | "tentative" | "needsAction";
+
+const RESPONSE_LABEL: Record<ResponseStatus, string> = {
+  accepted: "Accepted",
+  declined: "Declined",
+  tentative: "Tentative",
+  needsAction: "Awaiting",
+};
+
+function responseLabel(status: string | undefined): string {
+  return RESPONSE_LABEL[(status ?? "needsAction") as ResponseStatus] ?? "Awaiting";
+}
+
+interface AttendeeRow {
+  name: string;
+  email: string;
+  response: string;
+}
+
+function buildAttendeeRows(event: CalendarEvent): AttendeeRow[] {
+  const rows: AttendeeRow[] = [];
+
+  // Organizer first (if they are not also in the attendees list)
+  if (event.organizer) {
+    const alreadyListed = (event.attendees ?? []).some(
+      (a) => a.email === event.organizer!.email
+    );
+    if (!alreadyListed) {
+      rows.push({
+        name: event.organizer.displayName?.trim() || event.organizer.email,
+        email: event.organizer.email,
+        response: "Organizer",
+      });
+    }
+  }
+
+  // All non-self attendees
+  for (const a of event.attendees ?? []) {
+    if (a.self) continue;
+    const label = a.organizer
+      ? `Organizer · ${responseLabel(a.responseStatus)}`
+      : responseLabel(a.responseStatus);
+    rows.push({
+      name: a.displayName?.trim() || a.email,
+      email: a.email,
+      response: label,
+    });
+  }
+
+  return rows;
+}
+
+/**
+ * Render attendees as a Markdown table showing name, email, and RSVP status.
+ */
+function renderAttendeesTable(rows: AttendeeRow[]): string {
+  if (rows.length === 0) return "";
+
+  const lines = [
+    "| Name | Email | Response |",
+    "|:-----|:------|:---------|",
+  ];
+  for (const row of rows) {
+    lines.push(`| ${row.name} | ${row.email} | ${row.response} |`);
+  }
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Note content builder
 // ---------------------------------------------------------------------------
 
@@ -117,7 +189,8 @@ function getEventTiming(event: CalendarEvent): EventTiming {
  * Structure:
  *   YAML frontmatter
  *   # Event Title
- *   metadata block (date, time, location, video link, attendees)
+ *   metadata block (date, time, location, video link)
+ *   attendees table (name | email | response status)
  *   ---
  *   ## Agenda    ← populated from the event description/invite notes
  *   ## Notes     ← empty bullet list for live notes
@@ -128,10 +201,7 @@ export function createNoteContent(event: CalendarEvent): string {
   const timing = getEventTiming(event);
   const title = event.summary?.trim() || "Untitled Event";
 
-  // Attendees (exclude the calendar owner's own entry)
-  const attendees = (event.attendees ?? [])
-    .filter((a) => !a.self)
-    .map((a) => a.displayName?.trim() || a.email);
+  const attendeeRows = buildAttendeeRows(event);
 
   // Organizer (if different from attendees list or not already captured)
   const organizer = event.organizer?.displayName || event.organizer?.email;
@@ -159,10 +229,10 @@ export function createNoteContent(event: CalendarEvent): string {
   if (event.location) {
     frontmatterLines.push(`location: "${event.location.replace(/"/g, '\\"')}"`);
   }
-  if (attendees.length > 0) {
+  if (attendeeRows.length > 0) {
     frontmatterLines.push("attendees:");
-    attendees.forEach((a) =>
-      frontmatterLines.push(`  - "${a.replace(/"/g, '\\"')}"`)
+    attendeeRows.forEach((a) =>
+      frontmatterLines.push(`  - "${a.name.replace(/"/g, '\\"')} <${a.email}>"`)
     );
   }
   if (event.conferenceData?.conferenceSolution?.name) {
@@ -195,8 +265,10 @@ export function createNoteContent(event: CalendarEvent): string {
   if (organizer) {
     lines.push(`**Organizer:** ${organizer}`);
   }
-  if (attendees.length > 0) {
-    lines.push(`**Attendees:** ${attendees.join(", ")}`);
+
+  // Attendees table
+  if (attendeeRows.length > 0) {
+    lines.push("", "**Attendees:**", "", renderAttendeesTable(attendeeRows));
   }
 
   lines.push("", "---", "");

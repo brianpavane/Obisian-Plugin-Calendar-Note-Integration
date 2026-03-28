@@ -12,6 +12,10 @@ export interface GoogleCalendarSettings {
   noteFolder: string;
   daysAhead: number;
   maxEvents: number;
+  /** Hours before an event starts that a note is auto-created. Default: 12 */
+  hoursInAdvance: number;
+  /** How often (in minutes) the plugin polls for upcoming events. Default: 30 */
+  pollIntervalMinutes: number;
 }
 
 export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
@@ -24,6 +28,8 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   noteFolder: "Meeting Notes",
   daysAhead: 7,
   maxEvents: 20,
+  hoursInAdvance: 12,
+  pollIntervalMinutes: 30,
 };
 
 export class GoogleCalendarSettingTab extends PluginSettingTab {
@@ -220,6 +226,39 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.noteFolder)
           .onChange(async (value) => {
             this.plugin.settings.noteFolder = value.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Hours in advance")
+      .setDesc(
+        "How many hours before an event starts to automatically create its note. " +
+        "Notes are also created on startup for any events within this window. (1–48 hours)"
+      )
+      .addSlider((slider) =>
+        slider
+          .setLimits(1, 48, 1)
+          .setValue(this.plugin.settings.hoursInAdvance)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            this.plugin.settings.hoursInAdvance = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Poll interval (minutes)")
+      .setDesc(
+        "How often the plugin checks for events that need a note created. (5–120 minutes)"
+      )
+      .addSlider((slider) =>
+        slider
+          .setLimits(5, 120, 5)
+          .setValue(this.plugin.settings.pollIntervalMinutes)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            this.plugin.settings.pollIntervalMinutes = value;
             await this.plugin.saveSettings();
           })
       );

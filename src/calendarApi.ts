@@ -116,6 +116,30 @@ export class GoogleCalendarApi {
     return data.items ?? [];
   }
 
+  /**
+   * Fetch events that start within a specific absolute time window.
+   * Used by the auto-create polling loop to find events starting within
+   * the next N hours.
+   */
+  async listEventsInTimeWindow(
+    calendarId: string,
+    timeMin: Date,
+    timeMax: Date,
+    maxResults = 50
+  ): Promise<CalendarEvent[]> {
+    const data = await this.request<{ items: CalendarEvent[] }>(
+      `/calendars/${encodeURIComponent(calendarId)}/events`,
+      {
+        timeMin: timeMin.toISOString(),
+        timeMax: timeMax.toISOString(),
+        maxResults: String(maxResults),
+        singleEvents: "true",
+        orderBy: "startTime",
+      }
+    );
+    return data.items ?? [];
+  }
+
   async getEvent(calendarId: string, eventId: string): Promise<CalendarEvent> {
     return this.request<CalendarEvent>(
       `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`
