@@ -12,6 +12,21 @@
 /** Base URL for all Google Calendar API v3 endpoints. */
 const CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3";
 
+// ---------------------------------------------------------------------------
+// Shared types
+// ---------------------------------------------------------------------------
+
+/**
+ * RSVP response status values returned by the Google Calendar API.
+ * Exported so that `noteCreator.ts` can share the same type without a
+ * local re-definition that diverges from the interface.
+ */
+export type ResponseStatus =
+  | "accepted"
+  | "declined"
+  | "tentative"
+  | "needsAction";
+
 /** Milliseconds before a Calendar API fetch is aborted. */
 const FETCH_TIMEOUT_MS = 10_000;
 
@@ -58,8 +73,8 @@ export interface CalendarEvent {
     email: string;
     /** Display name, if the contact is in the user's directory. */
     displayName?: string;
-    /** RSVP status: "accepted" | "declined" | "tentative" | "needsAction" */
-    responseStatus?: string;
+    /** Invite response status. Typed as {@link ResponseStatus} when present. */
+    responseStatus?: ResponseStatus;
     /** True for the calendar owner's own attendee entry. */
     self?: boolean;
     /** True when this attendee is also the event organizer. */
@@ -151,6 +166,9 @@ export class GoogleCalendarApi {
   /**
    * Retrieve the authenticated user's calendar list.
    *
+   * Reserved for a future "pick your calendar from a dropdown" UX in the
+   * settings tab. Not called by any other module at this time.
+   *
    * @returns Array of calendars the user has access to.
    * @throws  On network failure, timeout, or API error.
    */
@@ -227,6 +245,10 @@ export class GoogleCalendarApi {
 
   /**
    * Fetch a single event by ID.
+   *
+   * Reserved for a future "refresh attendee RSVP status" feature that would
+   * re-fetch a specific event and update the attendees table in an existing
+   * note. Not called by any other module at this time.
    *
    * @param calendarId Calendar that owns the event.
    * @param eventId    Stable event identifier.

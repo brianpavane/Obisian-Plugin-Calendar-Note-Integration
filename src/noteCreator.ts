@@ -19,7 +19,7 @@
  */
 
 import { App, normalizePath, TFile } from "obsidian";
-import { CalendarEvent } from "./calendarApi";
+import { CalendarEvent, ResponseStatus } from "./calendarApi";
 
 // ---------------------------------------------------------------------------
 // Security helpers
@@ -217,9 +217,6 @@ function getEventTiming(event: CalendarEvent): EventTiming {
 // ---------------------------------------------------------------------------
 // Attendee helpers
 // ---------------------------------------------------------------------------
-
-/** Recognised RSVP status values from the Google Calendar API. */
-type ResponseStatus = "accepted" | "declined" | "tentative" | "needsAction";
 
 /**
  * Colored-circle emoji shown in the attendees table status column.

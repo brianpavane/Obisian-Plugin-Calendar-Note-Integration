@@ -243,7 +243,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
       new Setting(containerEl)
         .setName("Disconnect Google account")
         .setDesc(
-          "Remove the stored access and refresh tokens from this plugin. " +
+          "Revoke the plugin's Google Calendar access and remove stored tokens. " +
             "You will need to re-authenticate to use the plugin again."
         )
         .addButton((button) =>
@@ -251,6 +251,18 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
             .setButtonText("Disconnect")
             .setWarning()
             .onClick(async () => {
+              button.setButtonText("Disconnecting…").setDisabled(true);
+
+              // Revoke the refresh token at Google's endpoint first so the
+              // authorisation is fully removed server-side, not just locally.
+              if (this.plugin.settings.refreshToken) {
+                const auth = new GoogleAuth(
+                  this.plugin.settings.clientId,
+                  this.plugin.settings.clientSecret
+                );
+                await auth.revokeToken(this.plugin.settings.refreshToken);
+              }
+
               this.plugin.settings.accessToken = "";
               this.plugin.settings.refreshToken = "";
               this.plugin.settings.tokenExpiry = 0;

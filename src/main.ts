@@ -22,16 +22,30 @@ import { EventSuggestModal } from "./eventModal";
 import { createNoteFile } from "./noteCreator";
 
 /**
+ * Clamp a number to an inclusive [min, max] range.
+ * Used to sanitise numeric settings loaded from disk.
+ */
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+/**
  * Main plugin class for Google Calendar Note Integration.
  *
  * Lifecycle:
- *   `onload` → registers UI, starts background polling
- *   Obsidian calls `onunload` automatically; registered intervals are
- *   cleaned up by Obsidian via `registerInterval`.
+ *   `onload`   → registers UI, starts background polling
+ *   `onunload` → clears the startup timeout (intervals are cleaned up
+ *                automatically by Obsidian via `registerInterval`)
  */
 export default class GoogleCalendarPlugin extends Plugin {
   /** Persisted plugin configuration. Loaded in `onload`, saved on change. */
   settings!: GoogleCalendarSettings;
+
+  /**
+   * Handle for the one-time startup timeout so it can be cancelled if the
+   * plugin is unloaded before the 5-second delay elapses.
+   */
+  private startupTimeoutId: ReturnType<typeof window.setTimeout> | undefined;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -67,7 +81,12 @@ export default class GoogleCalendarPlugin extends Plugin {
 
     // ----- Startup sweep -----------------------------------------------------
     // Delay 5 s to let the vault finish indexing before writing files.
-    setTimeout(() => this.autoCreateUpcomingNotes(false), 5_000);
+    // The timeout ID is stored so onunload() can cancel it if the plugin is
+    // disabled before the delay elapses.
+    this.startupTimeoutId = window.setTimeout(
+      () => this.autoCreateUpcomingNotes(false),
+      5_000
+    );
 
     // ----- Recurring poll ----------------------------------------------------
     // `registerInterval` wraps `window.setInterval` and automatically clears
@@ -80,6 +99,14 @@ export default class GoogleCalendarPlugin extends Plugin {
     );
   }
 
+  onunload(): void {
+    // Cancel the startup sweep if the plugin is disabled within 5 seconds
+    // of loading — prevents the callback from running on a destroyed instance.
+    if (this.startupTimeoutId !== undefined) {
+      window.clearTimeout(this.startupTimeoutId);
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Settings persistence
   // ---------------------------------------------------------------------------
@@ -87,9 +114,33 @@ export default class GoogleCalendarPlugin extends Plugin {
   /**
    * Load settings from Obsidian's plugin data store, merging with defaults
    * so that new settings added in future versions are always initialised.
+   *
+   * Numeric fields are validated and clamped to their legal ranges after
+   * loading, preventing a corrupted or hand-edited `data.json` from causing
+   * runaway polling loops or out-of-range API requests.
    */
   async loadSettings(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const stored = (await this.loadData()) as Partial<GoogleCalendarSettings> ?? {};
+    const merged = Object.assign({}, DEFAULT_SETTINGS, stored);
+
+    // Clamp numeric values to safe ranges. Number() coerces NaN-producing
+    // values to 0 so the fallback to the default always fires in that case.
+    merged.daysAhead = clamp(
+      Number(merged.daysAhead) || DEFAULT_SETTINGS.daysAhead, 1, 30
+    );
+    merged.maxEvents = clamp(
+      Number(merged.maxEvents) || DEFAULT_SETTINGS.maxEvents, 1, 50
+    );
+    merged.hoursInAdvance = clamp(
+      Number(merged.hoursInAdvance) || DEFAULT_SETTINGS.hoursInAdvance, 1, 48
+    );
+    merged.pollIntervalMinutes = clamp(
+      Number(merged.pollIntervalMinutes) || DEFAULT_SETTINGS.pollIntervalMinutes,
+      5, 120
+    );
+    merged.tokenExpiry = Number(merged.tokenExpiry) || 0;
+
+    this.settings = merged;
   }
 
   /**

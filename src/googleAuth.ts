@@ -30,6 +30,7 @@ const { shell } = require("electron") as typeof import("electron");
 
 const GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
+const GOOGLE_REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke";
 
 /** Read-only access to Google Calendar is all this plugin requires. */
 const SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"];
@@ -275,6 +276,36 @@ export class GoogleAuth {
     }
 
     return this.parseTokenResponse(data, refreshToken);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Public API (continued)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Revoke a token at Google's revocation endpoint, invalidating it server-side.
+   *
+   * Either the access token or the refresh token can be passed; revoking the
+   * refresh token also invalidates all associated access tokens. This should be
+   * called when the user clicks "Disconnect" so the plugin's authorisation is
+   * fully removed from Google's records — not just from local storage.
+   *
+   * Failure is non-fatal: if the token is already expired or invalid Google
+   * returns a 400, which is caught and ignored so the local clear still
+   * proceeds.
+   *
+   * @param token Access token or refresh token to revoke.
+   */
+  async revokeToken(token: string): Promise<void> {
+    try {
+      await fetchWithTimeout(
+        `${GOOGLE_REVOKE_ENDPOINT}?token=${encodeURIComponent(token)}`,
+        { method: "POST" }
+      );
+    } catch {
+      // Revocation failures are intentionally swallowed — the local credentials
+      // are cleared regardless, and the token expires on its own eventually.
+    }
   }
 
   // ---------------------------------------------------------------------------
