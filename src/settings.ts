@@ -50,6 +50,8 @@ export interface GoogleCalendarSettings {
   datePosition: "before" | "after";
   daysAhead: number;
   maxEvents: number;
+  appleTimeoutSeconds: number;
+  appleSkipTier3: boolean;
 }
 
 export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
@@ -73,6 +75,8 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   datePosition: "before",
   daysAhead: 7,
   maxEvents: 20,
+  appleTimeoutSeconds: 30,
+  appleSkipTier3: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -489,6 +493,47 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
               button.setButtonText("Test").setDisabled(false);
             }
           })
+        );
+
+      containerEl.createEl("h4", { text: "Advanced" });
+
+      new Setting(containerEl)
+        .setName("Timeout per calendar (seconds)")
+        .setDesc(
+          "How long to wait for Calendar.app to respond per calendar before giving up. " +
+          "Increase if you have a large Exchange or Office 365 calendar. (15–120)"
+        )
+        .addText((text) => {
+          text.inputEl.type = "number";
+          text.inputEl.min = "15";
+          text.inputEl.max = "120";
+          text.inputEl.step = "5";
+          text.inputEl.style.width = "80px";
+          text
+            .setValue(String(this.plugin.settings.appleTimeoutSeconds))
+            .onChange(async (value) => {
+              const num = parseInt(value, 10);
+              if (!isNaN(num) && num >= 15 && num <= 120) {
+                this.plugin.settings.appleTimeoutSeconds = num;
+                await this.plugin.saveSettings();
+              }
+            });
+        });
+
+      new Setting(containerEl)
+        .setName("Skip full-scan fallback (Tier 3)")
+        .setDesc(
+          "When enabled, calendars that fail the fast fetch strategies are skipped instead of " +
+          "running a slow full event scan. Prevents timeouts on large Exchange calendars if you " +
+          "do not need events from that specific calendar."
+        )
+        .addToggle((toggle) =>
+          toggle
+            .setValue(this.plugin.settings.appleSkipTier3)
+            .onChange(async (value) => {
+              this.plugin.settings.appleSkipTier3 = value;
+              await this.plugin.saveSettings();
+            })
         );
     }
 

@@ -154,11 +154,21 @@ function buildJxaTier1Script(daysBack: number, daysAhead: number): string {
  * Per-calendar script: queries ONE named calendar through Tier 2 → 2.5 → 3.
  * Running one call per calendar in TypeScript means a slow/hung calendar
  * only blocks its own 30s slot — other calendars still return results.
+ *
+ * Returns JSON: { tier, t2ms, t25ms, t3ms, events[] }
+ *   tier: 2 | 25 | 3 | -3 (skipped)
+ *   tXms: elapsed ms for each tier attempt (-1 = not attempted)
  */
-function buildJxaPerCalendarScript(calName: string, daysBack: number, daysAhead: number): string {
+function buildJxaPerCalendarScript(
+  calName: string,
+  daysBack: number,
+  daysAhead: number,
+  skipTier3 = false
+): string {
   const safeDaysBack  = Math.max(0, Math.min(30,  Math.floor(daysBack)));
   const safeDaysAhead = Math.max(1, Math.min(365, Math.floor(daysAhead)));
   const safeCalName   = JSON.stringify(calName); // name came from Calendar.app
+  const skipTier3Js   = skipTier3 ? "true" : "false";
   return `
 (function () {
   var app = Application("Calendar");
@@ -180,17 +190,25 @@ function buildJxaPerCalendarScript(calName: string, daysBack: number, daysAhead:
       }
     }
   } catch (e) {}
-  if (!targetCal) return JSON.stringify([]);
+  if (!targetCal) return JSON.stringify({ tier: 0, t2ms: -1, t25ms: -1, t3ms: -1, events: [] });
 
   var calEvts = null;
+  var t2ms = -1, t25ms = -1, t3ms = -1, tier = 0;
 
   // Tier 2: cal.eventsFrom(start, {to:end})
+  var t2start = Date.now();
   try {
     calEvts = targetCal.eventsFrom(windowStart, { to: windowEnd });
-  } catch (e2) { calEvts = null; }
+    t2ms = Date.now() - t2start;
+    tier = 2;
+  } catch (e2) {
+    t2ms = Date.now() - t2start;
+    calEvts = null;
+  }
 
   // Tier 2.5: whose-predicate filter
   if (calEvts === null) {
+    var t25start = Date.now();
     try {
       calEvts = targetCal.events.whose({
         _and: [
@@ -198,27 +216,41 @@ function buildJxaPerCalendarScript(calName: string, daysBack: number, daysAhead:
           { startDate: { _lessThanEquals:    windowEnd   } }
         ]
       })();
-    } catch (e25) { calEvts = null; }
+      t25ms = Date.now() - t25start;
+      tier = 25;
+    } catch (e25) {
+      t25ms = Date.now() - t25start;
+      calEvts = null;
+    }
   }
 
   // Tier 3: scan the most recent ${MAX_TIER3_SCAN} events only.
   // Calendar.app returns events oldest-first, so we skip old history and
   // start near the end of the list where upcoming events are found.
   if (calEvts === null) {
-    calEvts = [];
-    try {
-      var allEvts = targetCal.events();
-      var total   = allEvts.length;
-      var scanFrom = Math.max(0, total - ${MAX_TIER3_SCAN});
-      for (var j = scanFrom; j < total; j++) {
-        try {
-          var evtSd = allEvts[j].startDate();
-          if (evtSd && evtSd >= windowStart && evtSd <= windowEnd) {
-            calEvts.push(allEvts[j]);
-          }
-        } catch (e3) {}
-      }
-    } catch (e3) {}
+    if (${skipTier3Js}) {
+      // Tier 3 disabled in Settings — skip this calendar
+      calEvts = [];
+      tier = -3;
+    } else {
+      calEvts = [];
+      var t3start = Date.now();
+      try {
+        var allEvts = targetCal.events();
+        var total   = allEvts.length;
+        var scanFrom = Math.max(0, total - ${MAX_TIER3_SCAN});
+        for (var j = scanFrom; j < total; j++) {
+          try {
+            var evtSd = allEvts[j].startDate();
+            if (evtSd && evtSd >= windowStart && evtSd <= windowEnd) {
+              calEvts.push(allEvts[j]);
+            }
+          } catch (e3) {}
+        }
+      } catch (e3) {}
+      t3ms = Date.now() - t3start;
+      tier = 3;
+    }
   }
 
   var results = [];
@@ -235,7 +267,7 @@ function buildJxaPerCalendarScript(calName: string, daysBack: number, daysAhead:
       results.push(item);
     } catch (e) {}
   }
-  return JSON.stringify(results);
+  return JSON.stringify({ tier: tier, t2ms: t2ms, t25ms: t25ms, t3ms: t3ms, events: results });
 })();
 `.trim();
 }
@@ -276,21 +308,22 @@ interface RawJxaEvent {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Maximum time to wait for osascript to respond before aborting. */
-const OSASCRIPT_TIMEOUT_MS = 30_000;
+/** Default timeout when the caller does not specify one. */
+const DEFAULT_TIMEOUT_MS = 30_000;
 
-function runOsascript(script: string): Promise<string> {
+function runOsascript(script: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       "osascript",
       ["-l", "JavaScript", "-e", script],
-      { maxBuffer: MAX_OUTPUT_BYTES, timeout: OSASCRIPT_TIMEOUT_MS },
+      { maxBuffer: MAX_OUTPUT_BYTES, timeout: timeoutMs },
       (err, stdout, stderr) => {
         if (err) {
           if ((err as Error & { killed?: boolean }).killed) {
             reject(new Error(
-              "Apple Calendar request timed out after 30 seconds. " +
-              "Calendar.app may be busy — try again in a moment."
+              `Apple Calendar request timed out after ${timeoutMs / 1000}s. ` +
+              "Calendar.app may be syncing a large calendar — try again in a moment, " +
+              "or increase the timeout in Settings."
             ));
             return;
           }
@@ -585,21 +618,38 @@ export class AppleCalendarApi {
   private readonly calendarFilter: string[];
   private readonly daysBack: number;
   private readonly daysAhead: number;
+  private readonly timeoutMs: number;
+  private readonly skipTier3: boolean;
 
-  constructor(calendarFilter: string[] = [], daysBack = 0, daysAhead = 30) {
+  constructor(
+    calendarFilter: string[] = [],
+    daysBack = 0,
+    daysAhead = 30,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    skipTier3 = false
+  ) {
     this.calendarFilter = calendarFilter;
     this.daysBack = daysBack;
     this.daysAhead = daysAhead;
+    this.timeoutMs = timeoutMs;
+    this.skipTier3 = skipTier3;
   }
 
   async fetchAllEvents(): Promise<CalendarEvent[]> {
     const tag = "[GoogleCalendarNotes] Apple Calendar";
-    console.log(`${tag} fetchAllEvents() window: -${this.daysBack}d…+${this.daysAhead}d`);
+    const timeoutSec = Math.round(this.timeoutMs / 1000);
+    console.log(
+      `${tag} fetchAllEvents() window: -${this.daysBack}d…+${this.daysAhead}d ` +
+      `timeout:${timeoutSec}s skipTier3:${this.skipTier3}`
+    );
 
     // ── Step 1: Try Tier 1 (app.eventsFrom — single fast call) ───────────────
     try {
       const t0 = Date.now();
-      const json = await runOsascript(buildJxaTier1Script(this.daysBack, this.daysAhead));
+      const json = await runOsascript(
+        buildJxaTier1Script(this.daysBack, this.daysAhead),
+        this.timeoutMs
+      );
       const events = parseJxaEvents(json, this.calendarFilter);
       console.log(`${tag} Tier 1 ✓ — ${events.length} event(s) in ${Date.now() - t0}ms`);
       return events;
@@ -609,8 +659,8 @@ export class AppleCalendarApi {
     }
 
     // ── Step 2: Per-calendar fallback — one osascript call per calendar ───────
-    // Each call has its own 30s timeout, so a hung calendar only blocks its
-    // own slot and doesn't prevent other calendars from returning results.
+    // Each call has its own timeout, so a hung calendar only blocks its own
+    // slot and doesn't prevent other calendars from returning results.
     let calNames = this.calendarFilter;
     if (calNames.length === 0) {
       try {
@@ -637,10 +687,41 @@ export class AppleCalendarApi {
       const t0 = Date.now();
       try {
         const json = await runOsascript(
-          buildJxaPerCalendarScript(calName, this.daysBack, this.daysAhead)
+          buildJxaPerCalendarScript(calName, this.daysBack, this.daysAhead, this.skipTier3),
+          this.timeoutMs
         );
-        const events = parseJxaEvents(json, []);
-        console.log(`${tag} "${calName}" ✓ — ${events.length} event(s) in ${Date.now() - t0}ms`);
+
+        // Per-calendar script returns { tier, t2ms, t25ms, t3ms, events }
+        let eventsJson = json;
+        try {
+          const wrapper = JSON.parse(json) as {
+            tier?: number; t2ms?: number; t25ms?: number; t3ms?: number;
+            events?: unknown[];
+          };
+          if (wrapper && typeof wrapper === "object" && Array.isArray(wrapper.events)) {
+            const tierLabel: Record<number, string> = { 2: "Tier 2", 25: "Tier 2.5", 3: "Tier 3", [-3]: "Tier 3 skipped" };
+            const tLabel = tierLabel[wrapper.tier ?? 0] ?? `Tier ${wrapper.tier}`;
+            const timingParts: string[] = [];
+            if ((wrapper.t2ms ?? -1) >= 0)  timingParts.push(`t2:${wrapper.t2ms}ms`);
+            if ((wrapper.t25ms ?? -1) >= 0)  timingParts.push(`t2.5:${wrapper.t25ms}ms`);
+            if ((wrapper.t3ms ?? -1) >= 0)   timingParts.push(`t3:${wrapper.t3ms}ms`);
+            const timing = timingParts.length ? ` (${timingParts.join(" ")})` : "";
+            const skipped = wrapper.tier === -3;
+            if (skipped) {
+              console.log(`${tag} "${calName}" — Tier 2 & 2.5 failed, Tier 3 skipped (disabled in Settings)`);
+            } else {
+              console.log(
+                `${tag} "${calName}" ✓ ${tLabel} — ${wrapper.events.length} event(s) ` +
+                `in ${Date.now() - t0}ms${timing}`
+              );
+            }
+            eventsJson = JSON.stringify(wrapper.events);
+          }
+        } catch {
+          // wrapper parse failed — treat as plain array (backward compat)
+        }
+
+        const events = parseJxaEvents(eventsJson, []);
         allEvents.push(...events);
       } catch (err) {
         const elapsed = Date.now() - t0;
@@ -657,7 +738,7 @@ export class AppleCalendarApi {
       }
     }
 
-    // Partial success — return what we got, surface a notice-level warning
+    // Partial success — return what we got, surface a warning in the console
     if (allEvents.length > 0) {
       if (timedOut.length > 0) {
         console.warn(
@@ -672,9 +753,10 @@ export class AppleCalendarApi {
     const parts: string[] = [];
     if (timedOut.length > 0) {
       parts.push(
-        `Timed out reading ${timedOut.map((n) => `"${n}"`).join(", ")} after 30s. ` +
+        `Timed out reading ${timedOut.map((n) => `"${n}"`).join(", ")} after ${timeoutSec}s. ` +
         `Calendar.app may be syncing a large Exchange/Office 365 account. ` +
-        `Try: open Calendar.app and wait for it to finish syncing, then retry.`
+        `Try: open Calendar.app and wait for it to finish syncing, then retry. ` +
+        `Or increase the timeout in Settings → Apple Calendar → Advanced.`
       );
     }
     errored.forEach((e) => parts.push(e));
