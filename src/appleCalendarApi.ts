@@ -85,56 +85,100 @@ function buildJxaFetchEvents(daysBack: number, daysAhead: number): string {
     });
   } catch (e) {}
 
-  // Use app.eventsFrom(start, {to: end}) — the application-level API.
-  // Calendar.app executes this as a native date-range query (equivalent to
-  // CalDAV/Exchange server-side search), so it never loads every historical
-  // event from every calendar. This avoids the timeout caused by cal.events()
-  // or per-calendar eventsFrom(), which enumerate the full event store first.
-  var rawEvents = [];
+  // Each entry: { evt, calId, calName }
+  // Calendar info is resolved differently depending on which tier succeeded.
+  var pairs = [];
+
+  // ── Tier 1: app.eventsFrom(start, {to:end}) ──────────────────────────────
+  // Fastest path — application-level date-range query. Fails with
+  // "Can't convert types" on some Exchange / Office 365 accounts.
+  var tier1ok = false;
   try {
-    rawEvents = app.eventsFrom(windowStart, { to: windowEnd });
-  } catch (e) {
-    return JSON.stringify([]);
-  }
-
-  var results = [];
-  for (var i = 0; i < rawEvents.length; i++) {
-    try {
-      var evt = rawEvents[i];
-
-      // Determine the parent calendar from the event's JXA object specifier.
-      // Specifier format: event id "X" of calendar id "Y" of application "Calendar"
-      // The container property gives the enclosing calendar specifier.
-      var calName = "", calId = "";
+    var t1evts = app.eventsFrom(windowStart, { to: windowEnd });
+    for (var i = 0; i < t1evts.length; i++) {
+      var evt = t1evts[i];
+      var calId = "", calName = "";
       try {
         calId   = String(evt.container.id()   || "");
         calName = String(evt.container.name() || "");
-      } catch (e1) {
+      } catch (ce) {
         try {
-          // Fallback: parse the calendar ID out of the specifier string.
-          var specStr = String(evt.specifier());
-          var m = specStr.match(/calendar id "([^"]+)"/);
+          var spec = String(evt.specifier());
+          var m = spec.match(/calendar id "([^"]+)"/);
           if (m) { calId = m[1]; calName = calMap[calId] || ""; }
-        } catch (e2) {}
+        } catch (ce2) {}
+      }
+      pairs.push({ evt: evt, calId: calId, calName: calName });
+    }
+    tier1ok = true;
+  } catch (e1) {}
+
+  // ── Tier 2: per-calendar cal.eventsFrom(start, {to:end}) ─────────────────
+  // Used when Tier 1 fails. Each calendar object is queried individually.
+  // If a specific calendar also throws, Tier 3 is tried for that calendar.
+  if (!tier1ok) {
+    var cals = [];
+    try { cals = app.calendars(); } catch (e) {}
+    for (var ci = 0; ci < cals.length; ci++) {
+      var cal = cals[ci];
+      var cId = "", cName = "";
+      try { cId   = String(cal.id()   || ""); } catch (e) {}
+      try { cName = String(cal.name() || ""); } catch (e) {}
+
+      var calEvts = null;
+
+      // Tier 2a: cal.eventsFrom
+      try {
+        calEvts = cal.eventsFrom(windowStart, { to: windowEnd });
+      } catch (e2) { calEvts = null; }
+
+      // Tier 2b (Tier 3): cal.events() with JS date filter
+      // Last resort — loads all events then filters in JS. Slower but
+      // universally compatible. The 30-second osascript timeout acts as
+      // a hard stop for calendars with very large histories.
+      if (calEvts === null) {
+        calEvts = [];
+        try {
+          var allEvts = cal.events();
+          for (var j = 0; j < allEvts.length; j++) {
+            try {
+              var sd = allEvts[j].startDate();
+              if (sd && sd >= windowStart && sd <= windowEnd) {
+                calEvts.push(allEvts[j]);
+              }
+            } catch (e3) {}
+          }
+        } catch (e3) {}
       }
 
+      for (var k = 0; k < calEvts.length; k++) {
+        pairs.push({ evt: calEvts[k], calId: cId, calName: cName });
+      }
+    }
+  }
+
+  // ── Build result objects ──────────────────────────────────────────────────
+  var results = [];
+  for (var pi = 0; pi < pairs.length; pi++) {
+    try {
+      var p = pairs[pi];
       var item = {
         uid: "", summary: "",
         startDate: windowStart.toISOString(), endDate: windowStart.toISOString(),
         allDayEvent: false, description: "", location: "",
-        calendarName: calName, calendarId: calId,
+        calendarName: p.calName, calendarId: p.calId,
         attendees: []
       };
 
-      try { item.uid         = String(evt.uid()         || ""); } catch (e) {}
-      try { item.summary     = String(evt.summary()     || ""); } catch (e) {}
-      try { var sd = evt.startDate(); if (sd) item.startDate = sd.toISOString(); } catch (e) {}
-      try { var ed = evt.endDate();   if (ed) item.endDate   = ed.toISOString(); } catch (e) {}
-      try { item.allDayEvent = evt.allDayEvent() === true;                        } catch (e) {}
-      try { item.description = String(evt.description() || ""); } catch (e) {}
-      try { item.location    = String(evt.location()    || ""); } catch (e) {}
+      try { item.uid         = String(p.evt.uid()         || ""); } catch (e) {}
+      try { item.summary     = String(p.evt.summary()     || ""); } catch (e) {}
+      try { var sd = p.evt.startDate(); if (sd) item.startDate = sd.toISOString(); } catch (e) {}
+      try { var ed = p.evt.endDate();   if (ed) item.endDate   = ed.toISOString(); } catch (e) {}
+      try { item.allDayEvent = p.evt.allDayEvent() === true;                        } catch (e) {}
+      try { item.description = String(p.evt.description() || ""); } catch (e) {}
+      try { item.location    = String(p.evt.location()    || ""); } catch (e) {}
       try {
-        var atts = evt.attendees();
+        var atts = p.evt.attendees();
         if (atts) {
           item.attendees = atts.map(function (a) {
             return {
@@ -368,26 +412,62 @@ export async function runAppleCalendarDiagnostic(): Promise<string> {
     return lines.join("\n");
   }
 
-  // Step 3 — app.eventsFrom probe (next 7 days)
-  log("Step 3: Testing app.eventsFrom() (next 7 days)…");
+  // Step 3 — probe all three fetch tiers
+  log("Step 3: Probing fetch strategies (next 7 days)…");
   const probeScript = `
 (function(){
   var app = Application("Calendar");
   var now = new Date();
   var s = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   var e = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7);
-  var evts = [];
-  try { evts = app.eventsFrom(s, { to: e }); } catch(ex) { return JSON.stringify({ err: String(ex) }); }
-  return JSON.stringify({ count: evts.length });
+  var out = {};
+
+  // Tier 1: app.eventsFrom
+  try {
+    var evts = app.eventsFrom(s, { to: e });
+    out.tier1 = evts.length;
+  } catch(ex) { out.tier1err = String(ex); }
+
+  // Tier 2: per-calendar cal.eventsFrom
+  var cals = [];
+  try { cals = app.calendars(); } catch(ex) {}
+  var calResults = [];
+  for (var i = 0; i < cals.length; i++) {
+    var name = "?";
+    try { name = cals[i].name(); } catch(ex) {}
+    try {
+      var n = cals[i].eventsFrom(s, { to: e }).length;
+      calResults.push({ name: name, count: n });
+    } catch(ex) {
+      calResults.push({ name: name, err: String(ex) });
+    }
+  }
+  out.tier2 = calResults;
+  return JSON.stringify(out);
 })();`.trim();
   try {
     const t0 = Date.now();
     const json = await runOsascript(probeScript);
-    const result = JSON.parse(json) as { count?: number; err?: string };
-    if (result.err) {
-      log(`  ✗ app.eventsFrom() failed: ${result.err.slice(0, 120)}`);
+    const r = JSON.parse(json) as {
+      tier1?: number; tier1err?: string;
+      tier2?: Array<{ name: string; count?: number; err?: string }>;
+    };
+    log(`  Completed in ${Date.now() - t0}ms`);
+    if (r.tier1 !== undefined) {
+      log(`  Tier 1 (app.eventsFrom):  ✓ ${r.tier1} event(s)`);
     } else {
-      log(`  ✓ app.eventsFrom() returned ${result.count} event(s) in ${Date.now() - t0}ms`);
+      log(`  Tier 1 (app.eventsFrom):  ✗ ${(r.tier1err ?? "failed").slice(0, 100)}`);
+      log(`    → Will fall back to per-calendar strategies`);
+    }
+    if (r.tier2) {
+      r.tier2.forEach((c) => {
+        if (c.count !== undefined) {
+          log(`  Tier 2 "${c.name}": ✓ ${c.count} event(s)`);
+        } else {
+          log(`  Tier 2 "${c.name}": ✗ ${(c.err ?? "failed").slice(0, 80)}`);
+          log(`    → Will use cal.events() + JS date filter for this calendar`);
+        }
+      });
     }
   } catch (err) {
     log(`  ✗ Probe timed out: ${err instanceof Error ? err.message : String(err)}`);
