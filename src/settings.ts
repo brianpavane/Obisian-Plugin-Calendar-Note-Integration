@@ -101,8 +101,11 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
 // ---------------------------------------------------------------------------
 
 class FolderSuggest extends AbstractInputSuggest<TFolder> {
+  private el: HTMLInputElement;
+
   constructor(app: App, inputEl: HTMLInputElement) {
     super(app, inputEl);
+    this.el = inputEl;
   }
 
   getSuggestions(query: string): TFolder[] {
@@ -118,6 +121,8 @@ class FolderSuggest extends AbstractInputSuggest<TFolder> {
 
   selectSuggestion(folder: TFolder): void {
     this.setValue(folder.path);
+    // Fire the DOM input event so TextComponent.onChange() picks up the value.
+    this.el.dispatchEvent(new Event("input"));
     this.close();
   }
 }
