@@ -487,10 +487,12 @@ After bumping, update `CHANGELOG.md` with a summary of changes, then build, comm
 ```bash
 npm run build
 git add manifest.json versions.json package.json CHANGELOG.md main.js
-git commit -m "Release vX.Y.Z"
-git tag vX.Y.Z
+git commit -m "Release X.Y.Z"
+git tag X.Y.Z
 git push origin main --tags
 ```
+
+> **No `v` prefix on tags.** Obsidian's release validator requires the tag to be bare semver (e.g. `1.1.0`, not `v1.1.0`). The tag must exactly match the `version` field in `manifest.json`.
 
 Then go to [github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration/releases/new](https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration/releases/new), select the tag you just pushed, and attach `main.js`, `manifest.json`, and `styles.css` as release assets. This is required for:
 - The release badge in the README to update.
