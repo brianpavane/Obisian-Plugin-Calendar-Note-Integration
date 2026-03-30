@@ -1,14 +1,14 @@
 /**
  * @file calendarApi.ts
- * @description Google Calendar client using the iCalendar (iCal/ICS) protocol.
+ * @description Google Calendar clients for both iCal and REST API access.
  *
- * This module replaces the previous OAuth + REST API approach. Events are now
- * fetched from the user's Google Calendar "secret address" iCal URL — no
- * Google Cloud Console project, no API keys, and no OAuth flow required.
+ * Exports three classes:
+ *   - {@link IcalCalendarApi}    — fetches from a secret iCal URL (no auth)
+ *   - {@link GoogleCalendarApi} — fetches via REST API with an OAuth access token
+ *   - {@link CalendarService}   — unified adapter; wraps either backend
  *
- * Re-exports {@link CalendarEvent} and {@link ResponseStatus} from
- * `icalParser.ts` so that `noteCreator.ts` and `eventModal.ts` continue to
- * import from this module without changes.
+ * Use {@link CalendarService} in application code so the auth mode can be
+ * switched without changing call sites.
  */
 
 export { CalendarEvent, ResponseStatus } from "./icalParser";
@@ -224,5 +224,161 @@ export class IcalCalendarApi {
     });
 
     return events.slice(0, maxResults);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Google Calendar REST API client
+// ---------------------------------------------------------------------------
+
+const CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3";
+const REST_TIMEOUT_MS = 10_000;
+
+/** A calendar entry from the user's calendar list. */
+export interface Calendar {
+  id: string;
+  summary: string;
+  description?: string;
+  primary?: boolean;
+  selected?: boolean;
+}
+
+/**
+ * Read-only client for the Google Calendar REST API v3.
+ * Requires a valid OAuth 2.0 access token with the `calendar.readonly` scope.
+ * Uses `requestUrl` (Electron main process) for all requests.
+ */
+export class GoogleCalendarApi {
+  private readonly accessToken: string;
+
+  constructor(accessToken: string) {
+    this.accessToken = accessToken;
+  }
+
+  /** Retrieve the user's calendar list. */
+  async listCalendars(): Promise<Calendar[]> {
+    const data = await this.request<{ items: Calendar[] }>("/users/me/calendarList");
+    return data.items ?? [];
+  }
+
+  /** Fetch up to `maxResults` events starting between now and `daysAhead` days. */
+  async listUpcomingEvents(
+    calendarId: string,
+    maxResults = 20,
+    daysAhead = 7
+  ): Promise<CalendarEvent[]> {
+    const now = new Date();
+    const future = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1_000);
+    return this.listEventsInTimeWindow(calendarId, now, future, maxResults);
+  }
+
+  /** Fetch events whose start falls within [timeMin, timeMax). */
+  async listEventsInTimeWindow(
+    calendarId: string,
+    timeMin: Date,
+    timeMax: Date,
+    maxResults = 50
+  ): Promise<CalendarEvent[]> {
+    const data = await this.request<{ items: CalendarEvent[] }>(
+      `/calendars/${encodeURIComponent(calendarId)}/events`,
+      {
+        timeMin: timeMin.toISOString(),
+        timeMax: timeMax.toISOString(),
+        maxResults: String(maxResults),
+        singleEvents: "true",
+        orderBy: "startTime",
+      }
+    );
+    return data.items ?? [];
+  }
+
+  private async request<T>(
+    path: string,
+    params?: Record<string, string>
+  ): Promise<T> {
+    const url = new URL(`${CALENDAR_API_BASE}${path}`);
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+    }
+
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("Google Calendar API request timed out.")),
+        REST_TIMEOUT_MS
+      )
+    );
+
+    const fetchPromise = requestUrl({
+      url: url.toString(),
+      method: "GET",
+      headers: { Authorization: `Bearer ${this.accessToken}` },
+      throw: false,
+    }).then((response) => {
+      if (response.status < 200 || response.status >= 300) {
+        const message =
+          (response.json as { error?: { message?: string } })?.error?.message ??
+          `HTTP ${response.status}`;
+        throw new Error(`Google Calendar API error: ${message}`);
+      }
+      return response.json as T;
+    });
+
+    return Promise.race([fetchPromise, timeoutPromise]);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Unified CalendarService adapter
+// ---------------------------------------------------------------------------
+
+/**
+ * Unified interface over both iCal and REST API backends.
+ *
+ * Use the static factory methods to create an instance:
+ * ```ts
+ * const svc = CalendarService.fromIcal(settings.icalUrl);
+ * const svc = CalendarService.fromOAuth(accessToken, calendarId);
+ * ```
+ */
+export class CalendarService {
+  private readonly icalApi?: IcalCalendarApi;
+  private readonly restApi?: GoogleCalendarApi;
+  private readonly calendarId: string;
+
+  private constructor(
+    icalApi: IcalCalendarApi | undefined,
+    restApi: GoogleCalendarApi | undefined,
+    calendarId: string
+  ) {
+    this.icalApi = icalApi;
+    this.restApi = restApi;
+    this.calendarId = calendarId;
+  }
+
+  static fromIcal(url: string): CalendarService {
+    return new CalendarService(new IcalCalendarApi(url), undefined, "");
+  }
+
+  static fromOAuth(accessToken: string, calendarId: string): CalendarService {
+    return new CalendarService(
+      undefined,
+      new GoogleCalendarApi(accessToken),
+      calendarId || "primary"
+    );
+  }
+
+  async fetchAllEvents(): Promise<CalendarEvent[]> {
+    if (this.icalApi) return this.icalApi.fetchAllEvents();
+    return this.restApi!.listUpcomingEvents(this.calendarId, 2500, 365);
+  }
+
+  async listEventsInTimeWindow(timeMin: Date, timeMax: Date): Promise<CalendarEvent[]> {
+    if (this.icalApi) return this.icalApi.listEventsInTimeWindow(timeMin, timeMax);
+    return this.restApi!.listEventsInTimeWindow(this.calendarId, timeMin, timeMax);
+  }
+
+  async listUpcomingEvents(maxResults: number, daysAhead: number): Promise<CalendarEvent[]> {
+    if (this.icalApi) return this.icalApi.listUpcomingEvents(maxResults, daysAhead);
+    return this.restApi!.listUpcomingEvents(this.calendarId, maxResults, daysAhead);
   }
 }

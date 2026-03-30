@@ -2,14 +2,14 @@
  * @file main.ts
  * @description Entry point for the Google Calendar Note Integration plugin.
  *
- * This version uses the iCal protocol instead of the Google Calendar REST API.
- * Events are fetched directly from the user's Google Calendar "secret address"
- * iCal URL — no OAuth flow, no Google Cloud Console project, no API keys.
+ * Supports two authentication modes:
+ *   - iCal URL  — fetches from the Google Calendar secret iCal address
+ *   - OAuth 2.0 — fetches from the Google Calendar REST API with user tokens
  *
  * Responsibilities:
  *   - Register Obsidian commands and the ribbon icon.
- *   - Run a startup sweep and a recurring poll to auto-create meeting notes
- *     for events starting within the configured advance window.
+ *   - Run a startup sweep and a recurring poll to auto-create meeting notes.
+ *   - Manage OAuth token refresh transparently.
  *   - Apply the `selfEmail` setting to exclude the user's own attendee entry.
  *   - Expose the settings tab.
  */
@@ -20,7 +20,9 @@ import {
   DEFAULT_SETTINGS,
   GoogleCalendarSettingTab,
 } from "./settings";
-import { IcalCalendarApi, CalendarEvent } from "./calendarApi";
+import { CalendarService, CalendarEvent } from "./calendarApi";
+import { GoogleAuth } from "./googleAuth";
+import { encrypt, decrypt } from "./secureStorage";
 import { EventSuggestModal } from "./eventModal";
 import { createNoteFile } from "./noteCreator";
 
@@ -162,6 +164,64 @@ export default class GoogleCalendarPlugin extends Plugin {
   }
 
   // ---------------------------------------------------------------------------
+  // Auth helpers
+  // ---------------------------------------------------------------------------
+
+  /** Returns true when the plugin has enough configuration to fetch events. */
+  private isConfigured(): boolean {
+    if (this.settings.authMode === "oauth") {
+      return !!(
+        this.settings.clientId &&
+        this.settings.clientSecret &&
+        this.settings.refreshToken
+      );
+    }
+    return !!this.settings.icalUrl;
+  }
+
+  /**
+   * Returns a valid OAuth access token, refreshing it first if it expires
+   * within 60 seconds. Throws if the plugin is not authenticated.
+   * Public so that the settings tab Test button can call it directly.
+   */
+  async getValidAccessToken(): Promise<string> {
+    const needsRefresh =
+      !this.settings.accessToken ||
+      Date.now() > this.settings.tokenExpiry - 60_000;
+
+    if (!needsRefresh) return decrypt(this.settings.accessToken);
+
+    const refreshToken = decrypt(this.settings.refreshToken);
+    if (!refreshToken) {
+      throw new Error(
+        "Not authenticated. Please sign in via Settings → Google Calendar Note Integration."
+      );
+    }
+
+    const auth = new GoogleAuth(this.settings.clientId, this.settings.clientSecret);
+    const tokens = await auth.refreshAccessToken(refreshToken);
+    this.settings.accessToken = encrypt(tokens.access_token);
+    if (tokens.refresh_token) {
+      this.settings.refreshToken = encrypt(tokens.refresh_token);
+    }
+    this.settings.tokenExpiry = tokens.expiry_date;
+    await this.saveSettings();
+    return tokens.access_token;
+  }
+
+  /** Build the appropriate CalendarService for the current auth mode. */
+  private async getCalendarService(): Promise<CalendarService> {
+    if (this.settings.authMode === "oauth") {
+      const accessToken = await this.getValidAccessToken();
+      return CalendarService.fromOAuth(
+        accessToken,
+        this.settings.calendarId || "primary"
+      );
+    }
+    return CalendarService.fromIcal(this.settings.icalUrl);
+  }
+
+  // ---------------------------------------------------------------------------
   // Self-email helper
   // ---------------------------------------------------------------------------
 
@@ -197,7 +257,7 @@ export default class GoogleCalendarPlugin extends Plugin {
    * @param verbose When `true`, always shows a summary Notice on completion.
    */
   async autoCreateUpcomingNotes(verbose: boolean): Promise<void> {
-    if (!this.settings.icalUrl) return;
+    if (!this.isConfigured()) return;
 
     const now = new Date();
     const windowEnd = new Date(
@@ -206,8 +266,8 @@ export default class GoogleCalendarPlugin extends Plugin {
 
     let events: CalendarEvent[];
     try {
-      const api = new IcalCalendarApi(this.settings.icalUrl);
-      events = await api.listEventsInTimeWindow(now, windowEnd);
+      const svc = await this.getCalendarService();
+      events = await svc.listEventsInTimeWindow(now, windowEnd);
     } catch (err) {
       if (verbose) new Notice(`Google Calendar: ${safeErrorMessage(err)}`);
       return;
@@ -254,9 +314,9 @@ export default class GoogleCalendarPlugin extends Plugin {
    * choose which event to create a note for.
    */
   async pickEventAndCreateNote(): Promise<void> {
-    if (!this.settings.icalUrl) {
+    if (!this.isConfigured()) {
       new Notice(
-        "Google Calendar: Please configure your iCal URL in " +
+        "Google Calendar: Please configure your connection in " +
           "Settings → Google Calendar Note Integration."
       );
       return;
@@ -264,8 +324,8 @@ export default class GoogleCalendarPlugin extends Plugin {
 
     const loadingNotice = new Notice("Fetching upcoming events…", 0);
     try {
-      const api = new IcalCalendarApi(this.settings.icalUrl);
-      let events = await api.listUpcomingEvents(
+      const svc = await this.getCalendarService();
+      let events = await svc.listUpcomingEvents(
         this.settings.maxEvents,
         this.settings.daysAhead
       );
@@ -294,9 +354,9 @@ export default class GoogleCalendarPlugin extends Plugin {
    * showing the picker.
    */
   async createNoteForNextEvent(): Promise<void> {
-    if (!this.settings.icalUrl) {
+    if (!this.isConfigured()) {
       new Notice(
-        "Google Calendar: Please configure your iCal URL in " +
+        "Google Calendar: Please configure your connection in " +
           "Settings → Google Calendar Note Integration."
       );
       return;
@@ -304,8 +364,8 @@ export default class GoogleCalendarPlugin extends Plugin {
 
     const loadingNotice = new Notice("Fetching next event…", 0);
     try {
-      const api = new IcalCalendarApi(this.settings.icalUrl);
-      let events = await api.listUpcomingEvents(1, this.settings.daysAhead);
+      const svc = await this.getCalendarService();
+      let events = await svc.listUpcomingEvents(1, this.settings.daysAhead);
       loadingNotice.hide();
 
       if (events.length === 0) {
