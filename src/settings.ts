@@ -12,6 +12,7 @@
 import {
   AbstractInputSuggest,
   App,
+  Modal,
   Notice,
   PluginSettingTab,
   Setting,
@@ -458,13 +459,10 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
             button.setButtonText("Running…").setDisabled(true);
             try {
               const report = await runAppleCalendarDiagnostic();
-              // Show the full report in the console; surface a summary in a Notice
-              const lines = report.split("\n");
-              const summary = lines.slice(0, 12).join("\n");
-              new Notice(summary, 20000);
+              new DiagnosticModal(this.app, report).open();
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
-              new Notice(`Diagnostic error: ${msg.slice(0, 200)}`, 10000);
+              new DiagnosticModal(this.app, `Diagnostic error:\n\n${msg}`).open();
             } finally {
               button.setButtonText("Run Diagnostics").setDisabled(false);
             }
@@ -709,5 +707,54 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           button.setButtonText("Refresh").setDisabled(false);
         })
       );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostic result modal
+// ---------------------------------------------------------------------------
+
+class DiagnosticModal extends Modal {
+  private report: string;
+
+  constructor(app: App, report: string) {
+    super(app);
+    this.report = report;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.createEl("h2", { text: "Apple Calendar Diagnostic" });
+
+    const pre = contentEl.createEl("pre");
+    pre.setText(this.report);
+    Object.assign(pre.style, {
+      whiteSpace: "pre-wrap",
+      wordBreak: "break-word",
+      maxHeight: "60vh",
+      overflowY: "auto",
+      fontFamily: "var(--font-monospace)",
+      fontSize: "12px",
+      lineHeight: "1.5",
+      padding: "8px",
+      background: "var(--background-secondary)",
+      borderRadius: "4px",
+      userSelect: "text",
+    });
+
+    new Setting(contentEl)
+      .addButton((btn) =>
+        btn.setButtonText("Copy to Clipboard").onClick(async () => {
+          await navigator.clipboard.writeText(this.report);
+          new Notice("Diagnostic report copied to clipboard.");
+        })
+      )
+      .addButton((btn) =>
+        btn.setButtonText("Close").setCta().onClick(() => this.close())
+      );
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
   }
 }

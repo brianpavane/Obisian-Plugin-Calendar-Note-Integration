@@ -56,16 +56,18 @@ function extractConferenceFromText(text: string): CalendarEvent["conferenceData"
 /**
  * Build the JXA fetch-events script.
  *
- * Only safe integers are interpolated — never user strings.
+ * Only safe integers and a JSON-encoded string array are interpolated.
  *
- * @param daysBack   Days before today to start the window. 0 = today (no past events).
- *                   Clamped to [0, 30].
- * @param daysAhead  Days after today to end the window.
- *                   Clamped to [1, 365].
+ * @param daysBack        Days before today to start the window. Clamped [0,30].
+ * @param daysAhead       Days after today to end the window. Clamped [1,365].
+ * @param calendarFilter  Names of calendars to query. Empty = all calendars.
+ *                        Embedded as JSON — values come from Calendar.app itself.
  */
-function buildJxaFetchEvents(daysBack: number, daysAhead: number): string {
+function buildJxaFetchEvents(daysBack: number, daysAhead: number, calendarFilter: string[] = []): string {
   const safeDaysBack  = Math.max(0,   Math.min(30,  Math.floor(daysBack)));
   const safeDaysAhead = Math.max(1,   Math.min(365, Math.floor(daysAhead)));
+  // JSON.stringify is safe here: values are calendar names returned by Calendar.app
+  const filterJson    = JSON.stringify(calendarFilter);
 
   return `
 (function () {
@@ -73,6 +75,9 @@ function buildJxaFetchEvents(daysBack: number, daysAhead: number): string {
   var now = new Date();
   var windowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ${safeDaysBack});
   var windowEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ${safeDaysAhead});
+
+  // Calendar names to query. Empty array = all calendars (no filter).
+  var filterNames = ${filterJson};
 
   // Build a calendar ID → name lookup first (fast — no event data loaded).
   var calMap = {};
@@ -116,6 +121,8 @@ function buildJxaFetchEvents(daysBack: number, daysAhead: number): string {
   // ── Tier 2: per-calendar cal.eventsFrom(start, {to:end}) ─────────────────
   // Used when Tier 1 fails. Each calendar object is queried individually.
   // If a specific calendar also throws, Tier 3 is tried for that calendar.
+  // When filterNames is set, only matching calendars are queried — avoids
+  // iterating 10+ calendars when the user has selected only one.
   if (!tier1ok) {
     var cals = [];
     try { cals = app.calendars(); } catch (e) {}
@@ -124,6 +131,9 @@ function buildJxaFetchEvents(daysBack: number, daysAhead: number): string {
       var cId = "", cName = "";
       try { cId   = String(cal.id()   || ""); } catch (e) {}
       try { cName = String(cal.name() || ""); } catch (e) {}
+
+      // Skip calendars not in the active filter (avoids slow queries on unused calendars)
+      if (filterNames.length > 0 && filterNames.indexOf(cName) === -1) continue;
 
       var calEvts = null;
 
@@ -522,7 +532,7 @@ export class AppleCalendarApi {
     const t0 = Date.now();
     let json: string;
     try {
-      json = await runOsascript(buildJxaFetchEvents(this.daysBack, this.daysAhead));
+      json = await runOsascript(buildJxaFetchEvents(this.daysBack, this.daysAhead, this.calendarFilter));
     } catch (err) {
       console.error(`${tag} ✗ osascript failed after ${Date.now() - t0}ms:`, err);
       throw err;
