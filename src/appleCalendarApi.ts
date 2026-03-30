@@ -76,43 +76,53 @@ function buildJxaFetchEvents(daysBack: number): string {
     try { calName = cal.name();  } catch (e) {}
     try { calId   = cal.id();    } catch (e) {}
 
+    // cal.eventsFrom(start, {to: end}) asks Calendar.app to filter events by
+    // date range before returning them. This is far faster than cal.events()
+    // (which loads every historical event) for large Exchange / Google accounts.
+    var rangeEvents = [];
     try {
-      cal.events().forEach(function (evt) {
+      rangeEvents = cal.eventsFrom(windowStart, { to: windowEnd });
+    } catch (e) {
+      // Account type doesn't support eventsFrom — skip this calendar rather
+      // than falling back to cal.events() which may hang indefinitely.
+      return;
+    }
+
+    rangeEvents.forEach(function (evt) {
+      try {
+        var sd = new Date();
+        try { sd = evt.startDate(); } catch (e) {}
+
+        var item = {
+          uid: "", summary: "",
+          startDate: sd.toISOString(), endDate: sd.toISOString(),
+          allDayEvent: false, description: "", location: "",
+          calendarName: calName, calendarId: calId,
+          attendees: []
+        };
+
+        try { item.uid         = String(evt.uid()         || ""); } catch (e) {}
+        try { item.summary     = String(evt.summary()     || ""); } catch (e) {}
+        try { var ed = evt.endDate(); if (ed) item.endDate = ed.toISOString(); } catch (e) {}
+        try { item.allDayEvent = evt.allDayEvent() === true;                   } catch (e) {}
+        try { item.description = String(evt.description() || ""); } catch (e) {}
+        try { item.location    = String(evt.location()    || ""); } catch (e) {}
         try {
-          var sd = evt.startDate();
-          if (!sd || sd < windowStart || sd > windowEnd) return;
-
-          var item = {
-            uid: "", summary: "",
-            startDate: sd.toISOString(), endDate: sd.toISOString(),
-            allDayEvent: false, description: "", location: "",
-            calendarName: calName, calendarId: calId,
-            attendees: []
-          };
-
-          try { item.uid         = String(evt.uid()         || ""); } catch (e) {}
-          try { item.summary     = String(evt.summary()     || ""); } catch (e) {}
-          try { var ed = evt.endDate(); if (ed) item.endDate = ed.toISOString(); } catch (e) {}
-          try { item.allDayEvent = evt.allDayEvent() === true;       } catch (e) {}
-          try { item.description = String(evt.description() || ""); } catch (e) {}
-          try { item.location    = String(evt.location()    || ""); } catch (e) {}
-          try {
-            var atts = evt.attendees();
-            if (atts) {
-              item.attendees = atts.map(function (a) {
-                return {
-                  displayName: String(a.displayName()         || ""),
-                  address:     String(a.address()             || ""),
-                  status:      String(a.participationStatus() || "unknown")
-                };
-              });
-            }
-          } catch (e) {}
-
-          results.push(item);
+          var atts = evt.attendees();
+          if (atts) {
+            item.attendees = atts.map(function (a) {
+              return {
+                displayName: String(a.displayName()         || ""),
+                address:     String(a.address()             || ""),
+                status:      String(a.participationStatus() || "unknown")
+              };
+            });
+          }
         } catch (e) {}
-      });
-    } catch (e) {}
+
+        results.push(item);
+      } catch (e) {}
+    });
   });
 
   return JSON.stringify(results);
@@ -334,27 +344,42 @@ export async function runAppleCalendarDiagnostic(): Promise<string> {
     return lines.join("\n");
   }
 
-  // Step 3 — event fetch (the operation that normally hangs)
-  log(`Step 3: Fetching events (next 7 days, 30s timeout)…`);
-  log("  (This step may stall if a calendar account is unresponsive)");
-  const shortScript = buildJxaFetchEvents(0).replace(
-    // Replace the 365-day look-ahead with 7 days for a quick smoke-test
-    String(LOOKAHEAD_DAYS),
-    "7"
-  );
+  // Step 3 — per-calendar eventsFrom probe (safe: never loads all events)
+  log("Step 3: Probing each calendar with eventsFrom (next 7 days)…");
+  const probeScript = `
+(function(){
+  var app = Application("Calendar");
+  var now = new Date();
+  var s = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  var e = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7);
+  var results = [];
+  app.calendars().forEach(function(cal){
+    var name = "?";
+    try { name = cal.name(); } catch(e2){}
+    var count = -1, err = "";
+    try { count = cal.eventsFrom(s, { to: e }).length; }
+    catch(e2){ err = String(e2); }
+    results.push({ name: name, count: count, err: err });
+  });
+  return JSON.stringify(results);
+})();`.trim();
   try {
     const t0 = Date.now();
-    const json = await runOsascript(shortScript);
-    const raw = JSON.parse(json) as unknown[];
-    log(`  ✓ Received ${raw.length} event(s) in next 7 days (${Date.now() - t0}ms)`);
-    log("  Full 365-day fetch may be slower if any calendar has thousands of events.");
+    const json = await runOsascript(probeScript);
+    const rows = JSON.parse(json) as Array<{ name: string; count: number; err: string }>;
+    log(`  ✓ Probe completed in ${Date.now() - t0}ms:`);
+    rows.forEach((r) => {
+      if (r.err) {
+        log(`     "${r.name}" — eventsFrom NOT supported: ${r.err.slice(0, 80)}`);
+        log(`       → Uncheck this calendar; it will be skipped automatically.`);
+      } else {
+        log(`     "${r.name}" — ${r.count} event(s) in next 7 days ✓`);
+      }
+    });
   } catch (err) {
-    log(`  ✗ Event fetch failed or timed out: ${err instanceof Error ? err.message : String(err)}`);
-    log("  Likely cause: one of the calendars above is slow (Exchange/corporate account).");
-    log("  Fix: uncheck that calendar in the Apple Calendar settings to skip it.");
-    if (calNames.length > 0) {
-      log(`  Calendars to investigate: ${calNames.join(", ")}`);
-    }
+    log(`  ✗ Probe timed out: ${err instanceof Error ? err.message : String(err)}`);
+    log("  A calendar is unresponsive even to a short query.");
+    log("  Fix: uncheck all calendars one by one until the hang disappears.");
   }
 
   lines.push("", "Full log also visible in Obsidian developer console (Ctrl+Shift+I → Console).");
