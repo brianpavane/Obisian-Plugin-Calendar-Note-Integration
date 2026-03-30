@@ -186,13 +186,14 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
         .setDesc("Verify the iCal URL returns valid calendar data.")
         .addButton((button) =>
           button.setButtonText("Test").setCta().onClick(async () => {
-            if (!this.plugin.settings.icalUrl) {
+            const icalUrl = decrypt(this.plugin.settings.icalUrl);
+            if (!icalUrl) {
               new Notice("Please enter an iCal URL first.");
               return;
             }
             button.setButtonText("Testing…").setDisabled(true);
             try {
-              const api = new IcalCalendarApi(decrypt(this.plugin.settings.icalUrl));
+              const api = new IcalCalendarApi(icalUrl);
               const events = await api.fetchAllEvents();
               const msg =
                 events.length === 0

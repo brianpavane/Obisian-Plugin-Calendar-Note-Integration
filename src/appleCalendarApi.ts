@@ -156,14 +156,24 @@ interface RawJxaEvent {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Maximum time to wait for osascript to respond before aborting. */
+const OSASCRIPT_TIMEOUT_MS = 30_000;
+
 function runOsascript(script: string): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       "osascript",
       ["-l", "JavaScript", "-e", script],
-      { maxBuffer: MAX_OUTPUT_BYTES },
+      { maxBuffer: MAX_OUTPUT_BYTES, timeout: OSASCRIPT_TIMEOUT_MS },
       (err, stdout) => {
         if (err) {
+          if ((err as Error & { killed?: boolean }).killed) {
+            reject(new Error(
+              "Apple Calendar request timed out after 30 seconds. " +
+              "Calendar.app may be busy — try again in a moment."
+            ));
+            return;
+          }
           reject(new Error(
             err.message.includes("1743")
               ? "Calendar access denied. Go to System Settings → Privacy & Security → Calendars and allow Obsidian."

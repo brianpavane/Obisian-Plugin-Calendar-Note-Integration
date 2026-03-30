@@ -19,7 +19,7 @@ import { AppleCalendarApi } from "./appleCalendarApi";
 // Constants
 // ---------------------------------------------------------------------------
 
-const FETCH_TIMEOUT_MS = 15_000;
+const FETCH_TIMEOUT_MS = 10_000;
 const MAX_ICAL_BYTES = 10 * 1024 * 1024; // 10 MB
 const CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3";
 const REST_TIMEOUT_MS = 10_000;
@@ -29,6 +29,13 @@ const REST_TIMEOUT_MS = 10_000;
 // ---------------------------------------------------------------------------
 
 async function fetchIcalText(url: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<string> {
+  if (!url) {
+    throw new Error(
+      "iCal URL is empty. Please re-enter the URL in Settings — " +
+      "it may have failed to decrypt on this machine."
+    );
+  }
+
   const timeoutPromise = new Promise<never>((_, reject) =>
     setTimeout(
       () => reject(new Error(`iCal request timed out after ${timeoutMs / 1000} seconds.`)),
