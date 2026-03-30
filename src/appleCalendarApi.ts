@@ -63,6 +63,9 @@ function extractConferenceFromText(text: string): CalendarEvent["conferenceData"
  * @param calendarFilter  Names of calendars to query. Empty = all calendars.
  *                        Embedded as JSON — values come from Calendar.app itself.
  */
+/** Hard cap on events scanned in Tier 3 (cal.events() full-scan fallback). */
+const MAX_TIER3_SCAN = 5_000;
+
 function buildJxaFetchEvents(daysBack: number, daysAhead: number, calendarFilter: string[] = []): string {
   const safeDaysBack  = Math.max(0,   Math.min(30,  Math.floor(daysBack)));
   const safeDaysAhead = Math.max(1,   Math.min(365, Math.floor(daysAhead)));
@@ -118,12 +121,23 @@ function buildJxaFetchEvents(daysBack: number, daysAhead: number, calendarFilter
     tier1ok = true;
   } catch (e1) {}
 
-  // ── Tier 2: per-calendar cal.eventsFrom(start, {to:end}) ─────────────────
-  // Used when Tier 1 fails. Each calendar object is queried individually.
-  // If a specific calendar also throws, Tier 3 is tried for that calendar.
-  // When filterNames is set, only matching calendars are queried — avoids
-  // iterating 10+ calendars when the user has selected only one.
+  // ── Tiers 2 / 2.5 / 3: per-calendar fallback ─────────────────────────────
+  // Used when Tier 1 fails. Only calendars in filterNames are queried.
+  // Each calendar tries three progressively slower strategies:
+  //
+  //   Tier 2  — cal.eventsFrom(start, {to:end})
+  //             Fast server-side range query. Fails with "Can't convert types"
+  //             on some Exchange / Office 365 accounts.
+  //
+  //   Tier 2.5 — cal.events.whose({_and:[{startDate >= start},{startDate <= end}]})()
+  //             Predicate filter evaluated at the scripting-bridge level.
+  //             Works on many accounts where eventsFrom() fails.
+  //
+  //   Tier 3  — cal.events() + JS date filter (hard scan cap: ${MAX_TIER3_SCAN})
+  //             Loads every event then filters in JS. Slow on large calendars.
+  //             Capped to avoid an indefinite hang — partial results possible.
   if (!tier1ok) {
+    var MAX_SCAN = ${MAX_TIER3_SCAN};
     var cals = [];
     try { cals = app.calendars(); } catch (e) {}
     for (var ci = 0; ci < cals.length; ci++) {
@@ -132,25 +146,35 @@ function buildJxaFetchEvents(daysBack: number, daysAhead: number, calendarFilter
       try { cId   = String(cal.id()   || ""); } catch (e) {}
       try { cName = String(cal.name() || ""); } catch (e) {}
 
-      // Skip calendars not in the active filter (avoids slow queries on unused calendars)
+      // Skip calendars not in the active filter
       if (filterNames.length > 0 && filterNames.indexOf(cName) === -1) continue;
 
       var calEvts = null;
 
-      // Tier 2a: cal.eventsFrom
+      // Tier 2: cal.eventsFrom
       try {
         calEvts = cal.eventsFrom(windowStart, { to: windowEnd });
       } catch (e2) { calEvts = null; }
 
-      // Tier 2b (Tier 3): cal.events() with JS date filter
-      // Last resort — loads all events then filters in JS. Slower but
-      // universally compatible. The 30-second osascript timeout acts as
-      // a hard stop for calendars with very large histories.
+      // Tier 2.5: whose-predicate filter (works on accounts where eventsFrom fails)
+      if (calEvts === null) {
+        try {
+          calEvts = cal.events.whose({
+            _and: [
+              { startDate: { _greaterThanEquals: windowStart } },
+              { startDate: { _lessThanEquals:    windowEnd   } }
+            ]
+          })();
+        } catch (e25) { calEvts = null; }
+      }
+
+      // Tier 3: full scan with a hard cap to prevent indefinite hang
       if (calEvts === null) {
         calEvts = [];
         try {
           var allEvts = cal.events();
-          for (var j = 0; j < allEvts.length; j++) {
+          var scanLimit = Math.min(allEvts.length, MAX_SCAN);
+          for (var j = 0; j < scanLimit; j++) {
             try {
               var sd = allEvts[j].startDate();
               if (sd && sd >= windowStart && sd <= windowEnd) {
@@ -422,8 +446,9 @@ export async function runAppleCalendarDiagnostic(): Promise<string> {
     return lines.join("\n");
   }
 
-  // Step 3 — probe all three fetch tiers
-  log("Step 3: Probing fetch strategies (next 7 days)…");
+  // Step 3 — probe all fetch tiers per calendar
+  log("Step 3: Probing all fetch strategies per calendar (next 7 days)…");
+  log("  (Tier 1 = app.eventsFrom, Tier 2 = cal.eventsFrom, 2.5 = whose-predicate, 3 = full scan)");
   const probeScript = `
 (function(){
   var app = Application("Calendar");
@@ -434,48 +459,82 @@ export async function runAppleCalendarDiagnostic(): Promise<string> {
 
   // Tier 1: app.eventsFrom
   try {
-    var evts = app.eventsFrom(s, { to: e });
-    out.tier1 = evts.length;
+    out.tier1 = app.eventsFrom(s, { to: e }).length;
   } catch(ex) { out.tier1err = String(ex); }
 
-  // Tier 2: per-calendar cal.eventsFrom
+  // Per-calendar: probe Tier 2, 2.5, and event count for Tier 3 warning
   var cals = [];
   try { cals = app.calendars(); } catch(ex) {}
   var calResults = [];
   for (var i = 0; i < cals.length; i++) {
     var name = "?";
-    try { name = cals[i].name(); } catch(ex) {}
+    try { name = String(cals[i].name()); } catch(ex) {}
+    var r = { name: name };
+
+    // Tier 2: cal.eventsFrom
     try {
-      var n = cals[i].eventsFrom(s, { to: e }).length;
-      calResults.push({ name: name, count: n });
-    } catch(ex) {
-      calResults.push({ name: name, err: String(ex) });
+      r.t2count = cals[i].eventsFrom(s, { to: e }).length;
+    } catch(ex) { r.t2err = String(ex); }
+
+    // Tier 2.5: whose predicate (only test if Tier 2 failed)
+    if (r.t2err !== undefined) {
+      try {
+        r.t25count = cals[i].events.whose({
+          _and: [
+            { startDate: { _greaterThanEquals: s } },
+            { startDate: { _lessThanEquals:    e } }
+          ]
+        })().length;
+      } catch(ex) { r.t25err = String(ex); }
     }
+
+    // Report total event count so user knows if Tier 3 would be slow
+    if (r.t2err !== undefined && r.t25err !== undefined) {
+      try { r.totalEvents = cals[i].events.length; } catch(ex) { r.totalEvents = -1; }
+    }
+
+    calResults.push(r);
   }
-  out.tier2 = calResults;
+  out.cals = calResults;
   return JSON.stringify(out);
 })();`.trim();
   try {
     const t0 = Date.now();
     const json = await runOsascript(probeScript);
+    type CalResult = {
+      name: string;
+      t2count?: number; t2err?: string;
+      t25count?: number; t25err?: string;
+      totalEvents?: number;
+    };
     const r = JSON.parse(json) as {
       tier1?: number; tier1err?: string;
-      tier2?: Array<{ name: string; count?: number; err?: string }>;
+      cals?: CalResult[];
     };
     log(`  Completed in ${Date.now() - t0}ms`);
+
     if (r.tier1 !== undefined) {
-      log(`  Tier 1 (app.eventsFrom):  ✓ ${r.tier1} event(s)`);
+      log(`  Tier 1 (app.eventsFrom): ✓ ${r.tier1} event(s) — fastest path active`);
     } else {
-      log(`  Tier 1 (app.eventsFrom):  ✗ ${(r.tier1err ?? "failed").slice(0, 100)}`);
-      log(`    → Will fall back to per-calendar strategies`);
+      log(`  Tier 1 (app.eventsFrom): ✗ ${(r.tier1err ?? "failed").slice(0, 100)}`);
     }
-    if (r.tier2) {
-      r.tier2.forEach((c) => {
-        if (c.count !== undefined) {
-          log(`  Tier 2 "${c.name}": ✓ ${c.count} event(s)`);
-        } else {
-          log(`  Tier 2 "${c.name}": ✗ ${(c.err ?? "failed").slice(0, 80)}`);
-          log(`    → Will use cal.events() + JS date filter for this calendar`);
+
+    if (r.cals) {
+      r.cals.forEach((c) => {
+        if (c.t2count !== undefined) {
+          log(`  "${c.name}": Tier 2 ✓ (${c.t2count} events)`);
+        } else if (c.t25count !== undefined) {
+          log(`  "${c.name}": Tier 2 ✗ → Tier 2.5 (whose) ✓ (${c.t25count} events)`);
+        } else if (c.t2err !== undefined) {
+          const total = c.totalEvents ?? -1;
+          log(`  "${c.name}": Tier 2 ✗ → Tier 2.5 ✗ → will use Tier 3 (full scan)`);
+          if (total > 0) {
+            log(`    ⚠ ${total} total events to scan — may timeout if > ${MAX_TIER3_SCAN}`);
+          } else if (total < 0) {
+            log(`    ⚠ Could not read event count — Tier 3 may timeout`);
+          }
+          log(`    Tier 2 error: ${(c.t2err ?? "").slice(0, 80)}`);
+          log(`    Tier 2.5 error: ${(c.t25err ?? "").slice(0, 80)}`);
         }
       });
     }
