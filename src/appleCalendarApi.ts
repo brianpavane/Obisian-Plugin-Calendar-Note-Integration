@@ -271,7 +271,7 @@ function runOsascript(script: string): Promise<string> {
       "osascript",
       ["-l", "JavaScript", "-e", script],
       { maxBuffer: MAX_OUTPUT_BYTES, timeout: OSASCRIPT_TIMEOUT_MS },
-      (err, stdout) => {
+      (err, stdout, stderr) => {
         if (err) {
           if ((err as Error & { killed?: boolean }).killed) {
             reject(new Error(
@@ -280,11 +280,16 @@ function runOsascript(script: string): Promise<string> {
             ));
             return;
           }
+          // Use stderr for the meaningful error text — err.message includes the
+          // full command string (with the entire JXA script), which makes logs
+          // unreadable. stderr contains only the osascript execution error.
+          const raw = (stderr ?? "").trim() || err.message;
+          const clean = raw.split("\n").filter((l) => l.trim()).pop() ?? raw;
           reject(new Error(
-            err.message.includes("1743")
+            clean.includes("1743")
               ? "Calendar access denied. In System Settings → Privacy & Security → Calendars, " +
                 "set Obsidian to 'Full Calendar Access' (not 'Add Only')."
-              : `Apple Calendar error: ${err.message}`
+              : `Apple Calendar error: ${clean}`
           ));
           return;
         }
