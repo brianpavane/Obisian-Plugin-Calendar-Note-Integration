@@ -57,24 +57,38 @@ function extractConferenceFromText(text: string): CalendarEvent["conferenceData"
 const MAX_TIER3_SCAN = 1_000;
 
 // Shared JXA snippet for building one result item from an event object (variable `evt`).
+//
+// Uses evt.properties() to fetch all scalar fields in ONE IPC call instead of
+// 7+ individual getter calls. This is critical for calendars with recurring
+// events — each instance requires its own IPC round-trip per property, so
+// 300 events × 7 getters = 2100 calls vs. 300 × 1 = 300 with properties().
 const JXA_BUILD_ITEM = `
-      try { item.uid         = String(evt.uid()         || ""); } catch (e) {}
-      try { item.summary     = String(evt.summary()     || ""); } catch (e) {}
-      try { var sd = evt.startDate(); if (sd) item.startDate = sd.toISOString(); } catch (e) {}
-      try { var ed = evt.endDate();   if (ed) item.endDate   = ed.toISOString(); } catch (e) {}
-      try { item.allDayEvent = evt.allDayEvent() === true;                        } catch (e) {}
-      try { item.description = String(evt.description() || ""); } catch (e) {}
-      try { item.location    = String(evt.location()    || ""); } catch (e) {}
+      var p = {};
+      try { p = evt.properties(); } catch (ep) {}
+      try { item.uid         = String(p.uid         || ""); } catch (e) {}
+      try { item.summary     = String(p.summary     || ""); } catch (e) {}
+      try { if (p.startDate) item.startDate = p.startDate.toISOString(); } catch (e) {}
+      try { if (p.endDate)   item.endDate   = p.endDate.toISOString();   } catch (e) {}
+      try { item.allDayEvent = p.allDayEvent === true;                    } catch (e) {}
+      try { item.description = String(p.description || "");              } catch (e) {}
+      try { item.location    = String(p.location    || "");              } catch (e) {}
       try {
         var atts = evt.attendees();
-        if (atts) {
-          item.attendees = atts.map(function (a) {
-            return {
-              displayName: String(a.displayName()         || ""),
-              address:     String(a.address()             || ""),
-              status:      String(a.participationStatus() || "unknown")
-            };
-          });
+        if (atts && atts.length > 0) {
+          var maxAtts = Math.min(atts.length, 20);
+          var attList = [];
+          for (var ai = 0; ai < maxAtts; ai++) {
+            try {
+              var ap = {};
+              try { ap = atts[ai].properties(); } catch (e) {}
+              attList.push({
+                displayName: String(ap.displayName         || ""),
+                address:     String(ap.address             || ""),
+                status:      String(ap.participationStatus || "unknown")
+              });
+            } catch (e) {}
+          }
+          item.attendees = attList;
         }
       } catch (e) {}`.trimStart();
 
