@@ -23,6 +23,7 @@ import type { CalendarEvent, ResponseStatus } from "./icalParser";
 // ---------------------------------------------------------------------------
 
 const MAX_OUTPUT_BYTES = 5 * 1024 * 1024; // 5 MB
+const LOOKAHEAD_DAYS = 365;
 
 // ---------------------------------------------------------------------------
 // Conference URL patterns (mirrors icalParser.ts)
@@ -72,61 +73,82 @@ function buildJxaFetchEvents(daysBack: number, daysAhead: number): string {
   var now = new Date();
   var windowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ${safeDaysBack});
   var windowEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ${safeDaysAhead});
-  var results = [];
 
-  app.calendars().forEach(function (cal) {
-    var calName = "", calId = "";
-    try { calName = cal.name();  } catch (e) {}
-    try { calId   = cal.id();    } catch (e) {}
-
-    // cal.eventsFrom(start, {to: end}) asks Calendar.app to filter events by
-    // date range before returning them. This is far faster than cal.events()
-    // (which loads every historical event) for large Exchange / Google accounts.
-    var rangeEvents = [];
-    try {
-      rangeEvents = cal.eventsFrom(windowStart, { to: windowEnd });
-    } catch (e) {
-      // Account type doesn't support eventsFrom — skip this calendar rather
-      // than falling back to cal.events() which may hang indefinitely.
-      return;
-    }
-
-    rangeEvents.forEach(function (evt) {
-      try {
-        var sd = new Date();
-        try { sd = evt.startDate(); } catch (e) {}
-
-        var item = {
-          uid: "", summary: "",
-          startDate: sd.toISOString(), endDate: sd.toISOString(),
-          allDayEvent: false, description: "", location: "",
-          calendarName: calName, calendarId: calId,
-          attendees: []
-        };
-
-        try { item.uid         = String(evt.uid()         || ""); } catch (e) {}
-        try { item.summary     = String(evt.summary()     || ""); } catch (e) {}
-        try { var ed = evt.endDate(); if (ed) item.endDate = ed.toISOString(); } catch (e) {}
-        try { item.allDayEvent = evt.allDayEvent() === true;                   } catch (e) {}
-        try { item.description = String(evt.description() || ""); } catch (e) {}
-        try { item.location    = String(evt.location()    || ""); } catch (e) {}
-        try {
-          var atts = evt.attendees();
-          if (atts) {
-            item.attendees = atts.map(function (a) {
-              return {
-                displayName: String(a.displayName()         || ""),
-                address:     String(a.address()             || ""),
-                status:      String(a.participationStatus() || "unknown")
-              };
-            });
-          }
-        } catch (e) {}
-
-        results.push(item);
-      } catch (e) {}
+  // Build a calendar ID → name lookup first (fast — no event data loaded).
+  var calMap = {};
+  try {
+    app.calendars().forEach(function (cal) {
+      var id = "", name = "";
+      try { id   = String(cal.id()   || ""); } catch (e) {}
+      try { name = String(cal.name() || ""); } catch (e) {}
+      if (id) calMap[id] = name;
     });
-  });
+  } catch (e) {}
+
+  // Use app.eventsFrom(start, {to: end}) — the application-level API.
+  // Calendar.app executes this as a native date-range query (equivalent to
+  // CalDAV/Exchange server-side search), so it never loads every historical
+  // event from every calendar. This avoids the timeout caused by cal.events()
+  // or per-calendar eventsFrom(), which enumerate the full event store first.
+  var rawEvents = [];
+  try {
+    rawEvents = app.eventsFrom(windowStart, { to: windowEnd });
+  } catch (e) {
+    return JSON.stringify([]);
+  }
+
+  var results = [];
+  for (var i = 0; i < rawEvents.length; i++) {
+    try {
+      var evt = rawEvents[i];
+
+      // Determine the parent calendar from the event's JXA object specifier.
+      // Specifier format: event id "X" of calendar id "Y" of application "Calendar"
+      // The container property gives the enclosing calendar specifier.
+      var calName = "", calId = "";
+      try {
+        calId   = String(evt.container.id()   || "");
+        calName = String(evt.container.name() || "");
+      } catch (e1) {
+        try {
+          // Fallback: parse the calendar ID out of the specifier string.
+          var specStr = String(evt.specifier());
+          var m = specStr.match(/calendar id "([^"]+)"/);
+          if (m) { calId = m[1]; calName = calMap[calId] || ""; }
+        } catch (e2) {}
+      }
+
+      var item = {
+        uid: "", summary: "",
+        startDate: windowStart.toISOString(), endDate: windowStart.toISOString(),
+        allDayEvent: false, description: "", location: "",
+        calendarName: calName, calendarId: calId,
+        attendees: []
+      };
+
+      try { item.uid         = String(evt.uid()         || ""); } catch (e) {}
+      try { item.summary     = String(evt.summary()     || ""); } catch (e) {}
+      try { var sd = evt.startDate(); if (sd) item.startDate = sd.toISOString(); } catch (e) {}
+      try { var ed = evt.endDate();   if (ed) item.endDate   = ed.toISOString(); } catch (e) {}
+      try { item.allDayEvent = evt.allDayEvent() === true;                        } catch (e) {}
+      try { item.description = String(evt.description() || ""); } catch (e) {}
+      try { item.location    = String(evt.location()    || ""); } catch (e) {}
+      try {
+        var atts = evt.attendees();
+        if (atts) {
+          item.attendees = atts.map(function (a) {
+            return {
+              displayName: String(a.displayName()         || ""),
+              address:     String(a.address()             || ""),
+              status:      String(a.participationStatus() || "unknown")
+            };
+          });
+        }
+      } catch (e) {}
+
+      results.push(item);
+    } catch (e) {}
+  }
 
   return JSON.stringify(results);
 })();
@@ -333,12 +355,10 @@ export async function runAppleCalendarDiagnostic(): Promise<string> {
 
   // Step 2 — list calendars
   log("Step 2: Listing calendars…");
-  let calNames: string[] = [];
   try {
     const t0 = Date.now();
     const json = await runOsascript(JXA_LIST_CALENDARS);
     const cals = JSON.parse(json) as Array<{ name: string; id: string }>;
-    calNames = cals.map((c) => c.name).filter(Boolean);
     log(`  ✓ Found ${cals.length} calendar(s) in ${Date.now() - t0}ms:`);
     cals.forEach((c, i) => log(`     [${i}] "${c.name}"`));
   } catch (err) {
@@ -348,42 +368,29 @@ export async function runAppleCalendarDiagnostic(): Promise<string> {
     return lines.join("\n");
   }
 
-  // Step 3 — per-calendar eventsFrom probe (safe: never loads all events)
-  log("Step 3: Probing each calendar with eventsFrom (next 7 days)…");
+  // Step 3 — app.eventsFrom probe (next 7 days)
+  log("Step 3: Testing app.eventsFrom() (next 7 days)…");
   const probeScript = `
 (function(){
   var app = Application("Calendar");
   var now = new Date();
   var s = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   var e = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7);
-  var results = [];
-  app.calendars().forEach(function(cal){
-    var name = "?";
-    try { name = cal.name(); } catch(e2){}
-    var count = -1, err = "";
-    try { count = cal.eventsFrom(s, { to: e }).length; }
-    catch(e2){ err = String(e2); }
-    results.push({ name: name, count: count, err: err });
-  });
-  return JSON.stringify(results);
+  var evts = [];
+  try { evts = app.eventsFrom(s, { to: e }); } catch(ex) { return JSON.stringify({ err: String(ex) }); }
+  return JSON.stringify({ count: evts.length });
 })();`.trim();
   try {
     const t0 = Date.now();
     const json = await runOsascript(probeScript);
-    const rows = JSON.parse(json) as Array<{ name: string; count: number; err: string }>;
-    log(`  ✓ Probe completed in ${Date.now() - t0}ms:`);
-    rows.forEach((r) => {
-      if (r.err) {
-        log(`     "${r.name}" — eventsFrom NOT supported: ${r.err.slice(0, 80)}`);
-        log(`       → Uncheck this calendar; it will be skipped automatically.`);
-      } else {
-        log(`     "${r.name}" — ${r.count} event(s) in next 7 days ✓`);
-      }
-    });
+    const result = JSON.parse(json) as { count?: number; err?: string };
+    if (result.err) {
+      log(`  ✗ app.eventsFrom() failed: ${result.err.slice(0, 120)}`);
+    } else {
+      log(`  ✓ app.eventsFrom() returned ${result.count} event(s) in ${Date.now() - t0}ms`);
+    }
   } catch (err) {
     log(`  ✗ Probe timed out: ${err instanceof Error ? err.message : String(err)}`);
-    log("  A calendar is unresponsive even to a short query.");
-    log("  Fix: uncheck all calendars one by one until the hang disappears.");
   }
 
   lines.push("", "Full log also visible in Obsidian developer console (Ctrl+Shift+I → Console).");
