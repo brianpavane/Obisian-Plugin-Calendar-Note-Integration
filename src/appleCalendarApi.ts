@@ -54,7 +54,7 @@ function extractConferenceFromText(text: string): CalendarEvent["conferenceData"
 // ---------------------------------------------------------------------------
 
 /** Hard cap on events scanned in Tier 3 (cal.events() full-scan fallback). */
-const MAX_TIER3_SCAN = 5_000;
+const MAX_TIER3_SCAN = 1_000;
 
 // Shared JXA snippet for building one result item from an event object (variable `evt`).
 const JXA_BUILD_ITEM = `
@@ -187,13 +187,16 @@ function buildJxaPerCalendarScript(calName: string, daysBack: number, daysAhead:
     } catch (e25) { calEvts = null; }
   }
 
-  // Tier 3: full scan with hard cap
+  // Tier 3: scan the most recent ${MAX_TIER3_SCAN} events only.
+  // Calendar.app returns events oldest-first, so we skip old history and
+  // start near the end of the list where upcoming events are found.
   if (calEvts === null) {
     calEvts = [];
     try {
       var allEvts = targetCal.events();
-      var limit = Math.min(allEvts.length, ${MAX_TIER3_SCAN});
-      for (var j = 0; j < limit; j++) {
+      var total   = allEvts.length;
+      var scanFrom = Math.max(0, total - ${MAX_TIER3_SCAN});
+      for (var j = scanFrom; j < total; j++) {
         try {
           var evtSd = allEvts[j].startDate();
           if (evtSd && evtSd >= windowStart && evtSd <= windowEnd) {
@@ -519,7 +522,7 @@ export async function runAppleCalendarDiagnostic(): Promise<string> {
           const total = c.totalEvents ?? -1;
           log(`  "${c.name}": Tier 2 ✗ → Tier 2.5 ✗ → will use Tier 3 (full scan)`);
           if (total > 0) {
-            log(`    ⚠ ${total} total events to scan — may timeout if > ${MAX_TIER3_SCAN}`);
+            log(`    ⚠ ${total} total events — will scan newest ${MAX_TIER3_SCAN} only`);
           } else if (total < 0) {
             log(`    ⚠ Could not read event count — Tier 3 may timeout`);
           }
