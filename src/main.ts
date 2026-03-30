@@ -172,11 +172,12 @@ export default class GoogleCalendarPlugin extends Plugin {
     if (this.settings.authMode === "oauth") {
       return !!(
         this.settings.clientId &&
-        this.settings.clientSecret &&
+        decrypt(this.settings.clientSecret) &&
         this.settings.refreshToken
       );
     }
-    return !!this.settings.icalUrl;
+    if (this.settings.authMode === "apple") return true;
+    return !!decrypt(this.settings.icalUrl);
   }
 
   /**
@@ -198,7 +199,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       );
     }
 
-    const auth = new GoogleAuth(this.settings.clientId, this.settings.clientSecret);
+    const auth = new GoogleAuth(this.settings.clientId, decrypt(this.settings.clientSecret));
     const tokens = await auth.refreshAccessToken(refreshToken);
     this.settings.accessToken = encrypt(tokens.access_token);
     if (tokens.refresh_token) {
@@ -209,8 +210,11 @@ export default class GoogleCalendarPlugin extends Plugin {
     return tokens.access_token;
   }
 
-  /** Build the appropriate CalendarService for the current auth mode. */
-  private async getCalendarService(): Promise<CalendarService> {
+  /**
+   * Build the appropriate CalendarService for the current auth mode.
+   * Public so that the settings tab Test buttons can call it directly.
+   */
+  async getCalendarService(): Promise<CalendarService> {
     if (this.settings.authMode === "oauth") {
       const accessToken = await this.getValidAccessToken();
       return CalendarService.fromOAuth(
@@ -218,7 +222,14 @@ export default class GoogleCalendarPlugin extends Plugin {
         this.settings.calendarId || "primary"
       );
     }
-    return CalendarService.fromIcal(this.settings.icalUrl);
+    if (this.settings.authMode === "apple") {
+      const calendarFilter = this.settings.appleCalendars
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      return CalendarService.fromApple(calendarFilter);
+    }
+    return CalendarService.fromIcal(decrypt(this.settings.icalUrl));
   }
 
   // ---------------------------------------------------------------------------

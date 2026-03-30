@@ -15,6 +15,7 @@ export { CalendarEvent, ResponseStatus } from "./icalParser";
 import { CalendarEvent } from "./icalParser";
 import { parseIcal } from "./icalParser";
 import { requestUrl } from "obsidian";
+import { AppleCalendarApi } from "./appleCalendarApi";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -22,6 +23,9 @@ import { requestUrl } from "obsidian";
 
 /** Milliseconds before an iCal fetch is aborted. */
 const FETCH_TIMEOUT_MS = 15_000;
+
+/** Maximum iCal response size. Feeds larger than this are rejected to prevent OOM. */
+const MAX_ICAL_BYTES = 10 * 1024 * 1024; // 10 MB
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -62,6 +66,13 @@ async function fetchIcalText(
         );
       }
       const text = response.text;
+      // Reject feeds that are unreasonably large before parsing.
+      if (text.length > MAX_ICAL_BYTES) {
+        throw new Error(
+          `iCal feed is too large (${(text.length / 1024 / 1024).toFixed(1)} MB). ` +
+          `Maximum allowed size is ${MAX_ICAL_BYTES / 1024 / 1024} MB.`
+        );
+      }
       // Validate that we received iCal content, not an HTML login page or error.
       const trimmed = text.trimStart();
       if (!trimmed.startsWith("BEGIN:VCALENDAR")) {
@@ -343,42 +354,58 @@ export class GoogleCalendarApi {
 export class CalendarService {
   private readonly icalApi?: IcalCalendarApi;
   private readonly restApi?: GoogleCalendarApi;
+  private readonly appleApi?: AppleCalendarApi;
   private readonly calendarId: string;
 
   private constructor(
     icalApi: IcalCalendarApi | undefined,
     restApi: GoogleCalendarApi | undefined,
+    appleApi: AppleCalendarApi | undefined,
     calendarId: string
   ) {
     this.icalApi = icalApi;
     this.restApi = restApi;
+    this.appleApi = appleApi;
     this.calendarId = calendarId;
   }
 
   static fromIcal(url: string): CalendarService {
-    return new CalendarService(new IcalCalendarApi(url), undefined, "");
+    return new CalendarService(new IcalCalendarApi(url), undefined, undefined, "");
   }
 
   static fromOAuth(accessToken: string, calendarId: string): CalendarService {
     return new CalendarService(
       undefined,
       new GoogleCalendarApi(accessToken),
+      undefined,
       calendarId || "primary"
     );
   }
 
+  static fromApple(calendarFilter: string[] = []): CalendarService {
+    return new CalendarService(
+      undefined,
+      undefined,
+      new AppleCalendarApi(calendarFilter),
+      ""
+    );
+  }
+
   async fetchAllEvents(): Promise<CalendarEvent[]> {
-    if (this.icalApi) return this.icalApi.fetchAllEvents();
+    if (this.appleApi) return this.appleApi.fetchAllEvents();
+    if (this.icalApi)  return this.icalApi.fetchAllEvents();
     return this.restApi!.listUpcomingEvents(this.calendarId, 2500, 365);
   }
 
   async listEventsInTimeWindow(timeMin: Date, timeMax: Date): Promise<CalendarEvent[]> {
-    if (this.icalApi) return this.icalApi.listEventsInTimeWindow(timeMin, timeMax);
+    if (this.appleApi) return this.appleApi.listEventsInTimeWindow(timeMin, timeMax);
+    if (this.icalApi)  return this.icalApi.listEventsInTimeWindow(timeMin, timeMax);
     return this.restApi!.listEventsInTimeWindow(this.calendarId, timeMin, timeMax);
   }
 
   async listUpcomingEvents(maxResults: number, daysAhead: number): Promise<CalendarEvent[]> {
-    if (this.icalApi) return this.icalApi.listUpcomingEvents(maxResults, daysAhead);
+    if (this.appleApi) return this.appleApi.listUpcomingEvents(maxResults, daysAhead);
+    if (this.icalApi)  return this.icalApi.listUpcomingEvents(maxResults, daysAhead);
     return this.restApi!.listUpcomingEvents(this.calendarId, maxResults, daysAhead);
   }
 }

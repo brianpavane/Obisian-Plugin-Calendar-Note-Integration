@@ -13,6 +13,7 @@ import type GoogleCalendarPlugin from "./main";
 import { IcalCalendarApi, GoogleCalendarApi } from "./calendarApi";
 import { GoogleAuth } from "./googleAuth";
 import { encrypt, decrypt } from "./secureStorage";
+import { listAppleCalendars } from "./appleCalendarApi";
 
 // ---------------------------------------------------------------------------
 // Settings interface & defaults
@@ -28,7 +29,7 @@ export interface GoogleCalendarSettings {
   // -- Auth mode ------------------------------------------------------------
 
   /** Which connection method is active. */
-  authMode: "ical" | "oauth";
+  authMode: "ical" | "oauth" | "apple";
 
   // -- iCal connection (authMode === "ical") ---------------------------------
 
@@ -56,11 +57,17 @@ export interface GoogleCalendarSettings {
   tokenExpiry: number;
 
   /**
-   * Which Google Calendar to fetch events from.
+   * Which Google Calendar to fetch events from (OAuth mode).
    * Use "primary" for the user's default calendar, or paste a calendar ID
    * from Google Calendar → Settings → [calendar] → Integrate calendar.
    */
   calendarId: string;
+
+  /**
+   * Comma-separated Apple Calendar names to include (Apple mode).
+   * Leave empty to include all calendars visible in Calendar.app.
+   */
+  appleCalendars: string;
 
   // -- Personal identity -----------------------------------------------------
 
@@ -102,6 +109,7 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   refreshToken: "",
   tokenExpiry: 0,
   calendarId: "primary",
+  appleCalendars: "",
   selfEmail: "",
   noteFolder: "Meeting Notes",
   hoursInAdvance: 12,
@@ -181,6 +189,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
       .addDropdown((drop) => {
         drop.addOption("ical", "iCal URL (personal / public calendars)");
         drop.addOption("oauth", "Google Account (organization / work calendars)");
+        drop.addOption("apple", "Apple Calendar — macOS only (no auth required)");
         drop.setValue(this.plugin.settings.authMode);
         drop.onChange(async (value: string) => {
           this.plugin.settings.authMode = value as "ical" | "oauth";
@@ -204,7 +213,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
       ol.createEl("li", { text: 'Copy the "Secret address in iCal format" URL (ends in .ics).' });
       ol.createEl("li", { text: "Paste it below and click Test." });
 
-      const isConnected = !!this.plugin.settings.icalUrl;
+      const isConnected = !!decrypt(this.plugin.settings.icalUrl);
       const statusEl = containerEl.createEl("p", {
         text: isConnected ? "✓ iCal URL configured" : "✗ No iCal URL configured",
       });
@@ -219,9 +228,10 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           text.inputEl.style.width = "100%";
           text
             .setPlaceholder("https://calendar.google.com/calendar/ical/…/basic.ics")
-            .setValue(this.plugin.settings.icalUrl)
+            .setValue(decrypt(this.plugin.settings.icalUrl))
             .onChange(async (value) => {
-              this.plugin.settings.icalUrl = value.trim();
+              // Encrypt at rest; decrypt() handles both encrypted and legacy plaintext
+              this.plugin.settings.icalUrl = encrypt(value.trim());
               await this.plugin.saveSettings();
             });
         });
@@ -240,7 +250,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
               }
               button.setButtonText("Testing…").setDisabled(true);
               try {
-                const api = new IcalCalendarApi(this.plugin.settings.icalUrl);
+                const api = new IcalCalendarApi(decrypt(this.plugin.settings.icalUrl));
                 const events = await api.fetchAllEvents();
                 const msg =
                   events.length === 0
@@ -307,9 +317,10 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           text.inputEl.style.width = "100%";
           text
             .setPlaceholder("GOCSPX-…")
-            .setValue(this.plugin.settings.clientSecret)
+            .setValue(decrypt(this.plugin.settings.clientSecret))
             .onChange(async (value) => {
-              this.plugin.settings.clientSecret = value.trim();
+              // Encrypt at rest; decrypt() handles both encrypted and legacy plaintext
+              this.plugin.settings.clientSecret = encrypt(value.trim());
               await this.plugin.saveSettings();
             });
         });
@@ -326,7 +337,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
               .setButtonText("Sign in with Google")
               .setCta()
               .onClick(async () => {
-                if (!this.plugin.settings.clientId || !this.plugin.settings.clientSecret) {
+                if (!this.plugin.settings.clientId || !decrypt(this.plugin.settings.clientSecret)) {
                   new Notice("Please enter your Client ID and Client Secret first.");
                   return;
                 }
@@ -334,7 +345,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
                 try {
                   const auth = new GoogleAuth(
                     this.plugin.settings.clientId,
-                    this.plugin.settings.clientSecret
+                    decrypt(this.plugin.settings.clientSecret)
                   );
                   const tokens = await auth.authorize();
                   this.plugin.settings.accessToken = encrypt(tokens.access_token);
@@ -362,7 +373,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
                 try {
                   const auth = new GoogleAuth(
                     this.plugin.settings.clientId,
-                    this.plugin.settings.clientSecret
+                    decrypt(this.plugin.settings.clientSecret)
                   );
                   const token =
                     decrypt(this.plugin.settings.accessToken) ||
@@ -424,6 +435,90 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
               })
           );
       }
+    }
+
+    // ----- Apple Calendar Section (authMode === "apple") --------------------
+    if (this.plugin.settings.authMode === "apple") {
+      containerEl.createEl("h3", { text: "Apple Calendar" });
+
+      containerEl.createEl("p", {
+        text: "Events are read directly from Calendar.app on this Mac. " +
+          "All accounts already synced in Calendar.app (Google, iCloud, Exchange) " +
+          "are available — no extra authentication needed.",
+      });
+      containerEl.createEl("p", {
+        text: "On first use, macOS will ask: \"Obsidian wants to access your calendars.\" " +
+          "Click Allow. The permission is saved in System Settings → Privacy & Security → Calendars.",
+      });
+
+      new Setting(containerEl)
+        .setName("Calendar filter")
+        .setDesc(
+          "Comma-separated list of calendar names to include (e.g. \"Work, Personal\"). " +
+            "Leave empty to include all calendars visible in Calendar.app."
+        )
+        .addText((text) => {
+          text.inputEl.style.width = "100%";
+          text
+            .setPlaceholder("Work, Personal  (empty = all calendars)")
+            .setValue(this.plugin.settings.appleCalendars)
+            .onChange(async (value) => {
+              this.plugin.settings.appleCalendars = value;
+              await this.plugin.saveSettings();
+            });
+        });
+
+      new Setting(containerEl)
+        .setName("Show available calendars")
+        .setDesc("List all calendar names visible in Calendar.app to help fill in the filter above.")
+        .addButton((button) =>
+          button
+            .setButtonText("List Calendars")
+            .onClick(async () => {
+              button.setButtonText("Loading…").setDisabled(true);
+              try {
+                const calendars = await listAppleCalendars();
+                if (calendars.length === 0) {
+                  new Notice("No calendars found. Check that Calendar.app has calendars and Obsidian has permission.", 6000);
+                } else {
+                  new Notice(
+                    "Available calendars:\n" + calendars.map((c) => `• ${c.name}`).join("\n"),
+                    10000
+                  );
+                }
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                new Notice(`Failed to list calendars: ${msg.slice(0, 200)}`, 8000);
+              } finally {
+                button.setButtonText("List Calendars").setDisabled(false);
+              }
+            })
+        );
+
+      new Setting(containerEl)
+        .setName("Test connection")
+        .setDesc("Fetch upcoming events from Calendar.app to verify access is working.")
+        .addButton((button) =>
+          button
+            .setButtonText("Test")
+            .setCta()
+            .onClick(async () => {
+              button.setButtonText("Testing…").setDisabled(true);
+              try {
+                const svc = await this.plugin.getCalendarService();
+                const events = await svc.fetchAllEvents();
+                new Notice(
+                  `✓ Connected! Found ${events.length} upcoming event${events.length !== 1 ? "s" : ""} in Calendar.app.`,
+                  5000
+                );
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                new Notice(`Connection failed: ${msg.slice(0, 300)}`, 10000);
+              } finally {
+                button.setButtonText("Test").setDisabled(false);
+              }
+            })
+        );
     }
 
     // ----- Personal Settings ------------------------------------------------
