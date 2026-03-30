@@ -222,6 +222,15 @@ export default class GoogleCalendarPlugin extends Plugin {
   }
 
   // ---------------------------------------------------------------------------
+  // All-day event filter
+  // ---------------------------------------------------------------------------
+
+  /** Remove all-day events — they have only `start.date`, no `start.dateTime`. */
+  private filterOutAllDay(events: CalendarEvent[]): CalendarEvent[] {
+    return events.filter((e) => !!e.start.dateTime);
+  }
+
+  // ---------------------------------------------------------------------------
   // Self-email helper
   // ---------------------------------------------------------------------------
 
@@ -263,6 +272,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       return;
     }
 
+    events = this.filterOutAllDay(events);
     events = this.markSelfAttendee(events);
     const options = this.getNoteOptions();
 
@@ -312,6 +322,8 @@ export default class GoogleCalendarPlugin extends Plugin {
       );
       loadingNotice.hide();
 
+      events = this.filterOutAllDay(events);
+
       if (events.length === 0) {
         new Notice(
           `No upcoming events found in the next ${this.settings.daysAhead} ` +
@@ -342,8 +354,13 @@ export default class GoogleCalendarPlugin extends Plugin {
     const loadingNotice = new Notice("Fetching next event…", 0);
     try {
       const svc = await this.getCalendarService();
-      let events = await svc.listUpcomingEvents(1, this.settings.daysAhead);
+      let events = await svc.listUpcomingEvents(
+        this.settings.maxEvents,
+        this.settings.daysAhead
+      );
       loadingNotice.hide();
+
+      events = this.filterOutAllDay(events);
 
       if (events.length === 0) {
         new Notice("No upcoming events found.");
