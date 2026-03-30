@@ -22,7 +22,7 @@ import type GoogleCalendarPlugin from "./main";
 import { IcalCalendarApi, GoogleCalendarApi } from "./calendarApi";
 import { GoogleAuth } from "./googleAuth";
 import { encrypt, decrypt } from "./secureStorage";
-import { listAppleCalendars } from "./appleCalendarApi";
+import { listAppleCalendars, runAppleCalendarDiagnostic } from "./appleCalendarApi";
 
 // ---------------------------------------------------------------------------
 // Settings interface & defaults
@@ -444,6 +444,31 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
                 });
             });
         });
+
+      new Setting(containerEl)
+        .setName("Run diagnostics")
+        .setDesc(
+          "Three-step check: JXA execution → list calendars → short event fetch. " +
+          "Results are shown here and also logged in detail to the developer console " +
+          "(Ctrl+Shift+I → Console tab). Run this first if Test hangs."
+        )
+        .addButton((button) =>
+          button.setButtonText("Run Diagnostics").onClick(async () => {
+            button.setButtonText("Running…").setDisabled(true);
+            try {
+              const report = await runAppleCalendarDiagnostic();
+              // Show the full report in the console; surface a summary in a Notice
+              const lines = report.split("\n");
+              const summary = lines.slice(0, 12).join("\n");
+              new Notice(summary, 20000);
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              new Notice(`Diagnostic error: ${msg.slice(0, 200)}`, 10000);
+            } finally {
+              button.setButtonText("Run Diagnostics").setDisabled(false);
+            }
+          })
+        );
 
       new Setting(containerEl)
         .setName("Test connection")

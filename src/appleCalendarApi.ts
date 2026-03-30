@@ -292,6 +292,75 @@ export interface AppleCalendar {
   id: string;
 }
 
+/**
+ * Three-step diagnostic for Apple Calendar access.
+ * Safe to run independently of the main fetch — each step has its own timeout.
+ * Results are also logged to the developer console (Ctrl+Shift+I → Console).
+ */
+export async function runAppleCalendarDiagnostic(): Promise<string> {
+  const lines: string[] = ["Apple Calendar Diagnostic", "─".repeat(40)];
+
+  const log = (line: string) => {
+    lines.push(line);
+    console.log("[GoogleCalendarNotes] DIAG", line);
+  };
+
+  // Step 1 — basic JXA execution
+  log("Step 1: Testing JXA execution…");
+  try {
+    const t0 = Date.now();
+    const result = await runOsascript(`(function(){ return "jxa-ok"; })()`);
+    log(`  ✓ JXA works (${Date.now() - t0}ms): ${result}`);
+  } catch (err) {
+    log(`  ✗ JXA failed: ${err instanceof Error ? err.message : String(err)}`);
+    lines.push("", "Cannot reach Calendar.app at all. Check osascript is available.");
+    return lines.join("\n");
+  }
+
+  // Step 2 — list calendars
+  log("Step 2: Listing calendars…");
+  let calNames: string[] = [];
+  try {
+    const t0 = Date.now();
+    const json = await runOsascript(JXA_LIST_CALENDARS);
+    const cals = JSON.parse(json) as Array<{ name: string; id: string }>;
+    calNames = cals.map((c) => c.name).filter(Boolean);
+    log(`  ✓ Found ${cals.length} calendar(s) in ${Date.now() - t0}ms:`);
+    cals.forEach((c, i) => log(`     [${i}] "${c.name}"`));
+  } catch (err) {
+    log(`  ✗ Failed: ${err instanceof Error ? err.message : String(err)}`);
+    lines.push("", "Cannot list calendars. Verify Obsidian has Calendars permission in");
+    lines.push("System Settings → Privacy & Security → Calendars.");
+    return lines.join("\n");
+  }
+
+  // Step 3 — event fetch (the operation that normally hangs)
+  log(`Step 3: Fetching events (next 7 days, 30s timeout)…`);
+  log("  (This step may stall if a calendar account is unresponsive)");
+  const shortScript = buildJxaFetchEvents(0).replace(
+    // Replace the 365-day look-ahead with 7 days for a quick smoke-test
+    String(LOOKAHEAD_DAYS),
+    "7"
+  );
+  try {
+    const t0 = Date.now();
+    const json = await runOsascript(shortScript);
+    const raw = JSON.parse(json) as unknown[];
+    log(`  ✓ Received ${raw.length} event(s) in next 7 days (${Date.now() - t0}ms)`);
+    log("  Full 365-day fetch may be slower if any calendar has thousands of events.");
+  } catch (err) {
+    log(`  ✗ Event fetch failed or timed out: ${err instanceof Error ? err.message : String(err)}`);
+    log("  Likely cause: one of the calendars above is slow (Exchange/corporate account).");
+    log("  Fix: uncheck that calendar in the Apple Calendar settings to skip it.");
+    if (calNames.length > 0) {
+      log(`  Calendars to investigate: ${calNames.join(", ")}`);
+    }
+  }
+
+  lines.push("", "Full log also visible in Obsidian developer console (Ctrl+Shift+I → Console).");
+  return lines.join("\n");
+}
+
 export async function listAppleCalendars(): Promise<AppleCalendar[]> {
   const json = await runOsascript(JXA_LIST_CALENDARS);
   let raw: unknown;
@@ -325,15 +394,26 @@ export class AppleCalendarApi {
   }
 
   async fetchAllEvents(): Promise<CalendarEvent[]> {
-    const script = buildJxaFetchEvents(this.daysBack);
-    const json = await runOsascript(script);
+    const tag = "[GoogleCalendarNotes] Apple Calendar";
+    const filter = this.calendarFilter.length > 0
+      ? `filter: [${this.calendarFilter.join(", ")}]`
+      : "filter: all calendars";
+    console.log(`${tag} fetchAllEvents() — ${filter}, daysBack=${this.daysBack}`);
+
+    console.log(`${tag} → running osascript (timeout ${OSASCRIPT_TIMEOUT_MS / 1000}s)…`);
+    const t0 = Date.now();
+    let json: string;
+    try {
+      json = await runOsascript(buildJxaFetchEvents(this.daysBack));
+    } catch (err) {
+      console.error(`${tag} ✗ osascript failed after ${Date.now() - t0}ms:`, err);
+      throw err;
+    }
+    console.log(`${tag} ✓ osascript returned ${json.length} bytes in ${Date.now() - t0}ms`);
+
+    console.log(`${tag} → parsing JSON…`);
     const events = parseJxaEvents(json, this.calendarFilter);
-    console.log(
-      `[GoogleCalendarNotes] Apple Calendar: fetched ${events.length} events` +
-      (this.calendarFilter.length > 0
-        ? ` from calendars: ${this.calendarFilter.join(", ")}`
-        : " from all calendars")
-    );
+    console.log(`${tag} ✓ parsed ${events.length} event(s)`);
     return events;
   }
 
