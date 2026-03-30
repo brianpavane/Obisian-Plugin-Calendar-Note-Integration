@@ -374,8 +374,9 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           "are available — no extra authentication needed.",
       });
       containerEl.createEl("p", {
-        text: 'On first use, macOS will ask: "Obsidian wants to access your calendars." ' +
-          "Click Allow. The permission is saved in System Settings → Privacy & Security → Calendars.",
+        text: "Required permission: System Settings → Privacy & Security → Calendars → " +
+          "set Obsidian to Full Calendar Access (not Add Only). " +
+          "Add Only access cannot read events and will cause timeouts.",
       });
 
       containerEl.createEl("h4", { text: "Calendar Selection" });
@@ -393,8 +394,8 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
 
           if (calendars.length === 0) {
             calContainer.createEl("p", {
-              text: "No calendars found. Check that Calendar.app has calendars and that " +
-                "Obsidian has permission in System Settings → Privacy & Security → Calendars.",
+              text: "No calendars found. Ensure Obsidian is set to Full Calendar Access " +
+                "(not Add Only) in System Settings → Privacy & Security → Calendars.",
             });
             return;
           }

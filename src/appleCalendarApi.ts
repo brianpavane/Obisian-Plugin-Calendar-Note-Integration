@@ -189,7 +189,8 @@ function runOsascript(script: string): Promise<string> {
           }
           reject(new Error(
             err.message.includes("1743")
-              ? "Calendar access denied. Go to System Settings → Privacy & Security → Calendars and allow Obsidian."
+              ? "Calendar access denied. In System Settings → Privacy & Security → Calendars, " +
+                "set Obsidian to 'Full Calendar Access' (not 'Add Only')."
               : `Apple Calendar error: ${err.message}`
           ));
           return;

@@ -218,7 +218,7 @@ Use this to read from Calendar.app on macOS. All accounts already synced in Cale
 3. The plugin loads your available calendars automatically. Use the checkboxes to select which calendars to include. Leave all checked (or uncheck all) to include every calendar.
 4. Click **Test** to verify Obsidian can read your events.
 
-> **macOS permission:** On first use, macOS shows a dialog: *"Obsidian wants to access your calendars."* Click **Allow**. The permission is saved in **System Settings → Privacy & Security → Calendars**.
+> **macOS permission — important:** Go to **System Settings → Privacy & Security → Calendars** and set Obsidian to **Full Calendar Access**. "Add Only" access cannot read events and will cause timeouts or return no results.
 
 ---
 
@@ -478,7 +478,7 @@ The access token may have been revoked. Click **Disconnect** then **Sign in with
 
 ### Apple Calendar: "Calendar access denied"
 
-Go to **System Settings → Privacy & Security → Calendars** and toggle Obsidian to **Allow**.
+Go to **System Settings → Privacy & Security → Calendars** and set Obsidian to **Full Calendar Access** (not "Add Only"). "Add Only" cannot read events and causes timeouts.
 
 ### Apple Calendar: "No calendars found"
 
