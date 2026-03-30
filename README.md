@@ -12,14 +12,16 @@ Notes are pre-populated with the event's existing agenda/description and include
 
 1. [Features](#features)
 2. [Example Note](#example-note)
-3. [Setup](#setup)
-4. [Usage](#usage)
-5. [Configuration Reference](#configuration-reference)
-6. [Note Template Anatomy](#note-template-anatomy)
-7. [Security Model](#security-model)
-8. [Architecture](#architecture)
-9. [Development](#development)
-10. [Troubleshooting](#troubleshooting)
+3. [Installation](#installation)
+4. [Upgrading](#upgrading)
+5. [Setup](#setup)
+6. [Usage](#usage)
+7. [Configuration Reference](#configuration-reference)
+8. [Note Template Anatomy](#note-template-anatomy)
+9. [Security Model](#security-model)
+10. [Architecture](#architecture)
+11. [Development](#development)
+12. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -58,6 +60,7 @@ conference_platform: "Google Meet"
 
 **Date:** Monday, March 30, 2026
 **Time:** 10:00 AM – 11:00 AM
+**Duration:** 1h
 **Location:** Conference Room B
 **Google Meet:** [Join meeting](https://meet.google.com/xxx-yyy-zzz)
 **Organizer:** Alice Smith
@@ -106,6 +109,115 @@ conference_platform: "Google Meet"
 
 ---
 
+## Installation
+
+There are three ways to install the plugin, in order of ease.
+
+### Option A — BRAT (recommended for beta users)
+
+[BRAT](https://github.com/TfTHacker/obsidian42-brat) (Beta Reviewers Auto-update Tool) lets you install and auto-update plugins directly from GitHub without manual file management.
+
+1. Install and enable the **Obsidian42 - BRAT** plugin from the Obsidian Community Plugins list.
+2. Open **Settings → BRAT → Add Beta plugin**.
+3. Enter the repository URL:
+   ```
+   https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration
+   ```
+4. Click **Add Plugin**. BRAT downloads the latest release automatically.
+5. Enable **Google Calendar Note Integration** in **Settings → Community Plugins**.
+
+BRAT can also auto-update the plugin when a new release is published — enable **Auto-update plugins at startup** in BRAT settings.
+
+---
+
+### Option B — Manual installation from a GitHub release
+
+1. Go to the [Releases page](https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration/releases) and download the **latest release assets**:
+   - `main.js`
+   - `manifest.json`
+   - `styles.css`
+
+2. In your vault, create the plugin folder if it doesn't exist:
+   ```
+   <vault>/.obsidian/plugins/obsidian-google-calendar-notes/
+   ```
+
+3. Copy the three downloaded files into that folder.
+
+4. In Obsidian, open **Settings → Community Plugins**, click the refresh icon, then enable **Google Calendar Note Integration**.
+
+> **Tip:** You can find your vault folder by opening **Settings → About → Open vault folder** in Obsidian.
+
+---
+
+### Option C — Build from source
+
+Use this approach if you want the latest unreleased code, or if you are contributing to the plugin.
+
+**Prerequisites:** Node.js 18+ and npm.
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration.git
+cd Obisian-Plugin-Calendar-Note-Integration
+
+# 2. Install dependencies
+npm install
+
+# 3. Build the production bundle
+npm run build
+
+# 4. Copy the build output into your vault
+cp main.js manifest.json styles.css \
+  "/path/to/your/vault/.obsidian/plugins/obsidian-google-calendar-notes/"
+```
+
+5. Enable the plugin in **Settings → Community Plugins**.
+
+---
+
+## Upgrading
+
+### Upgrading with BRAT
+
+If you installed via BRAT, run **Settings → BRAT → Check for updates** (or enable auto-update) — BRAT handles everything.
+
+### Upgrading a manual installation
+
+1. Go to the [Releases page](https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration/releases) and download the latest release assets:
+   - `main.js`
+   - `manifest.json`
+   - `styles.css`
+
+2. Copy and overwrite the existing files in your vault's plugin folder:
+   ```
+   <vault>/.obsidian/plugins/obsidian-google-calendar-notes/
+   ```
+
+3. Reload the plugin: **Settings → Community Plugins → Disable**, then **Enable** again (or restart Obsidian).
+
+> **Your `data.json` is preserved** — settings and tokens are never overwritten by an upgrade.
+
+> **Token re-encryption:** Version 1.1.0 introduced at-rest encryption for OAuth tokens. On the first launch after upgrading from 1.0.0, tokens are read as legacy plaintext and automatically re-encrypted when settings are next saved. No manual action is required.
+
+### Upgrading a source build
+
+```bash
+# Pull the latest changes
+git pull origin main
+
+# Re-build
+npm run build
+
+# Copy updated files to your vault
+cp main.js manifest.json styles.css \
+  "/path/to/your/vault/.obsidian/plugins/obsidian-google-calendar-notes/"
+```
+
+Then reload the plugin in Obsidian as described above.
+
+---
+
 ## Setup
 
 ### Step 1 — Create Google Cloud credentials
@@ -120,19 +232,7 @@ conference_platform: "Google Meet"
 
 ### Step 2 — Install the plugin
 
-**From source** (until published to the Obsidian community plugins list):
-
-```bash
-# Build
-npm install
-npm run build
-
-# Copy to your vault
-cp main.js manifest.json styles.css \
-  /path/to/vault/.obsidian/plugins/obsidian-google-calendar-notes/
-```
-
-Then enable the plugin in **Settings → Community Plugins**.
+See the [Installation](#installation) section above for all install methods (BRAT, manual release download, or source build).
 
 ### Step 3 — Authenticate
 
@@ -219,12 +319,13 @@ Every generated note has the following structure:
 
 ```
 YAML Frontmatter
-  title, date, calendar_event_id, location?, attendees?, conference_platform?
+  title, date, calendar_event_id, location?, attendees?, duration?, conference_platform?
 
 # Event Title
 
 **Date:**      Long-form date  (e.g. Monday, March 30, 2026)
 **Time:**      Time range       (e.g. 10:00 AM – 11:00 AM, or "All day")
+**Duration:**  Length of meeting (e.g. 1h 30m — timed events only)
 **Location:**  Physical location (if present in the event)
 **<Platform>:** [Join meeting](<url>)  (if a video link is present)
 **Organizer:** Name / email    (if present)
@@ -362,6 +463,34 @@ npm run dev
 npm run build
 ```
 
+### Versioning
+
+The plugin uses [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`).
+**Bump the version before every release** using the helper scripts — they update `manifest.json`, `package.json`, and `versions.json` in one step:
+
+```bash
+# Patch bump: bug fixes, no new features  →  e.g. 1.1.0 → 1.1.1
+npm run version:patch
+
+# Minor bump: new features, backwards-compatible  →  e.g. 1.1.0 → 1.2.0
+npm run version:minor
+
+# Major bump: breaking changes  →  e.g. 1.1.0 → 2.0.0
+npm run version:major
+```
+
+After bumping, update `CHANGELOG.md` with a summary of changes, then build and commit:
+
+```bash
+npm run build
+git add manifest.json versions.json package.json CHANGELOG.md main.js
+git commit -m "Release vX.Y.Z"
+git tag vX.Y.Z
+git push origin main --tags
+```
+
+GitHub users watching the repository will receive a release notification. BRAT users will be offered the upgrade automatically on the next Obsidian startup.
+
 ### Installing the dev build
 
 Copy the build output into your vault's plugin folder:
@@ -383,9 +512,13 @@ Then use **Settings → Community Plugins → Reload plugins** (or restart Obsid
 | `src/calendarApi.ts` | Google Calendar API v3 client |
 | `src/noteCreator.ts` | Markdown note builder + vault file writer |
 | `src/eventModal.ts` | `FuzzySuggestModal` for the event picker |
+| `src/secureStorage.ts` | Electron `safeStorage` wrapper for at-rest encryption |
 | `styles.css` | Plugin CSS (settings tab, event picker suggestions) |
 | `manifest.json` | Obsidian plugin manifest |
+| `versions.json` | Maps plugin versions → minimum Obsidian app versions |
+| `CHANGELOG.md` | Release history |
 | `esbuild.config.mjs` | esbuild bundler configuration |
+| `version-bump.mjs` | Version bump script (updates manifest, package, versions) |
 | `tsconfig.json` | TypeScript compiler configuration |
 | `versions.json` | Maps plugin versions to minimum Obsidian versions |
 

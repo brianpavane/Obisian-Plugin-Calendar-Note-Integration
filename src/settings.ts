@@ -231,8 +231,9 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
               new Notice("Successfully authenticated with Google!");
               this.display(); // refresh the tab to show the new auth status
             } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
               new Notice(
-                `Authentication failed: ${(e as Error).message}`
+                `Authentication failed: ${msg.replace(/[\r\n]+/g, " ").slice(0, 200)}`
               );
               button.setButtonText("Authenticate").setDisabled(false);
             }
@@ -374,6 +375,32 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.pollIntervalMinutes = value;
             await this.plugin.saveSettings();
+          })
+      );
+
+    // ----- Manual Refresh ---------------------------------------------------
+    containerEl.createEl("h3", { text: "Manual Refresh" });
+
+    new Setting(containerEl)
+      .setName("Refresh now")
+      .setDesc(
+        `Immediately fetch events starting within the next ${this.plugin.settings.hoursInAdvance} hour${this.plugin.settings.hoursInAdvance !== 1 ? "s" : ""} ` +
+          "and create any missing notes. Equivalent to waiting for the next scheduled poll."
+      )
+      .addButton((button) =>
+        button
+          .setButtonText("Refresh")
+          .setCta()
+          .onClick(async () => {
+            if (!this.plugin.settings.accessToken) {
+              new Notice(
+                "Google Calendar: Please authenticate before refreshing."
+              );
+              return;
+            }
+            button.setButtonText("Refreshing…").setDisabled(true);
+            await this.plugin.autoCreateUpcomingNotes(true);
+            button.setButtonText("Refresh").setDisabled(false);
           })
       );
   }

@@ -208,6 +208,23 @@ function formatIsoDate(isoDateOrDateTime: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Format a duration in milliseconds as a short human-readable string.
+ *
+ * @example formatDuration(5400000) → "1h 30m"
+ * @example formatDuration(1800000) → "30m"
+ * @example formatDuration(3600000) → "1h"
+ */
+function formatDuration(ms: number): string {
+  if (ms <= 0) return "0m";
+  const totalMinutes = Math.round(ms / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${minutes}m`;
+  if (minutes === 0) return `${hours}h`;
+  return `${hours}h ${minutes}m`;
+}
+
 /** Timing data derived from a calendar event. */
 interface EventTiming {
   /** Human-readable date, e.g. "Monday, March 30, 2026". */
@@ -216,6 +233,8 @@ interface EventTiming {
   timeRange: string;
   /** ISO date for YAML frontmatter, e.g. "2026-03-30". */
   dateIso: string;
+  /** Human-readable duration, e.g. "1h 30m" or "All day". */
+  duration: string;
 }
 
 /**
@@ -231,16 +250,19 @@ function getEventTiming(event: CalendarEvent): EventTiming {
       dateLong: formatDateLong(event.start.date + "T12:00:00"),
       timeRange: "All day",
       dateIso: event.start.date,
+      duration: "All day",
     };
   }
 
   // Fall back to the current time when dateTime is absent (malformed event).
   const startDt = event.start.dateTime ?? new Date().toISOString();
   const endDt = event.end.dateTime ?? startDt;
+  const durationMs = new Date(endDt).getTime() - new Date(startDt).getTime();
   return {
     dateLong: formatDateLong(startDt),
     timeRange: `${formatTime(startDt)} – ${formatTime(endDt)}`,
     dateIso: formatIsoDate(startDt),
+    duration: formatDuration(durationMs),
   };
 }
 
@@ -434,6 +456,10 @@ export function createNoteContent(event: CalendarEvent): string {
       );
     });
   }
+  if (!event.start.date) {
+    // Only timed events have a meaningful duration field.
+    frontmatterLines.push(`duration: "${escapeYaml(timing.duration)}"`);
+  }
   if (event.conferenceData?.conferenceSolution?.name) {
     frontmatterLines.push(
       `conference_platform: "${escapeYaml(platform)}"`
@@ -452,6 +478,7 @@ export function createNoteContent(event: CalendarEvent): string {
     "",
     `**Date:** ${timing.dateLong}`,
     `**Time:** ${timing.timeRange}`,
+    ...(event.start.date ? [] : [`**Duration:** ${timing.duration}`]),
   ];
 
   if (location) {
