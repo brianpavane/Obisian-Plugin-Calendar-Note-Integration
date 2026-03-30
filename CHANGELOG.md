@@ -7,6 +7,74 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [5.2.0] – 2026-03-30
+
+### Added
+- **Configurable timeout per calendar** — new setting in Settings → Apple Calendar → Advanced. Range 15–120 seconds (default 30 s). Increase for large Exchange or Office 365 calendars that timeout during fetching. The timeout error message now cites the actual value and links to Settings.
+- **Skip full-scan fallback (Tier 3) toggle** — new setting in Settings → Apple Calendar → Advanced. When enabled, calendars that fail Tier 2 and Tier 2.5 are skipped entirely instead of running a slow full-event scan. Prevents one large calendar from blocking other calendars' results.
+- **Per-tier timing in console logs** — each per-calendar fetch now logs elapsed milliseconds for every tier attempted (`t2ms`, `t2.5ms`, `t3ms`) so slow steps can be identified immediately from the developer console.
+
+### Changed
+- Apple Calendar fetch log now includes `timeout` and `skipTier3` values at the start of every `fetchAllEvents()` call for easier debugging.
+- Total-failure error message for timed-out calendars now references the configured timeout value and directs users to the new Advanced settings.
+
+---
+
+## [5.1.0] – 2026-03-30
+
+### Added
+- **Per-calendar osascript isolation** — each calendar is now queried in a separate `osascript` process with its own 30-second timeout. A hung or slow calendar no longer blocks other calendars from returning results. Partial results are returned whenever at least one calendar succeeds.
+- **Tier 2.5 — `cal.events.whose()` predicate** — added a third fetch strategy between `cal.eventsFrom()` (Tier 2) and the full scan (Tier 3). The `whose` predicate filters events server-side inside Calendar.app without loading all events into memory, fixing the "Can't convert types" error on Exchange calendars.
+- **`evt.properties()` batch reads** — instead of 7+ individual IPC calls per event (`evt.startDate()`, `evt.summary()`, etc.), all scalar fields are now fetched in a single `properties()` call. For calendars with many recurring events, this reduces IPC round-trips by ~7×, directly addressing the most common cause of timeouts.
+- **Attendee batch reads** — attendee properties are fetched via `atts[i].properties()` (one call per attendee instead of three), capped at 20 attendees per event.
+
+### Changed
+- Tier 3 full-scan cap reduced from 5 000 to **1 000 events**. Scan starts from the newest events first (`total - 1000` index forward) so upcoming events are always captured. Previously the scan started from the oldest end, missing all future events on large calendars.
+- `runOsascript` error reporting switched from `err.message` (which contained the entire JXA script text) to `stderr` only, extracting the last meaningful error line. Startup console log no longer dumps the full JXA script on Tier 1 failure.
+- Diagnostic dialog replaced with a scrollable `Modal` (was a `Notice` toast). The modal includes a **Copy to Clipboard** button and auto-sizes to 60 vh.
+
+---
+
+## [5.0.0] – 2026-03-30
+
+### Added
+- **Apple Calendar support** via JavaScript for Automation (JXA / `osascript`). Reads events directly from Calendar.app on macOS — no API keys, OAuth, or network access required. All accounts already synced in Calendar.app (Google, iCloud, Exchange, Office 365) are available automatically.
+- Three-tier fetch strategy with automatic fallback:
+  - **Tier 1** — `app.eventsFrom()` single application-level call (fastest)
+  - **Tier 2** — `cal.eventsFrom()` per-calendar call
+  - **Tier 3** — `cal.events()` full scan with JS date filter (compatibility fallback)
+- **Calendar selection checkboxes** — settings UI lists all Calendar.app calendars with per-calendar toggles. Only selected calendars are queried; uncheck all to include every calendar.
+- **All-day event filtering** — all-day events are excluded from note creation (only timed events get notes).
+- **Run Diagnostics button** — three-step check: JXA execution → list calendars → per-calendar fetch strategy probe. Reports which tier each calendar uses, event counts, and any errors.
+- **Conference link detection** for Apple Calendar events — Google Meet, Zoom, and Microsoft Teams URLs are extracted from event descriptions and included in notes (same as Google Calendar / iCal modes).
+- `runAppleCalendarDiagnostic()` exported from `appleCalendarApi.ts` for use in the settings UI.
+
+### Security
+- JXA script templates interpolate only validated integers (`daysBack`, `daysAhead`) and calendar names via `JSON.stringify()` — user strings are never interpolated raw.
+- Apple Calendar output capped at 5 MB before `JSON.parse`.
+- `execFile` (not `exec`) is used so no shell expansion occurs.
+
+---
+
+## [4.0.0] – 2026-03-30
+
+### Added
+- **Google Account (OAuth 2.0) mode restored** alongside iCal URL mode.
+- Three authentication modes selectable from a single dropdown: **iCal URL**, **Google Account**, **Apple Calendar**.
+- `CalendarService` unified adapter wrapping all three backends with a common interface (`fetchAllEvents`, `listEventsInTimeWindow`, `listUpcomingEvents`).
+- Shared `CalendarEvent` / `ResponseStatus` types across all backends.
+
+---
+
+## [2.1.0] – 2026-03-30
+
+### Added
+- Initial Apple Calendar (macOS) integration via JXA — proof-of-concept single-call fetch.
+- `AppleCalendarApi` class in `appleCalendarApi.ts`.
+- macOS-only flag set in `manifest.json` (`isDesktopOnly: true`).
+
+---
+
 ## [1.2.0] – 2026-03-30  *(ical branch)*
 
 ### Changed — Breaking

@@ -220,6 +220,19 @@ Use this to read from Calendar.app on macOS. All accounts already synced in Cale
 
 > **macOS permission — important:** Go to **System Settings → Privacy & Security → Calendars** and set Obsidian to **Full Calendar Access**. "Add Only" access cannot read events and will cause timeouts or return no results.
 
+#### Advanced options
+
+If you have a large Exchange or Office 365 calendar that causes timeouts, expand the **Advanced** section below the Test button:
+
+| Option | Default | Description |
+|---|---|---|
+| **Timeout per calendar** | 30 s | Increase to 60–90 s for large Exchange calendars with thousands of recurring events |
+| **Skip full-scan fallback (Tier 3)** | Off | Prevent slow calendars from blocking other results — skip the full-scan if fast strategies fail |
+
+#### Running diagnostics
+
+Click **Run Diagnostics** to run a three-step check that identifies exactly which fetch strategy each calendar uses and where slowdowns occur. Results appear in a scrollable dialog and are also logged to the developer console (**Ctrl+Shift+I → Console**).
+
 ---
 
 ## Usage
@@ -291,7 +304,26 @@ All settings are in **Settings → Google Calendar Note Integration**.
 | Setting | Description |
 |---|---|
 | **Calendar checkboxes** | Select which Calendar.app calendars to include. Uncheck all to include every calendar. |
+| **Run Diagnostics** | Three-step check: JXA execution → list calendars → per-calendar fetch strategy probe. Shows which tier each calendar uses and logs timing detail to the developer console. |
 | **Test** | Verify Obsidian can read events from Calendar.app |
+
+#### Apple Calendar — Advanced
+
+| Setting | Default | Range | Description |
+|---|---|---|---|
+| **Timeout per calendar (seconds)** | `30` | 15–120 s | How long to wait for Calendar.app per calendar before giving up. Increase for large Exchange or Office 365 calendars. |
+| **Skip full-scan fallback (Tier 3)** | Off | — | When on, calendars that fail the fast fetch strategies are skipped instead of running a slow full event scan. Results from other calendars are still returned. |
+
+#### How Apple Calendar fetches events (fetch tiers)
+
+The plugin tries three strategies in order, moving to the next only if the previous fails:
+
+| Tier | Method | Notes |
+|---|---|---|
+| **1** | `app.eventsFrom()` | Single call — fastest; not supported on all Calendar.app versions |
+| **2** | `cal.eventsFrom()` | Per-calendar call — works for most accounts |
+| **2.5** | `cal.events.whose()` | Predicate filter — fallback for Exchange calendars |
+| **3** | Full scan (newest 1 000 events) | Last resort — can be slow on large calendars; disable with Skip Tier 3 |
 
 ### Personal Settings
 
@@ -483,6 +515,18 @@ Go to **System Settings → Privacy & Security → Calendars** and set Obsidian 
 ### Apple Calendar: "No calendars found"
 
 Ensure Calendar.app is open, has at least one account configured, and that Obsidian has calendar permission.
+
+### Apple Calendar: request times out on a large Exchange/Office 365 calendar
+
+1. Click **Run Diagnostics** to see which fetch tier the calendar uses.
+2. Go to **Settings → Apple Calendar → Advanced** and increase **Timeout per calendar** to **60** or **90 seconds**.
+3. Make sure Calendar.app has finished its initial sync — open Calendar.app and wait for the spinner in the bottom status bar to stop before retrying.
+4. If the calendar still times out after a generous timeout, enable **Skip full-scan fallback (Tier 3)**. This skips that calendar entirely and returns events from your other (faster) calendars instead.
+5. Check the developer console (**Ctrl+Shift+I → Console**) for per-tier timing (`t2ms`, `t2.5ms`, `t3ms`) to see exactly where time is spent.
+
+### Apple Calendar: events missing from a specific calendar
+
+Run **Diagnostics** and check the tier reported for that calendar. If it falls to Tier 3 (full scan), only the newest 1 000 events are scanned — events further back in history will not appear.
 
 ### Notes are not created automatically
 
