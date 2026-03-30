@@ -1,12 +1,17 @@
 /**
  * @file settings.ts
  * @description Plugin settings interface, defaults, and the Obsidian settings
- * tab UI for Google Calendar Note Integration.
+ * tab UI for Google Calendar Note Integration (iCal mode).
+ *
+ * This version replaces the previous OAuth-based settings (clientId,
+ * clientSecret, tokens) with a single iCal URL — the "Secret address in
+ * iCal format" from Google Calendar. No Google Cloud Console project or
+ * API credentials are required.
  */
 
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type GoogleCalendarPlugin from "./main";
-import { GoogleAuth } from "./googleAuth";
+import { IcalCalendarApi } from "./calendarApi";
 
 // ---------------------------------------------------------------------------
 // Settings interface & defaults
@@ -15,48 +20,30 @@ import { GoogleAuth } from "./googleAuth";
 /**
  * All persisted configuration for the plugin.
  *
- * Stored by Obsidian in `.obsidian/plugins/obsidian-google-calendar-notes/data.json`.
- * Token fields are stored in plaintext — this is standard practice for
- * Obsidian plugins and is acceptable because the file is only readable by
- * the local user account.
+ * Stored by Obsidian in:
+ * `.obsidian/plugins/obsidian-google-calendar-notes/data.json`
  */
 export interface GoogleCalendarSettings {
-  // -- Google API credentials ------------------------------------------------
-
-  /** OAuth 2.0 Client ID from Google Cloud Console. */
-  clientId: string;
-  /** OAuth 2.0 Client Secret from Google Cloud Console. */
-  clientSecret: string;
-
-  // -- Token storage (managed by the plugin, not user-facing) ----------------
-
-  /** Current short-lived access token. Refreshed automatically. */
-  accessToken: string;
-  /** Long-lived refresh token used to obtain new access tokens. */
-  refreshToken: string;
-  /** Unix timestamp (ms) at which `accessToken` expires. */
-  tokenExpiry: number;
-
-  // -- Calendar options ------------------------------------------------------
+  // -- Calendar connection ---------------------------------------------------
 
   /**
-   * Calendar ID to fetch events from.
-   * Use `"primary"` for the user's default calendar, or a specific
-   * calendar email address / opaque ID.
+   * Google Calendar "Secret address in iCal format".
+   * Found in Google Calendar → Settings → [calendar] → Integrate calendar.
+   * Treat this URL as a password: it grants read access to your calendar
+   * without requiring sign-in. It is stored in plaintext in data.json but
+   * only provides read-only access.
    */
-  calendarId: string;
+  icalUrl: string;
+
+  // -- Personal identity -----------------------------------------------------
 
   /**
-   * How many days ahead to search when showing the event picker.
-   * Range: 1–30.
+   * The user's own Google account email address (lowercase).
+   * When set, the matching attendee entry is hidden from the generated
+   * attendees table so you don't appear as a participant in your own notes.
+   * Optional — leave blank to show all attendees including yourself.
    */
-  daysAhead: number;
-
-  /**
-   * Maximum number of events to display in the picker.
-   * Range: 1–50.
-   */
-  maxEvents: number;
+  selfEmail: string;
 
   // -- Note options ----------------------------------------------------------
 
@@ -79,25 +66,34 @@ export interface GoogleCalendarSettings {
    * Range: 5–120.
    */
   pollIntervalMinutes: number;
+
+  // -- Event picker options --------------------------------------------------
+
+  /**
+   * How many days ahead to search when showing the event picker.
+   * Range: 1–30.
+   */
+  daysAhead: number;
+
+  /**
+   * Maximum number of events to display in the picker.
+   * Range: 1–50.
+   */
+  maxEvents: number;
 }
 
 /**
  * Default values applied when the plugin is first installed or when a setting
- * key is absent from the stored data (e.g. after a plugin update adds a new
- * setting).
+ * key is absent (e.g. after an upgrade that adds a new setting).
  */
 export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
-  clientId: "",
-  clientSecret: "",
-  accessToken: "",
-  refreshToken: "",
-  tokenExpiry: 0,
-  calendarId: "primary",
-  daysAhead: 7,
-  maxEvents: 20,
+  icalUrl: "",
+  selfEmail: "",
   noteFolder: "Meeting Notes",
   hoursInAdvance: 12,
   pollIntervalMinutes: 30,
+  daysAhead: 7,
+  maxEvents: 20,
 };
 
 // ---------------------------------------------------------------------------
@@ -108,9 +104,11 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
  * Renders the plugin settings page inside Obsidian's Settings modal.
  *
  * Sections:
- *   1. Google API Credentials — Client ID, Client Secret, Auth button
- *   2. Calendar Settings      — Calendar ID, days ahead, max events
- *   3. Note Settings          — Folder, hours in advance, poll interval
+ *   1. Google Calendar Connection — iCal URL, test button
+ *   2. Personal Settings          — self email
+ *   3. Note Settings              — folder, hours in advance, poll interval
+ *   4. Calendar View              — days ahead, max events
+ *   5. Manual Refresh             — immediate poll trigger
  */
 export class GoogleCalendarSettingTab extends PluginSettingTab {
   plugin: GoogleCalendarPlugin;
@@ -120,207 +118,105 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
-  /**
-   * (Re-)render the settings tab.
-   * Called by Obsidian when the tab is opened and by the plugin after
-   * the authentication state changes (to update the auth status indicator).
-   */
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
 
     containerEl.createEl("h2", { text: "Google Calendar Note Integration" });
 
-    // ----- Setup instructions -----------------------------------------------
-    const instructions = containerEl.createEl("div", {
-      cls: "gcal-instructions",
-    });
-    instructions.createEl("p", {
-      text: "To connect this plugin to Google Calendar you need an OAuth 2.0 client credential from Google Cloud Console.",
-    });
-    const ol = instructions.createEl("ol");
-    ol.createEl("li", {
-      text: "Go to console.cloud.google.com and create or select a project.",
-    });
-    ol.createEl("li", {
-      text: 'Enable the "Google Calendar API" for your project.',
-    });
-    ol.createEl("li", {
-      text: 'Under "Credentials", create an OAuth 2.0 Client ID — choose "Desktop app" as the application type.',
-    });
-    ol.createEl("li", {
-      text: "Paste the Client ID and Client Secret into the fields below, then click Authenticate.",
-    });
+    // ----- Google Calendar Connection ---------------------------------------
+    containerEl.createEl("h3", { text: "Google Calendar Connection" });
 
-    // ----- Google API Credentials -------------------------------------------
-    containerEl.createEl("h3", { text: "Google API Credentials" });
+    const helpDiv = containerEl.createEl("div", { cls: "gcal-instructions" });
+    helpDiv.createEl("p", {
+      text: "Connect using your Google Calendar's private iCal URL — no API keys or Google Cloud setup required.",
+    });
+    const ol = helpDiv.createEl("ol");
+    ol.createEl("li", { text: "Open Google Calendar in your browser (calendar.google.com)." });
+    ol.createEl("li", {
+      text: 'In the left sidebar, click the three-dot menu (⋮) next to the calendar you want to use.',
+    });
+    ol.createEl("li", { text: 'Select "Settings and sharing".' });
+    ol.createEl("li", { text: 'Scroll down to the "Integrate calendar" section.' });
+    ol.createEl("li", { text: 'Copy the "Secret address in iCal format" URL (ends in .ics).' });
+    ol.createEl("li", { text: "Paste it into the field below and click Test." });
 
-    new Setting(containerEl)
-      .setName("Client ID")
-      .setDesc("OAuth 2.0 Client ID (ends in .apps.googleusercontent.com).")
-      .addText((text) =>
-        text
-          .setPlaceholder("your-client-id.apps.googleusercontent.com")
-          .setValue(this.plugin.settings.clientId)
-          .onChange(async (value) => {
-            this.plugin.settings.clientId = value.trim();
-            await this.plugin.saveSettings();
-          })
-      );
+    // Connection status indicator
+    const isConnected = !!this.plugin.settings.icalUrl;
+    const statusEl = containerEl.createEl("div", { cls: "gcal-auth-status" });
+    statusEl.createEl("p", {
+      text: isConnected ? "✓ iCal URL configured" : "✗ No iCal URL configured",
+      cls: isConnected ? "gcal-status-ok" : "gcal-status-error",
+    });
 
     new Setting(containerEl)
-      .setName("Client Secret")
-      .setDesc("OAuth 2.0 Client Secret — treated as a password.")
+      .setName("iCal URL")
+      .setDesc(
+        'The "Secret address in iCal format" from Google Calendar → Settings → Integrate calendar. ' +
+          "Treat this URL as a password — anyone with it can read your calendar."
+      )
       .addText((text) => {
         text.inputEl.type = "password";
+        text.inputEl.style.width = "100%";
         text
-          .setPlaceholder("Client secret")
-          .setValue(this.plugin.settings.clientSecret)
+          .setPlaceholder("https://calendar.google.com/calendar/ical/…/basic.ics")
+          .setValue(this.plugin.settings.icalUrl)
           .onChange(async (value) => {
-            this.plugin.settings.clientSecret = value.trim();
+            this.plugin.settings.icalUrl = value.trim();
             await this.plugin.saveSettings();
           });
       });
 
-    // Authentication status indicator
-    const isAuthenticated = !!this.plugin.settings.accessToken;
-    const authStatus = containerEl.createEl("div", { cls: "gcal-auth-status" });
-    authStatus.createEl("p", {
-      text: isAuthenticated
-        ? "✓ Authenticated with Google"
-        : "✗ Not authenticated",
-      cls: isAuthenticated ? "gcal-status-ok" : "gcal-status-error",
-    });
-
     new Setting(containerEl)
-      .setName("Authenticate with Google")
+      .setName("Test connection")
       .setDesc(
-        isAuthenticated
-          ? "Re-authenticate to renew your credentials (e.g. after changing Client ID/Secret)."
-          : "Opens your browser to a Google sign-in page. Returns here automatically."
+        "Verify the iCal URL is reachable and returns valid calendar data. " +
+          "Reports the number of events found in the feed."
       )
       .addButton((button) =>
         button
-          .setButtonText(isAuthenticated ? "Re-authenticate" : "Authenticate")
+          .setButtonText("Test")
           .setCta()
           .onClick(async () => {
-            if (
-              !this.plugin.settings.clientId ||
-              !this.plugin.settings.clientSecret
-            ) {
-              new Notice(
-                "Please enter your Client ID and Client Secret before authenticating."
-              );
+            if (!this.plugin.settings.icalUrl) {
+              new Notice("Please enter an iCal URL first.");
               return;
             }
-
-            button.setButtonText("Opening browser…").setDisabled(true);
-
+            button.setButtonText("Testing…").setDisabled(true);
             try {
-              const auth = new GoogleAuth(
-                this.plugin.settings.clientId,
-                this.plugin.settings.clientSecret
-              );
-              const tokens = await auth.authorize();
-
-              this.plugin.settings.accessToken = tokens.access_token;
-              this.plugin.settings.refreshToken = tokens.refresh_token;
-              this.plugin.settings.tokenExpiry = tokens.expiry_date;
-              await this.plugin.saveSettings();
-
-              new Notice("Successfully authenticated with Google!");
-              this.display(); // refresh the tab to show the new auth status
-            } catch (e) {
-              const msg = e instanceof Error ? e.message : String(e);
+              const api = new IcalCalendarApi(this.plugin.settings.icalUrl);
+              const events = await api.fetchAllEvents();
               new Notice(
-                `Authentication failed: ${msg.replace(/[\r\n]+/g, " ").slice(0, 200)}`
+                `✓ Connected! Found ${events.length} event${events.length !== 1 ? "s" : ""} in the feed.`
               );
-              button.setButtonText("Authenticate").setDisabled(false);
+              this.display(); // refresh to update the status indicator
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              new Notice(
+                `Connection failed: ${msg.replace(/[\r\n]+/g, " ").slice(0, 200)}`
+              );
+            } finally {
+              button.setButtonText("Test").setDisabled(false);
             }
           })
       );
 
-    if (isAuthenticated) {
-      new Setting(containerEl)
-        .setName("Disconnect Google account")
-        .setDesc(
-          "Revoke the plugin's Google Calendar access and remove stored tokens. " +
-            "You will need to re-authenticate to use the plugin again."
-        )
-        .addButton((button) =>
-          button
-            .setButtonText("Disconnect")
-            .setWarning()
-            .onClick(async () => {
-              button.setButtonText("Disconnecting…").setDisabled(true);
-
-              // Revoke the refresh token at Google's endpoint first so the
-              // authorisation is fully removed server-side, not just locally.
-              if (this.plugin.settings.refreshToken) {
-                const auth = new GoogleAuth(
-                  this.plugin.settings.clientId,
-                  this.plugin.settings.clientSecret
-                );
-                await auth.revokeToken(this.plugin.settings.refreshToken);
-              }
-
-              this.plugin.settings.accessToken = "";
-              this.plugin.settings.refreshToken = "";
-              this.plugin.settings.tokenExpiry = 0;
-              await this.plugin.saveSettings();
-              new Notice("Disconnected from Google.");
-              this.display();
-            })
-        );
-    }
-
-    // ----- Calendar Settings ------------------------------------------------
-    containerEl.createEl("h3", { text: "Calendar Settings" });
+    // ----- Personal Settings ------------------------------------------------
+    containerEl.createEl("h3", { text: "Personal Settings" });
 
     new Setting(containerEl)
-      .setName("Calendar ID")
+      .setName("Your email address")
       .setDesc(
-        'Calendar to fetch events from. Use "primary" for your default calendar, ' +
-          "or enter a specific calendar's email address / ID."
+        "Your Google account email. When set, your own entry is hidden from the attendees " +
+          "table in generated notes so you do not appear as a participant in your own meeting notes. " +
+          "Leave blank to show all attendees."
       )
       .addText((text) =>
         text
-          .setPlaceholder("primary")
-          .setValue(this.plugin.settings.calendarId)
+          .setPlaceholder("you@example.com")
+          .setValue(this.plugin.settings.selfEmail)
           .onChange(async (value) => {
-            this.plugin.settings.calendarId = value.trim() || "primary";
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Days ahead to fetch")
-      .setDesc(
-        "How many days ahead to look when showing the event picker (1–30)."
-      )
-      .addSlider((slider) =>
-        slider
-          .setLimits(1, 30, 1)
-          .setValue(this.plugin.settings.daysAhead)
-          .setDynamicTooltip()
-          .onChange(async (value) => {
-            this.plugin.settings.daysAhead = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Max events to show")
-      .setDesc(
-        "Maximum number of events displayed in the event picker (1–50)."
-      )
-      .addSlider((slider) =>
-        slider
-          .setLimits(1, 50, 1)
-          .setValue(this.plugin.settings.maxEvents)
-          .setDynamicTooltip()
-          .onChange(async (value) => {
-            this.plugin.settings.maxEvents = value;
+            this.plugin.settings.selfEmail = value.trim().toLowerCase();
             await this.plugin.saveSettings();
           })
       );
@@ -348,7 +244,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
       .setName("Hours in advance")
       .setDesc(
         "How many hours before an event starts to automatically create its note. " +
-          "Notes are also created at startup for any events already within this window. (1–48 hours)"
+          "Notes are also created at startup for events already within this window. (1–48 hours)"
       )
       .addSlider((slider) =>
         slider
@@ -364,7 +260,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Poll interval (minutes)")
       .setDesc(
-        "How often the plugin checks for events that need a note created. " +
+        "How often the plugin checks for events that need a note. " +
           "Takes effect after the next Obsidian restart. (5–120 minutes)"
       )
       .addSlider((slider) =>
@@ -378,13 +274,49 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           })
       );
 
+    // ----- Calendar View ----------------------------------------------------
+    containerEl.createEl("h3", { text: "Calendar View" });
+
+    new Setting(containerEl)
+      .setName("Days ahead to fetch")
+      .setDesc(
+        "How many days ahead to look when showing the event picker. (1–30)"
+      )
+      .addSlider((slider) =>
+        slider
+          .setLimits(1, 30, 1)
+          .setValue(this.plugin.settings.daysAhead)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            this.plugin.settings.daysAhead = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Max events to show")
+      .setDesc(
+        "Maximum number of events displayed in the event picker. (1–50)"
+      )
+      .addSlider((slider) =>
+        slider
+          .setLimits(1, 50, 1)
+          .setValue(this.plugin.settings.maxEvents)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            this.plugin.settings.maxEvents = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     // ----- Manual Refresh ---------------------------------------------------
     containerEl.createEl("h3", { text: "Manual Refresh" });
 
     new Setting(containerEl)
       .setName("Refresh now")
       .setDesc(
-        `Immediately fetch events starting within the next ${this.plugin.settings.hoursInAdvance} hour${this.plugin.settings.hoursInAdvance !== 1 ? "s" : ""} ` +
+        `Immediately fetch events starting within the next ` +
+          `${this.plugin.settings.hoursInAdvance} hour${this.plugin.settings.hoursInAdvance !== 1 ? "s" : ""} ` +
           "and create any missing notes. Equivalent to waiting for the next scheduled poll."
       )
       .addButton((button) =>
@@ -392,9 +324,9 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           .setButtonText("Refresh")
           .setCta()
           .onClick(async () => {
-            if (!this.plugin.settings.accessToken) {
+            if (!this.plugin.settings.icalUrl) {
               new Notice(
-                "Google Calendar: Please authenticate before refreshing."
+                "Google Calendar: Please configure your iCal URL first."
               );
               return;
             }

@@ -7,6 +7,43 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.2.0] – 2026-03-30  *(ical branch)*
+
+### Changed — Breaking
+- **Replaced OAuth / Google Cloud Console with iCal URL.** The plugin now
+  reads events directly from Google Calendar's "Secret address in iCal format"
+  URL. No Google Cloud Console project, API keys, or OAuth flow is required.
+  Users upgrading from 1.1.0 must paste their iCal URL in Settings; previous
+  OAuth credentials are no longer used.
+
+### Added
+- `src/icalParser.ts` — RFC 5545 iCal parser handling line unfolding, DATE /
+  DATE-TIME (UTC, floating, TZID-qualified), ATTENDEE with PARTSTAT, ORGANIZER,
+  X-GOOGLE-CONFERENCE / X-GOOGLE-HANGOUT, and STATUS:CANCELLED suppression.
+- `IcalCalendarApi` in `calendarApi.ts` — fetches the iCal feed, appends
+  `singleevents=true` to Google Calendar URLs automatically so recurring events
+  are expanded server-side, and filters events by time window.
+- **"Your email address" setting** — when set, the matching attendee entry is
+  marked as `self` and excluded from the attendees table in generated notes.
+- **"Test connection" button** in Settings — verifies the iCal URL is reachable
+  and reports the total number of events found in the feed.
+
+### Removed
+- `src/googleAuth.ts` — OAuth 2.0 authorize / refresh / revoke flows.
+- `src/secureStorage.ts` — Electron `safeStorage` credential encryption
+  (no longer needed; the iCal URL is read-only and revocable).
+- `src/electron.d.ts` — Electron type declarations (no longer needed).
+- Settings fields: `clientId`, `clientSecret`, `accessToken`, `refreshToken`,
+  `tokenExpiry`, `calendarId`.
+
+### Security
+- iCal URL validated as HTTPS before fetch; fetch has a 15-second
+  `AbortController` timeout.
+- All existing note-content sanitisation (YAML injection, Markdown injection,
+  URL injection, DOMParser HTML stripping) is retained unchanged.
+
+---
+
 ## [1.1.0] – 2026-03-30
 
 ### Added

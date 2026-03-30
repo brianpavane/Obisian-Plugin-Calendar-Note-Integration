@@ -1,162 +1,93 @@
 /**
  * @file calendarApi.ts
- * @description Thin wrapper around the Google Calendar REST API v3.
+ * @description Google Calendar client using the iCalendar (iCal/ICS) protocol.
  *
- * All requests are authenticated with a Bearer token (OAuth 2.0 access token)
- * and are subject to a 10-second timeout. The caller is responsible for
- * obtaining and refreshing the access token via {@link GoogleAuth}.
+ * This module replaces the previous OAuth + REST API approach. Events are now
+ * fetched from the user's Google Calendar "secret address" iCal URL — no
+ * Google Cloud Console project, no API keys, and no OAuth flow required.
  *
- * Only the calendar.readonly scope is used; no write operations are performed.
+ * Re-exports {@link CalendarEvent} and {@link ResponseStatus} from
+ * `icalParser.ts` so that `noteCreator.ts` and `eventModal.ts` continue to
+ * import from this module without changes.
  */
 
-/** Base URL for all Google Calendar API v3 endpoints. */
-const CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3";
+export { CalendarEvent, ResponseStatus } from "./icalParser";
+import { CalendarEvent } from "./icalParser";
+import { parseIcal } from "./icalParser";
 
 // ---------------------------------------------------------------------------
-// Shared types
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Milliseconds before an iCal fetch is aborted. */
+const FETCH_TIMEOUT_MS = 15_000;
+
+// ---------------------------------------------------------------------------
+// Helpers
 // ---------------------------------------------------------------------------
 
 /**
- * RSVP response status values returned by the Google Calendar API.
- * Exported so that `noteCreator.ts` can share the same type without a
- * local re-definition that diverges from the interface.
+ * Fetch a URL with an automatic abort after `timeoutMs` milliseconds.
+ * Throws an AbortError (err.name === "AbortError") on timeout.
  */
-export type ResponseStatus =
-  | "accepted"
-  | "declined"
-  | "tentative"
-  | "needsAction";
-
-/** Milliseconds before a Calendar API fetch is aborted. */
-const FETCH_TIMEOUT_MS = 10_000;
-
-// ---------------------------------------------------------------------------
-// Domain types
-// ---------------------------------------------------------------------------
-
-/**
- * A single Google Calendar event as returned by the Events.list / Events.get
- * endpoints. Only the fields consumed by this plugin are declared; additional
- * fields returned by the API are ignored.
- */
-export interface CalendarEvent {
-  /** Stable, opaque identifier for the event. */
-  id: string;
-  /** Human-readable title of the event. May contain arbitrary Unicode. */
-  summary: string;
-  /**
-   * Free-form description / notes from the invite.
-   * Google Calendar may return this as plain text or as HTML (rich-text events).
-   */
-  description?: string;
-  /** Scheduled start time. Exactly one of `dateTime` or `date` will be set. */
-  start: {
-    /** ISO 8601 date-time string (timed events). */
-    dateTime?: string;
-    /** ISO 8601 date string "YYYY-MM-DD" (all-day events). */
-    date?: string;
-    /** IANA time-zone identifier, e.g. "America/New_York". */
-    timeZone?: string;
-  };
-  /** Scheduled end time. Same shape as `start`. */
-  end: {
-    dateTime?: string;
-    date?: string;
-    timeZone?: string;
-  };
-  /**
-   * List of people invited to the event.
-   * The `self` flag marks the calendar owner's own entry.
-   */
-  attendees?: Array<{
-    /** Email address (always present). */
-    email: string;
-    /** Display name, if the contact is in the user's directory. */
-    displayName?: string;
-    /** Invite response status. Typed as {@link ResponseStatus} when present. */
-    responseStatus?: ResponseStatus;
-    /** True for the calendar owner's own attendee entry. */
-    self?: boolean;
-    /** True when this attendee is also the event organizer. */
-    organizer?: boolean;
-    /** True for optional invitees. */
-    optional?: boolean;
-  }>;
-  /** The person who created / owns the event. */
-  organizer?: {
-    email: string;
-    displayName?: string;
-    /** True when the organizer is the calendar owner. */
-    self?: boolean;
-  };
-  /** Physical or virtual location string from the event. */
-  location?: string;
-  /** URL to view the event in Google Calendar. */
-  htmlLink?: string;
-  /** Event status: "confirmed" | "tentative" | "cancelled". */
-  status?: string;
-  /**
-   * Video-conferencing data (e.g. Google Meet links).
-   * Only present when a conference solution is attached to the event.
-   */
-  conferenceData?: {
-    conferenceSolution?: {
-      /** Human-readable name, e.g. "Google Meet". */
-      name: string;
-    };
-    entryPoints?: Array<{
-      /** "video" | "phone" | "sip" | "more" */
-      entryPointType: string;
-      /** The actual URL or dial-in number. */
-      uri: string;
-      /** Optional label shown in the Google Calendar UI. */
-      label?: string;
-    }>;
-  };
-  /** RRULE strings for recurring events. */
-  recurrence?: string[];
-  /** ID of the recurring event series, for individual instances. */
-  recurringEventId?: string;
+async function fetchWithTimeout(
+  url: string,
+  timeoutMs = FETCH_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
- * A calendar entry from the user's calendar list.
+ * Append `singleevents=true` to a Google Calendar iCal URL so that Google
+ * expands recurring event instances server-side rather than returning a
+ * single VEVENT with an RRULE that the client would need to expand.
+ *
+ * Non-Google URLs are returned unchanged.
  */
-export interface Calendar {
-  /** Unique calendar ID (often an email address for personal calendars). */
-  id: string;
-  /** Display name of the calendar. */
-  summary: string;
-  /** Optional description. */
-  description?: string;
-  /** True for the user's primary calendar. */
-  primary?: boolean;
-  /** True when the calendar is shown in the Google Calendar UI. */
-  selected?: boolean;
+function withSingleEvents(url: string): string {
+  if (!url.includes("calendar.google.com")) return url;
+  try {
+    const u = new URL(url);
+    if (!u.searchParams.has("singleevents")) {
+      u.searchParams.set("singleevents", "true");
+    }
+    return u.toString();
+  } catch {
+    return url; // malformed URL — return as-is
+  }
 }
 
 // ---------------------------------------------------------------------------
-// API client
+// IcalCalendarApi
 // ---------------------------------------------------------------------------
 
 /**
- * Minimal read-only client for the Google Calendar API v3.
+ * Read-only calendar client that fetches events from an iCal feed URL.
+ *
+ * The iCal URL is the "Secret address in iCal format" available in
+ * Google Calendar → Settings → [your calendar] → Integrate calendar.
+ * It requires no sign-in and no API keys — the URL itself is the credential.
  *
  * @example
  * ```ts
- * const api = new GoogleCalendarApi(accessToken);
- * const events = await api.listUpcomingEvents("primary", 20, 7);
+ * const api = new IcalCalendarApi(settings.icalUrl);
+ * const events = await api.listUpcomingEvents(20, 7);
  * ```
  */
-export class GoogleCalendarApi {
-  private readonly accessToken: string;
+export class IcalCalendarApi {
+  private readonly icalUrl: string;
 
   /**
-   * @param accessToken A valid OAuth 2.0 access token with the
-   *                    `calendar.readonly` scope.
+   * @param icalUrl The iCal feed URL (Google Calendar secret address).
    */
-  constructor(accessToken: string) {
-    this.accessToken = accessToken;
+  constructor(icalUrl: string) {
+    this.icalUrl = icalUrl;
   }
 
   // ---------------------------------------------------------------------------
@@ -164,145 +95,87 @@ export class GoogleCalendarApi {
   // ---------------------------------------------------------------------------
 
   /**
-   * Retrieve the authenticated user's calendar list.
+   * Fetch and parse all events from the iCal feed.
    *
-   * Reserved for a future "pick your calendar from a dropdown" UX in the
-   * settings tab. Not called by any other module at this time.
+   * For Google Calendar URLs, `singleevents=true` is appended automatically
+   * so recurring event instances are returned as individual VEVENTs.
    *
-   * @returns Array of calendars the user has access to.
-   * @throws  On network failure, timeout, or API error.
+   * @throws If the network request fails, times out, or returns a non-2xx status.
    */
-  async listCalendars(): Promise<Calendar[]> {
-    const data = await this.request<{ items: Calendar[] }>(
-      "/users/me/calendarList"
-    );
-    return data.items ?? [];
-  }
-
-  /**
-   * Fetch upcoming events from a calendar, ordered by start time.
-   *
-   * @param calendarId  Calendar to query. Use `"primary"` for the user's
-   *                    default calendar or pass a specific calendar email/ID.
-   * @param maxResults  Maximum number of events to return (1–2500).
-   * @param daysAhead   How many days into the future to search.
-   * @returns Events starting between now and `now + daysAhead` days.
-   * @throws  On network failure, timeout, or API error.
-   */
-  async listUpcomingEvents(
-    calendarId: string,
-    maxResults = 20,
-    daysAhead = 7
-  ): Promise<CalendarEvent[]> {
-    const now = new Date();
-    const future = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1_000);
-
-    const data = await this.request<{ items: CalendarEvent[] }>(
-      `/calendars/${encodeURIComponent(calendarId)}/events`,
-      {
-        timeMin: now.toISOString(),
-        timeMax: future.toISOString(),
-        maxResults: String(maxResults),
-        singleEvents: "true",
-        orderBy: "startTime",
-      }
-    );
-
-    return data.items ?? [];
-  }
-
-  /**
-   * Fetch events that start within an absolute time window.
-   *
-   * Used by the auto-create polling loop to find events starting within
-   * the next N hours, independent of the `daysAhead` picker setting.
-   *
-   * @param calendarId  Calendar to query.
-   * @param timeMin     Window start (inclusive).
-   * @param timeMax     Window end (exclusive).
-   * @param maxResults  Maximum number of events to return.
-   * @returns Events starting in [timeMin, timeMax).
-   * @throws  On network failure, timeout, or API error.
-   */
-  async listEventsInTimeWindow(
-    calendarId: string,
-    timeMin: Date,
-    timeMax: Date,
-    maxResults = 50
-  ): Promise<CalendarEvent[]> {
-    const data = await this.request<{ items: CalendarEvent[] }>(
-      `/calendars/${encodeURIComponent(calendarId)}/events`,
-      {
-        timeMin: timeMin.toISOString(),
-        timeMax: timeMax.toISOString(),
-        maxResults: String(maxResults),
-        singleEvents: "true",
-        orderBy: "startTime",
-      }
-    );
-    return data.items ?? [];
-  }
-
-  /**
-   * Fetch a single event by ID.
-   *
-   * Reserved for a future "refresh attendee RSVP status" feature that would
-   * re-fetch a specific event and update the attendees table in an existing
-   * note. Not called by any other module at this time.
-   *
-   * @param calendarId Calendar that owns the event.
-   * @param eventId    Stable event identifier.
-   * @throws  On network failure, timeout, or API error.
-   */
-  async getEvent(calendarId: string, eventId: string): Promise<CalendarEvent> {
-    return this.request<CalendarEvent>(
-      `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Private helpers
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Execute an authenticated GET request against the Calendar API.
-   *
-   * Applies a {@link FETCH_TIMEOUT_MS} timeout. On non-2xx responses,
-   * attempts to parse the API error message from the response body.
-   *
-   * @param path    API path relative to {@link CALENDAR_API_BASE}.
-   * @param params  Optional query-string parameters.
-   */
-  private async request<T>(
-    path: string,
-    params?: Record<string, string>
-  ): Promise<T> {
-    const url = new URL(`${CALENDAR_API_BASE}${path}`);
-    if (params) {
-      Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-    }
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-    let response: Response;
-    try {
-      response = await fetch(url.toString(), {
-        headers: { Authorization: `Bearer ${this.accessToken}` },
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
+  async fetchAllEvents(): Promise<CalendarEvent[]> {
+    const url = withSingleEvents(this.icalUrl);
+    const response = await fetchWithTimeout(url);
 
     if (!response.ok) {
-      const errorBody = await response.json().catch(() => ({}));
-      const message =
-        (errorBody as { error?: { message?: string } })?.error?.message ??
-        `HTTP ${response.status}`;
-      throw new Error(`Google Calendar API error: ${message}`);
+      throw new Error(
+        `Failed to fetch iCal feed: HTTP ${response.status} ${response.statusText}. ` +
+          "Check that the iCal URL is correct and has not been regenerated in Google Calendar."
+      );
     }
 
-    return response.json() as Promise<T>;
+    const text = await response.text();
+    return parseIcal(text);
+  }
+
+  /**
+   * Return events whose start time falls within [timeMin, timeMax].
+   *
+   * - Timed events (`start.dateTime`): included when the start instant is
+   *   within the window.
+   * - All-day events (`start.date`): included when their calendar date
+   *   overlaps with the window.
+   *
+   * @param timeMin Window start (inclusive).
+   * @param timeMax Window end (inclusive).
+   */
+  async listEventsInTimeWindow(
+    timeMin: Date,
+    timeMax: Date
+  ): Promise<CalendarEvent[]> {
+    const events = await this.fetchAllEvents();
+
+    return events.filter((event) => {
+      if (event.start.dateTime) {
+        const start = new Date(event.start.dateTime);
+        return start >= timeMin && start <= timeMax;
+      }
+      if (event.start.date) {
+        // All-day: include if any part of the day falls in the window.
+        const dayStart = new Date(event.start.date + "T00:00:00");
+        const dayEnd   = new Date(event.start.date + "T23:59:59");
+        return dayEnd >= timeMin && dayStart <= timeMax;
+      }
+      return false;
+    });
+  }
+
+  /**
+   * Return up to `maxResults` events starting after now and within
+   * `daysAhead` days, sorted ascending by start time.
+   *
+   * @param maxResults Maximum events to return (1–50).
+   * @param daysAhead  How many days ahead to look.
+   */
+  async listUpcomingEvents(
+    maxResults: number,
+    daysAhead: number
+  ): Promise<CalendarEvent[]> {
+    const now       = new Date();
+    const windowEnd = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1_000);
+
+    const events = await this.listEventsInTimeWindow(now, windowEnd);
+
+    // Sort ascending by start time.
+    events.sort((a, b) => {
+      const ta = new Date(
+        a.start.dateTime ?? (a.start.date ?? "") + "T00:00:00"
+      ).getTime();
+      const tb = new Date(
+        b.start.dateTime ?? (b.start.date ?? "") + "T00:00:00"
+      ).getTime();
+      return ta - tb;
+    });
+
+    return events.slice(0, maxResults);
   }
 }

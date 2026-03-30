@@ -1,10 +1,10 @@
 {
-  "id": "obsidian-google-calendar-notes",
-  "name": "Google Calendar Note Integration",
-  "version": "1.1.0",
-  "minAppVersion": "0.15.0",
-  "description": "Create structured Obsidian notes from Google Calendar events, pre-populated with event agenda/description and sections for Notes, Summary, and Actions.",
-  "author": "Brian Pavane",
-  "authorUrl": "https://github.com/brianpavane",
-  "isDesktopOnly": true
+	"id": "obsidian-google-calendar-notes",
+	"name": "Google Calendar Note Integration",
+	"version": "1.2.0",
+	"minAppVersion": "0.15.0",
+	"description": "Create structured Obsidian notes from Google Calendar events, pre-populated with event agenda/description and sections for Notes, Summary, and Actions.",
+	"author": "Brian Pavane",
+	"authorUrl": "https://github.com/brianpavane",
+	"isDesktopOnly": true
 }
