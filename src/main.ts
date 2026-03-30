@@ -59,7 +59,7 @@ export default class GoogleCalendarPlugin extends Plugin {
    * Handle for the one-time startup timeout so it can be cancelled if the
    * plugin is unloaded before the 5-second delay elapses.
    */
-  private startupTimeoutId: ReturnType<typeof window.setTimeout> | undefined;
+  private startupTimeoutId: number | undefined;
 
   async onload(): Promise<void> {
     await this.loadSettings();
