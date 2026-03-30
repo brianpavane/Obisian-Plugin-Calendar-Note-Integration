@@ -14,6 +14,7 @@
 export { CalendarEvent, ResponseStatus } from "./icalParser";
 import { CalendarEvent } from "./icalParser";
 import { parseIcal } from "./icalParser";
+import { requestUrl } from "obsidian";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -27,20 +28,44 @@ const FETCH_TIMEOUT_MS = 15_000;
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch a URL with an automatic abort after `timeoutMs` milliseconds.
- * Throws an AbortError (err.name === "AbortError") on timeout.
+ * Fetch a URL using Obsidian's `requestUrl` API, which routes the request
+ * through Electron's main process and is therefore not subject to browser
+ * CORS restrictions.
+ *
+ * Native `fetch()` fails for Google Calendar iCal URLs because the endpoint
+ * does not set `Access-Control-Allow-Origin` headers — the Electron renderer
+ * process (where Obsidian plugins run) blocks the response. `requestUrl`
+ * bypasses this entirely.
+ *
+ * A manual timeout is implemented via `Promise.race` because `requestUrl`
+ * does not natively support `AbortController`.
+ *
+ * @throws On timeout, non-2xx HTTP status, or network failure.
  */
-async function fetchWithTimeout(
+async function fetchIcalText(
   url: string,
   timeoutMs = FETCH_TIMEOUT_MS
-): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+): Promise<string> {
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(
+      () => reject(new Error(`iCal request timed out after ${timeoutMs / 1000} seconds.`)),
+      timeoutMs
+    )
+  );
+
+  const fetchPromise = requestUrl({ url, method: "GET", throw: false }).then(
+    (response) => {
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(
+          `Failed to fetch iCal feed: HTTP ${response.status}. ` +
+            "Check that the iCal URL is correct and has not been regenerated in Google Calendar."
+        );
+      }
+      return response.text;
+    }
+  );
+
+  return Promise.race([fetchPromise, timeoutPromise]);
 }
 
 /**
@@ -104,16 +129,7 @@ export class IcalCalendarApi {
    */
   async fetchAllEvents(): Promise<CalendarEvent[]> {
     const url = withSingleEvents(this.icalUrl);
-    const response = await fetchWithTimeout(url);
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch iCal feed: HTTP ${response.status} ${response.statusText}. ` +
-          "Check that the iCal URL is correct and has not been regenerated in Google Calendar."
-      );
-    }
-
-    const text = await response.text();
+    const text = await fetchIcalText(url);
     return parseIcal(text);
   }
 
