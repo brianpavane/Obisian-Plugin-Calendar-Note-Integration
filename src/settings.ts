@@ -9,7 +9,7 @@
  * API credentials are required.
  */
 
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { AbstractInputSuggest, App, Notice, PluginSettingTab, Setting, TFolder } from "obsidian";
 import type GoogleCalendarPlugin from "./main";
 import { IcalCalendarApi } from "./calendarApi";
 
@@ -95,6 +95,32 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   daysAhead: 7,
   maxEvents: 20,
 };
+
+// ---------------------------------------------------------------------------
+// Folder suggest
+// ---------------------------------------------------------------------------
+
+class FolderSuggest extends AbstractInputSuggest<TFolder> {
+  constructor(app: App, inputEl: HTMLInputElement) {
+    super(app, inputEl);
+  }
+
+  getSuggestions(query: string): TFolder[] {
+    return this.app.vault
+      .getAllLoadedFiles()
+      .filter((f): f is TFolder => f instanceof TFolder)
+      .filter((f) => f.path.toLowerCase().includes(query.toLowerCase()));
+  }
+
+  renderSuggestion(folder: TFolder, el: HTMLElement): void {
+    el.setText(folder.path);
+  }
+
+  selectSuggestion(folder: TFolder): void {
+    this.setValue(folder.path);
+    this.close();
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Settings tab UI
@@ -230,15 +256,16 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
         "Vault folder where meeting notes are created. " +
           "Leave empty to create notes in the vault root."
       )
-      .addText((text) =>
+      .addText((text) => {
+        new FolderSuggest(this.app, text.inputEl);
         text
           .setPlaceholder("Meeting Notes")
           .setValue(this.plugin.settings.noteFolder)
           .onChange(async (value) => {
             this.plugin.settings.noteFolder = value.trim();
             await this.plugin.saveSettings();
-          })
-      );
+          });
+      });
 
     new Setting(containerEl)
       .setName("Hours in advance")
@@ -246,16 +273,22 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
         "How many hours before an event starts to automatically create its note. " +
           "Notes are also created at startup for events already within this window. (1–48 hours)"
       )
-      .addSlider((slider) =>
-        slider
-          .setLimits(1, 48, 1)
-          .setValue(this.plugin.settings.hoursInAdvance)
-          .setDynamicTooltip()
+      .addText((text) => {
+        text.inputEl.type = "number";
+        text.inputEl.min = "1";
+        text.inputEl.max = "48";
+        text.inputEl.step = "1";
+        text.inputEl.style.width = "80px";
+        text
+          .setValue(String(this.plugin.settings.hoursInAdvance))
           .onChange(async (value) => {
-            this.plugin.settings.hoursInAdvance = value;
-            await this.plugin.saveSettings();
-          })
-      );
+            const num = parseInt(value, 10);
+            if (!isNaN(num) && num >= 1 && num <= 48) {
+              this.plugin.settings.hoursInAdvance = num;
+              await this.plugin.saveSettings();
+            }
+          });
+      });
 
     new Setting(containerEl)
       .setName("Poll interval (minutes)")
@@ -263,16 +296,22 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
         "How often the plugin checks for events that need a note. " +
           "Takes effect after the next Obsidian restart. (5–120 minutes)"
       )
-      .addSlider((slider) =>
-        slider
-          .setLimits(5, 120, 5)
-          .setValue(this.plugin.settings.pollIntervalMinutes)
-          .setDynamicTooltip()
+      .addText((text) => {
+        text.inputEl.type = "number";
+        text.inputEl.min = "5";
+        text.inputEl.max = "120";
+        text.inputEl.step = "5";
+        text.inputEl.style.width = "80px";
+        text
+          .setValue(String(this.plugin.settings.pollIntervalMinutes))
           .onChange(async (value) => {
-            this.plugin.settings.pollIntervalMinutes = value;
-            await this.plugin.saveSettings();
-          })
-      );
+            const num = parseInt(value, 10);
+            if (!isNaN(num) && num >= 5 && num <= 120) {
+              this.plugin.settings.pollIntervalMinutes = num;
+              await this.plugin.saveSettings();
+            }
+          });
+      });
 
     // ----- Calendar View ----------------------------------------------------
     containerEl.createEl("h3", { text: "Calendar View" });
@@ -282,32 +321,44 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
       .setDesc(
         "How many days ahead to look when showing the event picker. (1–30)"
       )
-      .addSlider((slider) =>
-        slider
-          .setLimits(1, 30, 1)
-          .setValue(this.plugin.settings.daysAhead)
-          .setDynamicTooltip()
+      .addText((text) => {
+        text.inputEl.type = "number";
+        text.inputEl.min = "1";
+        text.inputEl.max = "30";
+        text.inputEl.step = "1";
+        text.inputEl.style.width = "80px";
+        text
+          .setValue(String(this.plugin.settings.daysAhead))
           .onChange(async (value) => {
-            this.plugin.settings.daysAhead = value;
-            await this.plugin.saveSettings();
-          })
-      );
+            const num = parseInt(value, 10);
+            if (!isNaN(num) && num >= 1 && num <= 30) {
+              this.plugin.settings.daysAhead = num;
+              await this.plugin.saveSettings();
+            }
+          });
+      });
 
     new Setting(containerEl)
       .setName("Max events to show")
       .setDesc(
         "Maximum number of events displayed in the event picker. (1–50)"
       )
-      .addSlider((slider) =>
-        slider
-          .setLimits(1, 50, 1)
-          .setValue(this.plugin.settings.maxEvents)
-          .setDynamicTooltip()
+      .addText((text) => {
+        text.inputEl.type = "number";
+        text.inputEl.min = "1";
+        text.inputEl.max = "50";
+        text.inputEl.step = "1";
+        text.inputEl.style.width = "80px";
+        text
+          .setValue(String(this.plugin.settings.maxEvents))
           .onChange(async (value) => {
-            this.plugin.settings.maxEvents = value;
-            await this.plugin.saveSettings();
-          })
-      );
+            const num = parseInt(value, 10);
+            if (!isNaN(num) && num >= 1 && num <= 50) {
+              this.plugin.settings.maxEvents = num;
+              await this.plugin.saveSettings();
+            }
+          });
+      });
 
     // ----- Manual Refresh ---------------------------------------------------
     containerEl.createEl("h3", { text: "Manual Refresh" });
