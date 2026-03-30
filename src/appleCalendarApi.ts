@@ -53,25 +53,39 @@ function extractConferenceFromText(text: string): CalendarEvent["conferenceData"
 // JXA script builder — only integers are interpolated
 // ---------------------------------------------------------------------------
 
-/**
- * Build the JXA fetch-events script.
- *
- * Only safe integers and a JSON-encoded string array are interpolated.
- *
- * @param daysBack        Days before today to start the window. Clamped [0,30].
- * @param daysAhead       Days after today to end the window. Clamped [1,365].
- * @param calendarFilter  Names of calendars to query. Empty = all calendars.
- *                        Embedded as JSON — values come from Calendar.app itself.
- */
 /** Hard cap on events scanned in Tier 3 (cal.events() full-scan fallback). */
 const MAX_TIER3_SCAN = 5_000;
 
-function buildJxaFetchEvents(daysBack: number, daysAhead: number, calendarFilter: string[] = []): string {
-  const safeDaysBack  = Math.max(0,   Math.min(30,  Math.floor(daysBack)));
-  const safeDaysAhead = Math.max(1,   Math.min(365, Math.floor(daysAhead)));
-  // JSON.stringify is safe here: values are calendar names returned by Calendar.app
-  const filterJson    = JSON.stringify(calendarFilter);
+// Shared JXA snippet for building one result item from an event object (variable `evt`).
+const JXA_BUILD_ITEM = `
+      try { item.uid         = String(evt.uid()         || ""); } catch (e) {}
+      try { item.summary     = String(evt.summary()     || ""); } catch (e) {}
+      try { var sd = evt.startDate(); if (sd) item.startDate = sd.toISOString(); } catch (e) {}
+      try { var ed = evt.endDate();   if (ed) item.endDate   = ed.toISOString(); } catch (e) {}
+      try { item.allDayEvent = evt.allDayEvent() === true;                        } catch (e) {}
+      try { item.description = String(evt.description() || ""); } catch (e) {}
+      try { item.location    = String(evt.location()    || ""); } catch (e) {}
+      try {
+        var atts = evt.attendees();
+        if (atts) {
+          item.attendees = atts.map(function (a) {
+            return {
+              displayName: String(a.displayName()         || ""),
+              address:     String(a.address()             || ""),
+              status:      String(a.participationStatus() || "unknown")
+            };
+          });
+        }
+      } catch (e) {}`.trimStart();
 
+/**
+ * Tier 1 script: application-level app.eventsFrom(start, {to:end}).
+ * Throws (non-zero osascript exit) when unsupported so the TypeScript
+ * caller knows to fall back to per-calendar mode.
+ */
+function buildJxaTier1Script(daysBack: number, daysAhead: number): string {
+  const safeDaysBack  = Math.max(0, Math.min(30,  Math.floor(daysBack)));
+  const safeDaysAhead = Math.max(1, Math.min(365, Math.floor(daysAhead)));
   return `
 (function () {
   var app = Application("Calendar");
@@ -79,10 +93,6 @@ function buildJxaFetchEvents(daysBack: number, daysAhead: number, calendarFilter
   var windowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ${safeDaysBack});
   var windowEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ${safeDaysAhead});
 
-  // Calendar names to query. Empty array = all calendars (no filter).
-  var filterNames = ${filterJson};
-
-  // Build a calendar ID → name lookup first (fast — no event data loaded).
   var calMap = {};
   try {
     app.calendars().forEach(function (cal) {
@@ -93,18 +103,13 @@ function buildJxaFetchEvents(daysBack: number, daysAhead: number, calendarFilter
     });
   } catch (e) {}
 
-  // Each entry: { evt, calId, calName }
-  // Calendar info is resolved differently depending on which tier succeeded.
-  var pairs = [];
+  // Throws if unsupported — TypeScript caller falls back to per-calendar mode.
+  var rawEvents = app.eventsFrom(windowStart, { to: windowEnd });
 
-  // ── Tier 1: app.eventsFrom(start, {to:end}) ──────────────────────────────
-  // Fastest path — application-level date-range query. Fails with
-  // "Can't convert types" on some Exchange / Office 365 accounts.
-  var tier1ok = false;
-  try {
-    var t1evts = app.eventsFrom(windowStart, { to: windowEnd });
-    for (var i = 0; i < t1evts.length; i++) {
-      var evt = t1evts[i];
+  var results = [];
+  for (var i = 0; i < rawEvents.length; i++) {
+    try {
+      var evt = rawEvents[i];
       var calId = "", calName = "";
       try {
         calId   = String(evt.container.id()   || "");
@@ -116,118 +121,103 @@ function buildJxaFetchEvents(daysBack: number, daysAhead: number, calendarFilter
           if (m) { calId = m[1]; calName = calMap[calId] || ""; }
         } catch (ce2) {}
       }
-      pairs.push({ evt: evt, calId: calId, calName: calName });
-    }
-    tier1ok = true;
-  } catch (e1) {}
-
-  // ── Tiers 2 / 2.5 / 3: per-calendar fallback ─────────────────────────────
-  // Used when Tier 1 fails. Only calendars in filterNames are queried.
-  // Each calendar tries three progressively slower strategies:
-  //
-  //   Tier 2  — cal.eventsFrom(start, {to:end})
-  //             Fast server-side range query. Fails with "Can't convert types"
-  //             on some Exchange / Office 365 accounts.
-  //
-  //   Tier 2.5 — cal.events.whose({_and:[{startDate >= start},{startDate <= end}]})()
-  //             Predicate filter evaluated at the scripting-bridge level.
-  //             Works on many accounts where eventsFrom() fails.
-  //
-  //   Tier 3  — cal.events() + JS date filter (hard scan cap: ${MAX_TIER3_SCAN})
-  //             Loads every event then filters in JS. Slow on large calendars.
-  //             Capped to avoid an indefinite hang — partial results possible.
-  if (!tier1ok) {
-    var MAX_SCAN = ${MAX_TIER3_SCAN};
-    var cals = [];
-    try { cals = app.calendars(); } catch (e) {}
-    for (var ci = 0; ci < cals.length; ci++) {
-      var cal = cals[ci];
-      var cId = "", cName = "";
-      try { cId   = String(cal.id()   || ""); } catch (e) {}
-      try { cName = String(cal.name() || ""); } catch (e) {}
-
-      // Skip calendars not in the active filter
-      if (filterNames.length > 0 && filterNames.indexOf(cName) === -1) continue;
-
-      var calEvts = null;
-
-      // Tier 2: cal.eventsFrom
-      try {
-        calEvts = cal.eventsFrom(windowStart, { to: windowEnd });
-      } catch (e2) { calEvts = null; }
-
-      // Tier 2.5: whose-predicate filter (works on accounts where eventsFrom fails)
-      if (calEvts === null) {
-        try {
-          calEvts = cal.events.whose({
-            _and: [
-              { startDate: { _greaterThanEquals: windowStart } },
-              { startDate: { _lessThanEquals:    windowEnd   } }
-            ]
-          })();
-        } catch (e25) { calEvts = null; }
-      }
-
-      // Tier 3: full scan with a hard cap to prevent indefinite hang
-      if (calEvts === null) {
-        calEvts = [];
-        try {
-          var allEvts = cal.events();
-          var scanLimit = Math.min(allEvts.length, MAX_SCAN);
-          for (var j = 0; j < scanLimit; j++) {
-            try {
-              var sd = allEvts[j].startDate();
-              if (sd && sd >= windowStart && sd <= windowEnd) {
-                calEvts.push(allEvts[j]);
-              }
-            } catch (e3) {}
-          }
-        } catch (e3) {}
-      }
-
-      for (var k = 0; k < calEvts.length; k++) {
-        pairs.push({ evt: calEvts[k], calId: cId, calName: cName });
-      }
-    }
-  }
-
-  // ── Build result objects ──────────────────────────────────────────────────
-  var results = [];
-  for (var pi = 0; pi < pairs.length; pi++) {
-    try {
-      var p = pairs[pi];
       var item = {
         uid: "", summary: "",
         startDate: windowStart.toISOString(), endDate: windowStart.toISOString(),
         allDayEvent: false, description: "", location: "",
-        calendarName: p.calName, calendarId: p.calId,
-        attendees: []
+        calendarName: calName, calendarId: calId, attendees: []
       };
-
-      try { item.uid         = String(p.evt.uid()         || ""); } catch (e) {}
-      try { item.summary     = String(p.evt.summary()     || ""); } catch (e) {}
-      try { var sd = p.evt.startDate(); if (sd) item.startDate = sd.toISOString(); } catch (e) {}
-      try { var ed = p.evt.endDate();   if (ed) item.endDate   = ed.toISOString(); } catch (e) {}
-      try { item.allDayEvent = p.evt.allDayEvent() === true;                        } catch (e) {}
-      try { item.description = String(p.evt.description() || ""); } catch (e) {}
-      try { item.location    = String(p.evt.location()    || ""); } catch (e) {}
-      try {
-        var atts = p.evt.attendees();
-        if (atts) {
-          item.attendees = atts.map(function (a) {
-            return {
-              displayName: String(a.displayName()         || ""),
-              address:     String(a.address()             || ""),
-              status:      String(a.participationStatus() || "unknown")
-            };
-          });
-        }
-      } catch (e) {}
-
+      ${JXA_BUILD_ITEM}
       results.push(item);
     } catch (e) {}
   }
+  return JSON.stringify(results);
+})();
+`.trim();
+}
 
+/**
+ * Per-calendar script: queries ONE named calendar through Tier 2 → 2.5 → 3.
+ * Running one call per calendar in TypeScript means a slow/hung calendar
+ * only blocks its own 30s slot — other calendars still return results.
+ */
+function buildJxaPerCalendarScript(calName: string, daysBack: number, daysAhead: number): string {
+  const safeDaysBack  = Math.max(0, Math.min(30,  Math.floor(daysBack)));
+  const safeDaysAhead = Math.max(1, Math.min(365, Math.floor(daysAhead)));
+  const safeCalName   = JSON.stringify(calName); // name came from Calendar.app
+  return `
+(function () {
+  var app = Application("Calendar");
+  var targetName = ${safeCalName};
+  var now = new Date();
+  var windowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ${safeDaysBack});
+  var windowEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ${safeDaysAhead});
+
+  var targetCal = null, cId = "";
+  try {
+    var allCals = app.calendars();
+    for (var i = 0; i < allCals.length; i++) {
+      var n = "";
+      try { n = String(allCals[i].name() || ""); } catch (e) {}
+      if (n === targetName) {
+        targetCal = allCals[i];
+        try { cId = String(allCals[i].id() || ""); } catch (e) {}
+        break;
+      }
+    }
+  } catch (e) {}
+  if (!targetCal) return JSON.stringify([]);
+
+  var calEvts = null;
+
+  // Tier 2: cal.eventsFrom(start, {to:end})
+  try {
+    calEvts = targetCal.eventsFrom(windowStart, { to: windowEnd });
+  } catch (e2) { calEvts = null; }
+
+  // Tier 2.5: whose-predicate filter
+  if (calEvts === null) {
+    try {
+      calEvts = targetCal.events.whose({
+        _and: [
+          { startDate: { _greaterThanEquals: windowStart } },
+          { startDate: { _lessThanEquals:    windowEnd   } }
+        ]
+      })();
+    } catch (e25) { calEvts = null; }
+  }
+
+  // Tier 3: full scan with hard cap
+  if (calEvts === null) {
+    calEvts = [];
+    try {
+      var allEvts = targetCal.events();
+      var limit = Math.min(allEvts.length, ${MAX_TIER3_SCAN});
+      for (var j = 0; j < limit; j++) {
+        try {
+          var evtSd = allEvts[j].startDate();
+          if (evtSd && evtSd >= windowStart && evtSd <= windowEnd) {
+            calEvts.push(allEvts[j]);
+          }
+        } catch (e3) {}
+      }
+    } catch (e3) {}
+  }
+
+  var results = [];
+  for (var k = 0; k < calEvts.length; k++) {
+    try {
+      var evt = calEvts[k];
+      var item = {
+        uid: "", summary: "",
+        startDate: windowStart.toISOString(), endDate: windowStart.toISOString(),
+        allDayEvent: false, description: "", location: "",
+        calendarName: targetName, calendarId: cId, attendees: []
+      };
+      ${JXA_BUILD_ITEM}
+      results.push(item);
+    } catch (e) {}
+  }
   return JSON.stringify(results);
 })();
 `.trim();
@@ -582,26 +572,91 @@ export class AppleCalendarApi {
 
   async fetchAllEvents(): Promise<CalendarEvent[]> {
     const tag = "[GoogleCalendarNotes] Apple Calendar";
-    const filter = this.calendarFilter.length > 0
-      ? `filter: [${this.calendarFilter.join(", ")}]`
-      : "filter: all calendars";
-    console.log(`${tag} fetchAllEvents() — ${filter}, daysBack=${this.daysBack}`);
+    console.log(`${tag} fetchAllEvents() window: -${this.daysBack}d…+${this.daysAhead}d`);
 
-    console.log(`${tag} → window: -${this.daysBack}d … +${this.daysAhead}d, timeout ${OSASCRIPT_TIMEOUT_MS / 1000}s`);
-    const t0 = Date.now();
-    let json: string;
+    // ── Step 1: Try Tier 1 (app.eventsFrom — single fast call) ───────────────
     try {
-      json = await runOsascript(buildJxaFetchEvents(this.daysBack, this.daysAhead, this.calendarFilter));
-    } catch (err) {
-      console.error(`${tag} ✗ osascript failed after ${Date.now() - t0}ms:`, err);
-      throw err;
+      const t0 = Date.now();
+      const json = await runOsascript(buildJxaTier1Script(this.daysBack, this.daysAhead));
+      const events = parseJxaEvents(json, this.calendarFilter);
+      console.log(`${tag} Tier 1 ✓ — ${events.length} event(s) in ${Date.now() - t0}ms`);
+      return events;
+    } catch (tier1Err) {
+      const msg = tier1Err instanceof Error ? tier1Err.message : String(tier1Err);
+      console.log(`${tag} Tier 1 failed (${msg}), switching to per-calendar mode`);
     }
-    console.log(`${tag} ✓ osascript returned ${json.length} bytes in ${Date.now() - t0}ms`);
 
-    console.log(`${tag} → parsing JSON…`);
-    const events = parseJxaEvents(json, this.calendarFilter);
-    console.log(`${tag} ✓ parsed ${events.length} event(s)`);
-    return events;
+    // ── Step 2: Per-calendar fallback — one osascript call per calendar ───────
+    // Each call has its own 30s timeout, so a hung calendar only blocks its
+    // own slot and doesn't prevent other calendars from returning results.
+    let calNames = this.calendarFilter;
+    if (calNames.length === 0) {
+      try {
+        const cals = await listAppleCalendars();
+        calNames = cals.map((c) => c.name).filter(Boolean);
+      } catch {
+        calNames = [];
+      }
+    }
+
+    if (calNames.length === 0) {
+      throw new Error(
+        "Apple Calendar: no calendars found. " +
+        "Verify Obsidian has Full Calendar Access in " +
+        "System Settings → Privacy & Security → Calendars."
+      );
+    }
+
+    const allEvents: CalendarEvent[] = [];
+    const timedOut: string[] = [];
+    const errored: string[] = [];
+
+    for (const calName of calNames) {
+      const t0 = Date.now();
+      try {
+        const json = await runOsascript(
+          buildJxaPerCalendarScript(calName, this.daysBack, this.daysAhead)
+        );
+        const events = parseJxaEvents(json, []);
+        console.log(`${tag} "${calName}" ✓ — ${events.length} event(s) in ${Date.now() - t0}ms`);
+        allEvents.push(...events);
+      } catch (err) {
+        const elapsed = Date.now() - t0;
+        const isTimeout = (err as Error & { killed?: boolean }).killed === true ||
+                          (err instanceof Error && err.message.includes("timed out"));
+        if (isTimeout) {
+          console.warn(`${tag} "${calName}" timed out after ${elapsed}ms`);
+          timedOut.push(calName);
+        } else {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(`${tag} "${calName}" error after ${elapsed}ms: ${msg}`);
+          errored.push(`"${calName}": ${msg.slice(0, 120)}`);
+        }
+      }
+    }
+
+    // Partial success — return what we got, surface a notice-level warning
+    if (allEvents.length > 0) {
+      if (timedOut.length > 0) {
+        console.warn(
+          `${tag} Timed out on: ${timedOut.map((n) => `"${n}"`).join(", ")}. ` +
+          `Returning ${allEvents.length} event(s) from other calendars.`
+        );
+      }
+      return allEvents;
+    }
+
+    // Total failure — throw with detail on each calendar
+    const parts: string[] = [];
+    if (timedOut.length > 0) {
+      parts.push(
+        `Timed out reading ${timedOut.map((n) => `"${n}"`).join(", ")} after 30s. ` +
+        `Calendar.app may be syncing a large Exchange/Office 365 account. ` +
+        `Try: open Calendar.app and wait for it to finish syncing, then retry.`
+      );
+    }
+    errored.forEach((e) => parts.push(e));
+    throw new Error(`Apple Calendar: ${parts.join(" | ")}`);
   }
 
   async listEventsInTimeWindow(timeMin: Date, timeMax: Date): Promise<CalendarEvent[]> {
