@@ -212,14 +212,18 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
             try {
               const api = new IcalCalendarApi(this.plugin.settings.icalUrl);
               const events = await api.fetchAllEvents();
-              new Notice(
-                `✓ Connected! Found ${events.length} event${events.length !== 1 ? "s" : ""} in the feed.`
-              );
+              const msg =
+                events.length === 0
+                  ? "✓ Connected — calendar feed is valid but contains 0 events. " +
+                    "Check the Obsidian developer console (Ctrl+Shift+I) for details."
+                  : `✓ Connected! Found ${events.length} event${events.length !== 1 ? "s" : ""} in the feed.`;
+              new Notice(msg, events.length === 0 ? 8000 : 4000);
               this.display(); // refresh to update the status indicator
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
               new Notice(
-                `Connection failed: ${msg.replace(/[\r\n]+/g, " ").slice(0, 200)}`
+                `Connection failed: ${msg.replace(/[\r\n]+/g, " ").slice(0, 300)}`,
+                10000
               );
             } finally {
               button.setButtonText("Test").setDisabled(false);

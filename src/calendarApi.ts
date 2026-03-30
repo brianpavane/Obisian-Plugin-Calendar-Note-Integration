@@ -61,7 +61,25 @@ async function fetchIcalText(
             "Check that the iCal URL is correct and has not been regenerated in Google Calendar."
         );
       }
-      return response.text;
+      const text = response.text;
+      // Validate that we received iCal content, not an HTML login page or error.
+      const trimmed = text.trimStart();
+      if (!trimmed.startsWith("BEGIN:VCALENDAR")) {
+        const preview = trimmed.slice(0, 120).replace(/[\r\n]+/g, " ");
+        console.error(
+          "[GoogleCalendarNotes] Unexpected iCal response. " +
+          `HTTP ${response.status}. First 120 chars: ${preview}`
+        );
+        throw new Error(
+          "iCal URL did not return a valid calendar feed. " +
+          "This usually means the calendar requires authentication — " +
+          "check that you are using the 'Secret address in iCal format' " +
+          "(not the public URL), and that your organization has not " +
+          "disabled external iCal access. " +
+          `Response preview: "${preview}"`
+        );
+      }
+      return text;
     }
   );
 
@@ -130,7 +148,20 @@ export class IcalCalendarApi {
   async fetchAllEvents(): Promise<CalendarEvent[]> {
     const url = withSingleEvents(this.icalUrl);
     const text = await fetchIcalText(url);
-    return parseIcal(text);
+    const events = parseIcal(text);
+    console.log(
+      `[GoogleCalendarNotes] Fetched iCal feed: ${text.length} bytes, ` +
+      `${text.split("BEGIN:VEVENT").length - 1} VEVENT blocks, ` +
+      `${events.length} parsed events.`
+    );
+    if (events.length > 0) {
+      console.log(
+        "[GoogleCalendarNotes] First event:",
+        events[0].summary,
+        events[0].start
+      );
+    }
+    return events;
   }
 
   /**
