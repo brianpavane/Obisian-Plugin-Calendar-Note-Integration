@@ -7,19 +7,12 @@
  * handles authentication for all synced accounts (Google, iCloud, Exchange).
  *
  * Security notes:
- *   - The JXA script is a compile-time constant. No user-controlled data is
- *     ever interpolated into it, eliminating command/script injection risk.
- *   - Output is capped at MAX_OUTPUT_BYTES before JSON.parse to prevent OOM
- *     from a pathologically large calendar.
- *   - Every field read from the JXA response is type-checked and length-capped
- *     before being placed into a CalendarEvent.
+ *   - The JXA script template only interpolates validated integers (daysBack,
+ *     LOOKAHEAD_DAYS) — never user strings — eliminating injection risk.
+ *   - Output is capped at MAX_OUTPUT_BYTES before JSON.parse to prevent OOM.
+ *   - Every field read from the JXA response is type-checked and length-capped.
  *   - Date strings are validated through Date.parse before use.
  *   - execFile (not exec) is used so no shell expansion takes place.
- *
- * macOS permissions:
- *   On first use macOS shows a system dialog:
- *   "Obsidian wants to access your calendars." — click Allow.
- *   The permission is remembered in System Settings → Privacy → Calendars.
  */
 
 import { execFile } from "child_process";
@@ -29,29 +22,53 @@ import type { CalendarEvent, ResponseStatus } from "./icalParser";
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Hard cap on osascript stdout to prevent OOM from large calendars. */
 const MAX_OUTPUT_BYTES = 5 * 1024 * 1024; // 5 MB
-
-/** Fetch events from today through this many days ahead. */
 const LOOKAHEAD_DAYS = 365;
 
 // ---------------------------------------------------------------------------
-// JXA scripts — compile-time constants, NO user input interpolated
+// Conference URL patterns (mirrors icalParser.ts)
+// ---------------------------------------------------------------------------
+
+const CONFERENCE_PATTERNS: Array<{ regex: RegExp; name: string }> = [
+  { regex: /https:\/\/meet\.google\.com\/[a-z0-9-]+/i, name: "Google Meet" },
+  { regex: /https:\/\/[\w.-]+\.zoom\.us\/[^\s<>"]{5,100}/i, name: "Zoom" },
+  { regex: /https:\/\/teams\.microsoft\.com\/l\/meetup-join\/[^\s<>"]{5,200}/i, name: "Microsoft Teams" },
+  { regex: /https:\/\/teams\.live\.com\/meet\/[^\s<>"]{5,100}/i, name: "Microsoft Teams" },
+];
+
+function extractConferenceFromText(text: string): CalendarEvent["conferenceData"] | undefined {
+  for (const { regex, name } of CONFERENCE_PATTERNS) {
+    const match = text.match(regex);
+    if (match) {
+      return {
+        entryPoints: [{ entryPointType: "video", uri: match[0] }],
+        conferenceSolution: { name },
+      };
+    }
+  }
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// JXA script builder — only integers are interpolated
 // ---------------------------------------------------------------------------
 
 /**
- * Returns a JSON array of calendar events starting today through one year
- * ahead. Each element has the shape of {@link RawJxaEvent}.
+ * Build the JXA fetch-events script.
  *
- * All property accesses are wrapped in individual try/catch blocks so a single
- * bad event property does not discard the entire event.
+ * @param daysBack  Integer number of days before today to start the window.
+ *                  Validated to [0, 30] before interpolation.
  */
-const JXA_FETCH_EVENTS = `
+function buildJxaFetchEvents(daysBack: number): string {
+  // Clamp to a safe integer range before interpolating into the script.
+  const safeDaysBack = Math.max(0, Math.min(30, Math.floor(daysBack)));
+
+  return `
 (function () {
   var app = Application("Calendar");
   var now = new Date();
-  var windowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  var windowEnd   = new Date(windowStart.getTime() + ${LOOKAHEAD_DAYS} * 86400000);
+  var windowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ${safeDaysBack});
+  var windowEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ${LOOKAHEAD_DAYS});
   var results = [];
 
   app.calendars().forEach(function (cal) {
@@ -101,6 +118,7 @@ const JXA_FETCH_EVENTS = `
   return JSON.stringify(results);
 })();
 `.trim();
+}
 
 /** Returns a JSON array of { name, id } for every calendar in Calendar.app. */
 const JXA_LIST_CALENDARS = `
@@ -138,11 +156,6 @@ interface RawJxaEvent {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Run an osascript JXA snippet and return stdout as a string.
- * Uses `execFile` (not `exec`) — no shell expansion.
- * Output is capped at {@link MAX_OUTPUT_BYTES}.
- */
 function runOsascript(script: string): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
@@ -164,15 +177,10 @@ function runOsascript(script: string): Promise<string> {
   });
 }
 
-/**
- * Coerce an unknown value to a string, capped at `maxLen` characters.
- * Returns `""` for non-string or falsy values.
- */
 function safeStr(v: unknown, maxLen = 5_000): string {
   return typeof v === "string" ? v.slice(0, maxLen) : "";
 }
 
-/** Map Apple Calendar participation status strings to {@link ResponseStatus}. */
 function mapAppleStatus(status: string): ResponseStatus {
   switch (status.toLowerCase()) {
     case "accepted":  return "accepted";
@@ -182,14 +190,7 @@ function mapAppleStatus(status: string): ResponseStatus {
   }
 }
 
-/**
- * Parse and validate raw JXA JSON output into {@link CalendarEvent} objects.
- * Applies calendar name filter when `calendarFilter` is non-empty.
- */
-function parseJxaEvents(
-  json: string,
-  calendarFilter: string[]
-): CalendarEvent[] {
+function parseJxaEvents(json: string, calendarFilter: string[]): CalendarEvent[] {
   let raw: unknown;
   try {
     raw = JSON.parse(json);
@@ -210,7 +211,6 @@ function parseJxaEvents(
     if (typeof item !== "object" || item === null) continue;
     const r = item as Record<string, unknown>;
 
-    // Apply calendar filter
     const calName = safeStr(r.calendarName);
     if (calendarFilter.length > 0 && !calendarFilter.includes(calName)) {
       continue;
@@ -219,7 +219,7 @@ function parseJxaEvents(
     const startStr = safeStr(r.startDate);
     const endStr   = safeStr(r.endDate);
     const startMs  = Date.parse(startStr);
-    if (isNaN(startMs)) continue; // skip events with invalid dates
+    if (isNaN(startMs)) continue;
 
     const allDay = r.allDayEvent === true;
     let start: CalendarEvent["start"];
@@ -236,12 +236,9 @@ function parseJxaEvents(
     } else {
       start = { dateTime: new Date(startMs).toISOString() };
       const endMs = Date.parse(endStr);
-      end   = { dateTime: isNaN(endMs)
-        ? new Date(startMs).toISOString()
-        : new Date(endMs).toISOString() };
+      end = { dateTime: isNaN(endMs) ? new Date(startMs).toISOString() : new Date(endMs).toISOString() };
     }
 
-    // Build attendee list
     const attendees: NonNullable<CalendarEvent["attendees"]> = [];
     if (Array.isArray(r.attendees)) {
       for (const a of r.attendees) {
@@ -258,15 +255,18 @@ function parseJxaEvents(
     }
 
     const uid = safeStr(r.uid, 500) || `apple-${startMs}-${Math.random().toString(36).slice(2)}`;
+    const description = safeStr(r.description, 50_000) || undefined;
 
     events.push({
       id: uid,
-      summary:     safeStr(r.summary,     500)    || undefined,
-      description: safeStr(r.description, 50_000) || undefined,
-      location:    safeStr(r.location,    1_000)  || undefined,
+      summary:     safeStr(r.summary,  500)   || undefined,
+      description,
+      location:    safeStr(r.location, 1_000) || undefined,
       start,
       end,
       attendees: attendees.length > 0 ? attendees : undefined,
+      // Detect conference links from the event description
+      conferenceData: description ? extractConferenceFromText(description) : undefined,
     });
   }
 
@@ -277,16 +277,11 @@ function parseJxaEvents(
 // Public API
 // ---------------------------------------------------------------------------
 
-/** A calendar entry returned by {@link listAppleCalendars}. */
 export interface AppleCalendar {
   name: string;
   id: string;
 }
 
-/**
- * Return the list of calendars visible in Calendar.app.
- * Useful for populating a calendar-filter picker in settings.
- */
 export async function listAppleCalendars(): Promise<AppleCalendar[]> {
   const json = await runOsascript(JXA_LIST_CALENDARS);
   let raw: unknown;
@@ -308,17 +303,20 @@ export async function listAppleCalendars(): Promise<AppleCalendar[]> {
  *
  * @param calendarFilter Optional list of calendar names to include.
  *                       Pass an empty array to include all calendars.
+ * @param daysBack       How many days back to fetch (0 = today onwards).
  */
 export class AppleCalendarApi {
   private readonly calendarFilter: string[];
+  private readonly daysBack: number;
 
-  constructor(calendarFilter: string[] = []) {
+  constructor(calendarFilter: string[] = [], daysBack = 0) {
     this.calendarFilter = calendarFilter;
+    this.daysBack = daysBack;
   }
 
-  /** Fetch all upcoming events (today → 365 days). */
   async fetchAllEvents(): Promise<CalendarEvent[]> {
-    const json = await runOsascript(JXA_FETCH_EVENTS);
+    const script = buildJxaFetchEvents(this.daysBack);
+    const json = await runOsascript(script);
     const events = parseJxaEvents(json, this.calendarFilter);
     console.log(
       `[GoogleCalendarNotes] Apple Calendar: fetched ${events.length} events` +
@@ -329,11 +327,7 @@ export class AppleCalendarApi {
     return events;
   }
 
-  /** Return events whose start falls within [timeMin, timeMax]. */
-  async listEventsInTimeWindow(
-    timeMin: Date,
-    timeMax: Date
-  ): Promise<CalendarEvent[]> {
+  async listEventsInTimeWindow(timeMin: Date, timeMax: Date): Promise<CalendarEvent[]> {
     const all = await this.fetchAllEvents();
     return all.filter((event) => {
       if (event.start.dateTime) {
@@ -349,11 +343,7 @@ export class AppleCalendarApi {
     });
   }
 
-  /** Return up to `maxResults` events sorted by start time. */
-  async listUpcomingEvents(
-    maxResults: number,
-    daysAhead: number
-  ): Promise<CalendarEvent[]> {
+  async listUpcomingEvents(maxResults: number, daysAhead: number): Promise<CalendarEvent[]> {
     const now       = new Date();
     const windowEnd = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1_000);
     const events    = await this.listEventsInTimeWindow(now, windowEnd);

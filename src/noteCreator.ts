@@ -1,43 +1,52 @@
 /**
  * @file noteCreator.ts
- * @description Builds structured Obsidian Markdown notes from Google Calendar
- * events and writes them to the vault.
+ * @description Builds structured Obsidian Markdown notes from calendar events
+ * and writes them to the vault.
  *
  * Security notes:
- *   - YAML injection: All values written to the YAML frontmatter are escaped
- *     with {@link escapeYaml} so that newlines and special characters cannot
- *     inject additional YAML keys.
+ *   - YAML injection: All values written to frontmatter are escaped with
+ *     {@link escapeYaml} so that newlines and special characters cannot inject
+ *     additional YAML keys.
  *   - Markdown table injection: Pipe characters and newlines in attendee
- *     name/email fields are escaped with {@link escapeMdCell} to prevent
- *     table row corruption.
- *   - Markdown body injection: Newlines in inline fields (title, location,
- *     organizer) are stripped with {@link sanitizeInline} so they cannot
- *     create extra headings or break bold metadata lines.
+ *     name/email fields are escaped with {@link escapeMdCell}.
+ *   - Markdown body injection: Newlines in inline fields are stripped with
+ *     {@link sanitizeInline}.
  *   - URL injection: Conference entry-point URIs are validated with
  *     {@link isSafeHttpsUrl} before being embedded in a Markdown link.
- *     Non-HTTPS URIs are silently dropped.
  */
 
 import { App, normalizePath, TFile } from "obsidian";
 import { CalendarEvent, ResponseStatus } from "./calendarApi";
 
 // ---------------------------------------------------------------------------
+// Public options interface
+// ---------------------------------------------------------------------------
+
+/** Options that control the content and filename format of generated notes. */
+export interface NoteOptions {
+  /** Vault-relative folder path. Empty = vault root. */
+  noteFolder: string;
+  /**
+   * When true, include the event's description as the Agenda section.
+   * When false, the Agenda section is omitted.
+   */
+  includeEventNotes: boolean;
+  /**
+   * When true, include conference links (Zoom, Teams, Google Meet) in the note.
+   * When false, conference links are omitted from the note body and frontmatter.
+   */
+  includeConferenceLinks: boolean;
+  /**
+   * "before" → "2026-03-30 - Meeting Title.md"
+   * "after"  → "Meeting Title - 2026-03-30.md"
+   */
+  datePosition: "before" | "after";
+}
+
+// ---------------------------------------------------------------------------
 // Security helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Escape a string for safe use inside a YAML double-quoted scalar.
- *
- * YAML double-quoted strings interpret the following escape sequences:
- *   `\\`  →  literal backslash
- *   `\"`  →  literal double-quote
- *   `\n`  →  newline  (would end the scalar and start a new YAML key)
- *   `\r`  →  carriage return
- *   `\t`  →  tab
- *
- * This function prevents an attacker-controlled event field (e.g. a title
- * containing `"\nmalicious_key: value"`) from injecting extra YAML keys.
- */
 function escapeYaml(value: string): string {
   return value
     .replace(/\\/g, "\\\\")
@@ -47,36 +56,16 @@ function escapeYaml(value: string): string {
     .replace(/\t/g, "\\t");
 }
 
-/**
- * Sanitise a string for use inside a Markdown table cell.
- *
- * Pipe characters (`|`) end the current cell and would corrupt the table
- * structure. Newlines would start a new table row.  Both are replaced with
- * safe alternatives.
- */
 function escapeMdCell(value: string): string {
   return value
-    .replace(/\r?\n/g, " ") // newlines → space
-    .replace(/\|/g, "\\|"); // pipes → escaped pipe
+    .replace(/\r?\n/g, " ")
+    .replace(/\|/g, "\\|");
 }
 
-/**
- * Sanitise a string for use in an inline Markdown context (headings, bold).
- *
- * Newlines in a `# Heading` or `**bold**` field would produce unexpected
- * additional lines. This collapses all line-break sequences to a single space.
- */
 function sanitizeInline(value: string): string {
   return value.replace(/\r?\n|\r/g, " ").trim();
 }
 
-/**
- * Return `true` only when `uri` is a valid absolute URL with an `https:`
- * scheme (or `http:` for local/legacy cases).
- *
- * Prevents `javascript:`, `data:`, and other dangerous URI schemes from
- * being embedded in Markdown links where they would execute on click.
- */
 function isSafeHttpsUrl(uri: string): boolean {
   try {
     const url = new URL(uri);
@@ -90,26 +79,10 @@ function isSafeHttpsUrl(uri: string): boolean {
 // HTML → plain text helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Convert an HTML string (as returned by Google Calendar event descriptions)
- * to clean plain text, preserving logical line breaks and list structure.
- *
- * Uses the browser's `DOMParser` API (available in Obsidian's Electron
- * environment) for robust, spec-compliant HTML parsing instead of regex.
- * Regex-based tag stripping is unreliable against malformed or nested tags
- * and does not safely handle all entity encodings.
- *
- * Block-level elements (p, div, br, li, h1–h6) are preceded by a newline
- * so that visual paragraph structure is preserved in the plain-text output.
- */
 function stripHtml(html: string): string {
   try {
     const doc = new DOMParser().parseFromString(html, "text/html");
 
-    /**
-     * Recursively walk DOM nodes, collecting text and inserting newlines
-     * before block-level elements.
-     */
     function walk(node: Node): string {
       if (node.nodeType === Node.TEXT_NODE) {
         return node.textContent ?? "";
@@ -119,14 +92,11 @@ function stripHtml(html: string): string {
       }
       const el = node as Element;
       const tag = el.tagName.toLowerCase();
-
-      // Insert a newline before block-level and list elements.
       const blockTags = new Set([
         "p", "div", "br", "li", "h1", "h2", "h3", "h4", "h5", "h6",
         "tr", "blockquote", "pre",
       ]);
       const prefix = blockTags.has(tag) ? "\n" : "";
-
       let inner = "";
       for (const child of Array.from(el.childNodes)) {
         inner += walk(child);
@@ -135,23 +105,13 @@ function stripHtml(html: string): string {
     }
 
     return walk(doc.body)
-      .replace(/\n{3,}/g, "\n\n") // collapse 3+ blank lines to at most 2
+      .replace(/\n{3,}/g, "\n\n")
       .trim();
   } catch {
-    // Fallback: strip tags with a simple regex if DOMParser is unavailable.
     return html.replace(/<[^>]+>/g, " ").trim();
   }
 }
 
-/**
- * Parse the event description into an array of agenda bullet strings.
- *
- * HTML is stripped first. Each non-empty line in the resulting plain text
- * becomes one agenda bullet item.
- *
- * @param description Raw description from the Calendar API (HTML or plain text).
- * @returns           Array of trimmed, non-empty lines.
- */
 function parseAgendaItems(description: string): string[] {
   const text = stripHtml(description);
   return text
@@ -164,11 +124,6 @@ function parseAgendaItems(description: string): string[] {
 // Date / time formatting helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Format an ISO date-time string as a long human-readable date.
- *
- * @example "Monday, March 30, 2026"
- */
 function formatDateLong(isoDate: string): string {
   const date = new Date(isoDate);
   return date.toLocaleDateString("en-US", {
@@ -179,11 +134,6 @@ function formatDateLong(isoDate: string): string {
   });
 }
 
-/**
- * Format an ISO date-time string as a short 12-hour time.
- *
- * @example "10:30 AM"
- */
 function formatTime(isoDateTime: string): string {
   const date = new Date(isoDateTime);
   return date.toLocaleTimeString("en-US", {
@@ -193,13 +143,6 @@ function formatTime(isoDateTime: string): string {
   });
 }
 
-/**
- * Extract the `YYYY-MM-DD` date portion from an ISO date or date-time string.
- *
- * Parses the value through the `Date` constructor so that timezone offsets
- * are handled correctly, and guards against "Invalid Date" (e.g. from a
- * malformed API response) by falling back to today's date.
- */
 function formatIsoDate(isoDateOrDateTime: string): string {
   const d = new Date(isoDateOrDateTime);
   if (isNaN(d.getTime())) {
@@ -208,13 +151,6 @@ function formatIsoDate(isoDateOrDateTime: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-/**
- * Format a duration in milliseconds as a short human-readable string.
- *
- * @example formatDuration(5400000) → "1h 30m"
- * @example formatDuration(1800000) → "30m"
- * @example formatDuration(3600000) → "1h"
- */
 function formatDuration(ms: number): string {
   if (ms <= 0) return "0m";
   const totalMinutes = Math.round(ms / 60_000);
@@ -225,27 +161,15 @@ function formatDuration(ms: number): string {
   return `${hours}h ${minutes}m`;
 }
 
-/** Timing data derived from a calendar event. */
 interface EventTiming {
-  /** Human-readable date, e.g. "Monday, March 30, 2026". */
   dateLong: string;
-  /** Human-readable time range, e.g. "10:00 AM – 11:00 AM" or "All day". */
   timeRange: string;
-  /** ISO date for YAML frontmatter, e.g. "2026-03-30". */
   dateIso: string;
-  /** Human-readable duration, e.g. "1h 30m" or "All day". */
   duration: string;
 }
 
-/**
- * Derive display-ready timing strings from a calendar event.
- *
- * Handles both timed events (`start.dateTime`) and all-day events
- * (`start.date`).
- */
 function getEventTiming(event: CalendarEvent): EventTiming {
   if (event.start.date) {
-    // All-day event: `start.date` is "YYYY-MM-DD" with no time component.
     return {
       dateLong: formatDateLong(event.start.date + "T12:00:00"),
       timeRange: "All day",
@@ -254,7 +178,6 @@ function getEventTiming(event: CalendarEvent): EventTiming {
     };
   }
 
-  // Fall back to the current time when dateTime is absent (malformed event).
   const startDt = event.start.dateTime ?? new Date().toISOString();
   const endDt = event.end.dateTime ?? startDt;
   const durationMs = new Date(endDt).getTime() - new Date(startDt).getTime();
@@ -270,11 +193,6 @@ function getEventTiming(event: CalendarEvent): EventTiming {
 // Attendee helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Colored-circle emoji shown in the attendees table status column.
- *
- * 🟢 Accepted · 🔴 Declined · 🟡 Tentative · ⚪ Awaiting · 🔷 Organizer
- */
 const RESPONSE_ICON: Record<ResponseStatus, string> = {
   accepted: "🟢",
   declined: "🔴",
@@ -282,44 +200,25 @@ const RESPONSE_ICON: Record<ResponseStatus, string> = {
   needsAction: "⚪",
 };
 
-/**
- * Map a raw API `responseStatus` string to the appropriate status emoji.
- * Falls back to ⚪ (awaiting) for unknown or absent values.
- */
 function responseIcon(status: string | undefined): string {
   return RESPONSE_ICON[(status ?? "needsAction") as ResponseStatus] ?? "⚪";
 }
 
-/** One row in the rendered attendees table. */
 interface AttendeeRow {
-  /** Status emoji (e.g. 🟢). */
   icon: string;
-  /** Display name, escaped for Markdown table cells. */
   name: string;
-  /** Email address, escaped for Markdown table cells. */
   email: string;
 }
 
-/**
- * Build the list of attendee rows for the note.
- *
- * The organizer is listed first (with a 🔷 icon) when they do not also
- * appear in the `attendees` array. All self entries are excluded.
- *
- * All name and email strings are run through {@link escapeMdCell} to prevent
- * Markdown table injection.
- */
 function buildAttendeeRows(event: CalendarEvent): AttendeeRow[] {
   const rows: AttendeeRow[] = [];
 
-  // Organizer first (only when not already present in the attendees list).
   if (event.organizer) {
     const alreadyListed = (event.attendees ?? []).some(
       (a) => a.email === event.organizer!.email
     );
     if (!alreadyListed) {
-      const rawName =
-        event.organizer.displayName?.trim() || event.organizer.email;
+      const rawName = event.organizer.displayName?.trim() || event.organizer.email;
       rows.push({
         icon: "🔷",
         name: escapeMdCell(rawName) + " *(organizer)*",
@@ -328,7 +227,6 @@ function buildAttendeeRows(event: CalendarEvent): AttendeeRow[] {
     }
   }
 
-  // Non-self attendees in API order.
   for (const a of event.attendees ?? []) {
     if (a.self) continue;
     const icon = responseIcon(a.responseStatus);
@@ -344,26 +242,9 @@ function buildAttendeeRows(event: CalendarEvent): AttendeeRow[] {
   return rows;
 }
 
-/**
- * Render the attendees list as a Markdown table with three columns:
- * status icon, display name, and email address.
- *
- * ```markdown
- * |   | Name              | Email                  |
- * |:-:|:------------------|:-----------------------|
- * | 🟢 | Alice Smith       | alice@example.com      |
- * | 🔴 | Bob Jones         | bob@example.com        |
- * ```
- *
- * @param rows Pre-built, already-escaped attendee rows.
- */
 function renderAttendeesTable(rows: AttendeeRow[]): string {
   if (rows.length === 0) return "";
-
-  const lines = [
-    "|   | Name | Email |",
-    "|:-:|:-----|:------|",
-  ];
+  const lines = ["|   | Name | Email |", "|:-:|:-----|:------|"];
   for (const row of rows) {
     lines.push(`| ${row.icon} | ${row.name} | ${row.email} |`);
   }
@@ -377,64 +258,37 @@ function renderAttendeesTable(rows: AttendeeRow[]): string {
 /**
  * Build the full Markdown content for a meeting note.
  *
- * The generated note has the following structure:
- *
- * ```
- * ---                         ← YAML frontmatter (title, date, attendees, …)
- * # Event Title
- *
- * **Date:** …
- * **Time:** …
- * **Location:** …             (if present)
- * **<Platform>:** [Join](…)   (if conference link present and HTTPS)
- * **Organizer:** …            (if present)
- *
- * **Attendees:**              (if any)
- * | 🟢/🔴/🟡/⚪/🔷 | Name | Email |
- *
- * ---
- *
- * ## Agenda                   ← Bullets from event description, or empty
- * ## Notes                    ← Empty bullet list
- * ## Summary                  ← Empty bullet list
- * ## Actions                  ← Empty bullet list
- * ```
- *
- * @param event Calendar event from the Google Calendar API.
- * @returns     Complete Markdown string ready to be written to a `.md` file.
+ * @param event   Calendar event.
+ * @param options Controls which sections are included.
  */
-export function createNoteContent(event: CalendarEvent): string {
+export function createNoteContent(
+  event: CalendarEvent,
+  options: Pick<NoteOptions, "includeEventNotes" | "includeConferenceLinks">
+): string {
   const timing = getEventTiming(event);
-
-  // Sanitize inline fields: strip newlines that would break Markdown structure.
   const title = sanitizeInline(event.summary?.trim() || "Untitled Event");
   const location = event.location ? sanitizeInline(event.location) : undefined;
   const organizer = event.organizer
-    ? sanitizeInline(
-        event.organizer.displayName?.trim() || event.organizer.email
-      )
+    ? sanitizeInline(event.organizer.displayName?.trim() || event.organizer.email)
     : undefined;
 
   const attendeeRows = buildAttendeeRows(event);
 
-  // Conference link — validate URI scheme before embedding.
-  const videoEntry = event.conferenceData?.entryPoints?.find(
-    (ep) => ep.entryPointType === "video"
-  );
+  // Conference link — only included when option is enabled and URI is safe.
+  const videoEntry =
+    options.includeConferenceLinks
+      ? event.conferenceData?.entryPoints?.find((ep) => ep.entryPointType === "video")
+      : undefined;
   const safeVideoUri =
     videoEntry && isSafeHttpsUrl(videoEntry.uri) ? videoEntry.uri : undefined;
   const platform = sanitizeInline(
     event.conferenceData?.conferenceSolution?.name ?? "Video call"
   );
 
-  // Agenda items parsed from the invite description.
-  const agendaItems = event.description
-    ? parseAgendaItems(event.description)
-    : [];
+  const agendaItems = event.description ? parseAgendaItems(event.description) : [];
 
   // -------------------------------------------------------------------------
   // YAML Frontmatter
-  // All values are escaped with escapeYaml() to prevent YAML injection.
   // -------------------------------------------------------------------------
   const frontmatterLines: string[] = [
     "---",
@@ -449,27 +303,20 @@ export function createNoteContent(event: CalendarEvent): string {
   if (attendeeRows.length > 0) {
     frontmatterLines.push("attendees:");
     attendeeRows.forEach((a) => {
-      // Strip the *(organizer)* Markdown suffix before writing to YAML.
       const plainName = a.name.replace(/\s*\*\(organizer\)\*/g, "").trim();
-      frontmatterLines.push(
-        `  - "${escapeYaml(plainName)} <${escapeYaml(a.email)}>"`
-      );
+      frontmatterLines.push(`  - "${escapeYaml(plainName)} <${escapeYaml(a.email)}>"`);
     });
   }
   if (!event.start.date) {
-    // Only timed events have a meaningful duration field.
     frontmatterLines.push(`duration: "${escapeYaml(timing.duration)}"`);
   }
-  if (event.conferenceData?.conferenceSolution?.name) {
-    frontmatterLines.push(
-      `conference_platform: "${escapeYaml(platform)}"`
-    );
+  if (options.includeConferenceLinks && event.conferenceData?.conferenceSolution?.name) {
+    frontmatterLines.push(`conference_platform: "${escapeYaml(platform)}"`);
   }
   frontmatterLines.push("---");
 
   // -------------------------------------------------------------------------
   // Header + metadata block
-  // Inline fields are sanitized; the conference URI is validated above.
   // -------------------------------------------------------------------------
   const lines: string[] = [
     frontmatterLines.join("\n"),
@@ -491,7 +338,6 @@ export function createNoteContent(event: CalendarEvent): string {
     lines.push(`**Organizer:** ${organizer}`);
   }
 
-  // Attendees table (name, email, RSVP icon).
   if (attendeeRows.length > 0) {
     lines.push("", "**Attendees:**", "", renderAttendeesTable(attendeeRows));
   }
@@ -499,31 +345,24 @@ export function createNoteContent(event: CalendarEvent): string {
   lines.push("", "---", "");
 
   // -------------------------------------------------------------------------
-  // ## Agenda
-  // Pre-populated from the invite description; empty bullet if none.
+  // ## Agenda  (optional — controlled by includeEventNotes)
   // -------------------------------------------------------------------------
-  lines.push("## Agenda", "");
-  if (agendaItems.length > 0) {
-    agendaItems.forEach((item) => lines.push(`- ${item}`));
-    lines.push("- "); // trailing blank bullet for easy continuation
-  } else {
-    lines.push("- ");
+  if (options.includeEventNotes) {
+    lines.push("## Agenda", "");
+    if (agendaItems.length > 0) {
+      agendaItems.forEach((item) => lines.push(`- ${item}`));
+      lines.push("- ");
+    } else {
+      lines.push("- ");
+    }
+    lines.push("");
   }
-  lines.push("");
 
   // -------------------------------------------------------------------------
-  // ## Notes  (live meeting notes)
+  // ## Notes / Summary / Actions
   // -------------------------------------------------------------------------
   lines.push("## Notes", "", "- ", "");
-
-  // -------------------------------------------------------------------------
-  // ## Summary  (post-meeting summary)
-  // -------------------------------------------------------------------------
   lines.push("## Summary", "", "- ", "");
-
-  // -------------------------------------------------------------------------
-  // ## Actions  (action items / follow-ups)
-  // -------------------------------------------------------------------------
   lines.push("## Actions", "", "- ", "");
 
   return lines.join("\n");
@@ -536,76 +375,67 @@ export function createNoteContent(event: CalendarEvent): string {
 /**
  * Generate a filesystem-safe filename for the meeting note.
  *
- * Format: `"YYYY-MM-DD Event Title"`
+ * "before": `YYYY-MM-DD - Event Title`
+ * "after":  `Event Title - YYYY-MM-DD`
  *
- * Characters forbidden by common file systems (`\ / : * ? " < > |`) are
- * replaced with hyphens, and runs of whitespace are collapsed.
+ * Characters forbidden by common file systems are replaced with hyphens.
  *
- * @param event Calendar event to generate a name for.
- * @returns     Filename string **without** the `.md` extension.
+ * @param event        Calendar event.
+ * @param datePosition Whether the date comes before or after the title.
+ * @returns            Filename string without the `.md` extension.
  */
-export function generateNoteFilename(event: CalendarEvent): string {
+export function generateNoteFilename(
+  event: CalendarEvent,
+  datePosition: "before" | "after" = "before"
+): string {
   const raw = event.summary?.trim() || "Untitled Event";
   const safe = raw
     .replace(/[\\/:*?"<>|]/g, "-")
     .replace(/\s+/g, " ")
     .trim()
-    // Strip leading dots so the file isn't treated as a hidden file on Unix.
     .replace(/^\.+/, "") || "Untitled Event";
 
   const dateIso = event.start.dateTime
     ? formatIsoDate(event.start.dateTime)
     : event.start.date ?? new Date().toISOString().slice(0, 10);
 
-  return `${dateIso} ${safe}`;
+  return datePosition === "after" ? `${safe} - ${dateIso}` : `${dateIso} - ${safe}`;
 }
 
 /** Return value of {@link createNoteFile}. */
 export interface CreateNoteResult {
-  /** The vault file (new or pre-existing). */
   file: TFile;
-  /**
-   * `true` when the file was created by this call; `false` when it already
-   * existed and was returned unchanged.
-   */
   wasCreated: boolean;
 }
 
 /**
  * Create a meeting-note file in the vault for the given event.
  *
- * If a file at the computed path already exists it is returned as-is
- * (idempotent — user edits are never overwritten). The `wasCreated` flag
- * in the result distinguishes new files from pre-existing ones.
+ * Idempotent — if the file already exists it is returned unchanged.
+ * The destination folder is created recursively if needed.
  *
- * The destination folder is created recursively if it does not yet exist.
- *
- * @param app    The Obsidian `App` instance.
- * @param event  Calendar event to create a note for.
- * @param folder Vault-relative folder path. Pass `""` for the vault root.
- * @returns      `{ file, wasCreated }`.
+ * @param app     The Obsidian `App` instance.
+ * @param event   Calendar event to create a note for.
+ * @param options Note content and location options.
  */
 export async function createNoteFile(
   app: App,
   event: CalendarEvent,
-  folder: string
+  options: NoteOptions
 ): Promise<CreateNoteResult> {
-  const content = createNoteContent(event);
-  const filename = generateNoteFilename(event);
+  const content = createNoteContent(event, options);
+  const filename = generateNoteFilename(event, options.datePosition);
 
-  // Normalise the folder path, treating an empty string as the vault root.
-  const trimmedFolder = folder.trim();
+  const trimmedFolder = options.noteFolder.trim();
   const folderPath = trimmedFolder ? normalizePath(trimmedFolder) : "";
   const filePath = normalizePath(
     folderPath ? `${folderPath}/${filename}.md` : `${filename}.md`
   );
 
-  // Create the folder if it does not already exist.
   if (folderPath && !app.vault.getAbstractFileByPath(folderPath)) {
     await app.vault.createFolder(folderPath);
   }
 
-  // Return the existing file without modification.
   const existing = app.vault.getAbstractFileByPath(filePath);
   if (existing instanceof TFile) {
     return { file: existing, wasCreated: false };

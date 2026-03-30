@@ -1,30 +1,29 @@
 # Google Calendar Note Integration
 
-An [Obsidian](https://obsidian.md) plugin that creates structured meeting notes from your Google Calendar events — with **no API keys, no Google Cloud Console setup, and no OAuth flow required**.
+An [Obsidian](https://obsidian.md) plugin that automatically creates structured meeting notes from your calendar events.
 
-Notes are pre-populated with the event's existing agenda/description and include ready-to-use sections for **Agenda**, **Notes**, **Summary**, and **Actions** — all formatted as bullet lists. Notes are created automatically in advance of your meetings, keeping your vault in sync with your calendar.
+Notes are pre-populated with the event's agenda/description and include ready-to-use sections for **Agenda**, **Notes**, **Summary**, and **Actions**. Notes are created automatically in advance of your meetings, keeping your vault in sync with your calendar.
 
-> **Desktop only.** This plugin requires Obsidian's desktop app.
-
-[![GitHub release](https://img.shields.io/github/v/release/brianpavane/Obisian-Plugin-Calendar-Note-Integration)](https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+> **Desktop only.** This plugin requires the Obsidian desktop app (macOS, Windows, or Linux).
 
 ---
 
 ## Table of Contents
 
 1. [Features](#features)
-2. [Example Note](#example-note)
-3. [Installation](#installation)
-4. [Upgrading](#upgrading)
+2. [Connection Methods](#connection-methods)
+3. [Example Note](#example-note)
+4. [Installation](#installation)
 5. [Setup](#setup)
+   - [iCal URL (personal calendars)](#option-a--ical-url-personal--public-calendars)
+   - [Google Account (work/org calendars)](#option-b--google-account-workorg-calendars)
+   - [Apple Calendar (macOS)](#option-c--apple-calendar-macos)
 6. [Usage](#usage)
 7. [Configuration Reference](#configuration-reference)
 8. [Note Template Anatomy](#note-template-anatomy)
 9. [Security Model](#security-model)
-10. [Architecture](#architecture)
-11. [Development](#development)
-12. [Troubleshooting](#troubleshooting)
+10. [Development](#development)
+11. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -32,17 +31,30 @@ Notes are pre-populated with the event's existing agenda/description and include
 
 | Feature | Details |
 |---|---|
-| **No API keys required** | Connects via Google Calendar's built-in iCal URL — no Google Cloud Console, no OAuth |
-| **Auto-create notes** | Notes created automatically N hours before each event (default: 12 h) |
-| **Startup sweep** | On launch, notes created for any events already within the advance window |
+| **Three connection methods** | iCal URL, Google Account (OAuth 2.0), or Apple Calendar |
+| **Auto-create notes** | Notes created automatically N hours before each event |
+| **Startup sweep** | Creates notes for events already within the advance window on launch |
 | **Background polling** | Checks every 30 minutes (configurable) for events needing a note |
+| **Past events** | Optionally create notes for past events within a configurable lookback window |
 | **Event picker** | Fuzzy-search across upcoming events to create a note on demand |
-| **Agenda from invite** | Event description parsed and placed in the Agenda section |
-| **Attendee RSVP table** | Attendees shown with name, email, and color-coded RSVP status |
-| **Conference links** | Google Meet links extracted and validated automatically |
-| **Duration** | Meeting duration shown in the note header and YAML frontmatter |
-| **YAML frontmatter** | Structured metadata for use with Dataview or other plugins |
-| **Idempotent** | Re-running never overwrites a note you have already started editing |
+| **Agenda from invite** | Event description is parsed and placed in the Agenda section |
+| **Attendee RSVP table** | Attendees shown with name, email, and color-coded accept/decline status |
+| **Conference links** | Google Meet, Zoom, and Microsoft Teams links detected and included (optional) |
+| **YAML frontmatter** | Structured metadata compatible with Dataview and other plugins |
+| **Flexible filenames** | Date before or after event name — your choice |
+| **Idempotent** | Re-running never overwrites a note you've already started editing |
+
+---
+
+## Connection Methods
+
+| Method | Best for | Auth required |
+|---|---|---|
+| **iCal URL** | Personal Google Calendar | None — just the secret URL |
+| **Google Account** | Work/organization Google Calendar | Google OAuth 2.0 (one-time setup) |
+| **Apple Calendar** | Any calendar synced to Calendar.app on macOS | None — reads locally |
+
+Switch between methods at any time in **Settings → Google Calendar Note Integration → Authentication mode**.
 
 ---
 
@@ -52,12 +64,11 @@ Notes are pre-populated with the event's existing agenda/description and include
 ---
 title: "Q2 Planning Kickoff"
 date: 2026-03-30
-calendar_event_id: "abc123xyz@google.com"
+calendar_event_id: "abc123xyz"
 location: "Conference Room B"
 attendees:
   - "Alice Smith <alice@example.com>"
   - "Bob Jones <bob@example.com>"
-  - "Carol White <carol@example.com>"
 duration: "1h"
 conference_platform: "Google Meet"
 ---
@@ -78,16 +89,13 @@ conference_platform: "Google Meet"
 | 🔷 | Alice Smith *(organizer)* | alice@example.com |
 | 🟢 | Bob Jones | bob@example.com |
 | 🔴 | Carol White | carol@example.com |
-| 🟡 | Dan Brown | dan@example.com |
-| ⚪ | Eve Miller | eve@example.com |
 
 ---
 
 ## Agenda
 
-- Review Q1 results and key learnings
-- Discuss Q2 OKRs and priorities
-- Assign owners for each initiative
+- Review Q1 results
+- Discuss Q2 OKRs
 -
 
 ## Notes
@@ -117,152 +125,204 @@ conference_platform: "Google Meet"
 
 ## Installation
 
-There are three ways to install the plugin, in order of ease.
+### Option A — BRAT (recommended for beta users)
 
-### Option A — BRAT (recommended)
+[BRAT](https://github.com/TfTHacker/obsidian42-brat) installs and auto-updates plugins directly from GitHub.
 
-[BRAT](https://github.com/TfTHacker/obsidian42-brat) lets you install and auto-update plugins directly from GitHub.
-
-1. Install and enable **Obsidian42 - BRAT** from the Obsidian Community Plugins list.
+1. Install and enable **Obsidian42 - BRAT** from the Community Plugins list.
 2. Open **Settings → BRAT → Add Beta plugin**.
 3. Enter the repository URL:
    ```
    https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration
    ```
-4. Click **Add Plugin**. BRAT downloads the latest release automatically.
+4. Click **Add Plugin**. BRAT downloads the latest release from the `main` branch automatically.
 5. Enable **Google Calendar Note Integration** in **Settings → Community Plugins**.
 
-Enable **Auto-update plugins at startup** in BRAT settings to receive future updates automatically.
+### Option B — Manual installation
 
----
-
-### Option B — Manual installation from a GitHub release
-
-1. Go to the [Releases page](https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration/releases) and download the **latest release assets**:
-   - `main.js`
-   - `manifest.json`
-   - `styles.css`
-
-2. Create the plugin folder in your vault if it doesn't exist:
+1. Go to the [Releases page](https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration/releases) and download the latest release assets: `main.js`, `manifest.json`, `styles.css`.
+2. Copy them into your vault's plugin folder:
    ```
    <vault>/.obsidian/plugins/obsidian-google-calendar-notes/
    ```
-
-3. Copy the three files into that folder.
-
-4. In Obsidian: **Settings → Community Plugins** → refresh icon → enable **Google Calendar Note Integration**.
-
----
+3. Enable the plugin in **Settings → Community Plugins**.
 
 ### Option C — Build from source
 
 ```bash
-# Clone the repository
 git clone https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration.git
 cd Obisian-Plugin-Calendar-Note-Integration
-
-# Install dependencies and build
 npm install
 npm run build
-
-# Copy to your vault
-cp main.js manifest.json styles.css \
-  "/path/to/your/vault/.obsidian/plugins/obsidian-google-calendar-notes/"
-```
-
-Enable the plugin in **Settings → Community Plugins**.
-
----
-
-## Upgrading
-
-### Upgrading with BRAT
-
-Run **Settings → BRAT → Check for updates**, or enable auto-update. BRAT handles everything.
-
-### Upgrading a manual installation
-
-1. Download the latest `main.js`, `manifest.json`, and `styles.css` from the [Releases page](https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration/releases).
-2. Overwrite the existing files in your vault's plugin folder.
-3. **Settings → Community Plugins** → disable then re-enable the plugin (or restart Obsidian).
-
-> **Your `data.json` is preserved** — settings are never overwritten by an upgrade.
-
-> **Upgrading from v1.1.0 (OAuth version):** The iCal branch uses a completely different connection method. After upgrading, open Settings and paste your Google Calendar iCal URL. Your previous OAuth credentials (Client ID, Client Secret, tokens) are no longer used and can be removed from `data.json` manually if desired.
-
-### Upgrading a source build
-
-```bash
-git pull origin ical
-npm run build
-cp main.js manifest.json styles.css \
-  "/path/to/your/vault/.obsidian/plugins/obsidian-google-calendar-notes/"
+cp main.js manifest.json styles.css "/path/to/vault/.obsidian/plugins/obsidian-google-calendar-notes/"
 ```
 
 ---
 
 ## Setup
 
-### Step 1 — Get your Google Calendar iCal URL
+Choose the connection method that matches your calendar:
 
-1. Open [Google Calendar](https://calendar.google.com) in your browser.
-2. In the left sidebar, hover over the calendar you want to connect and click the **⋮ three-dot menu**.
-3. Select **Settings and sharing**.
-4. Scroll down to the **Integrate calendar** section.
-5. Find **"Secret address in iCal format"** and click the copy icon.
+---
 
-> **Which calendar to choose?** For personal meetings, use your primary calendar. For work calendars, choose the one where your meeting invites appear.
+### Option A — iCal URL (personal / public calendars)
 
-> **Tip:** The URL ends in `/basic.ics`. Keep it secret — anyone with this URL can read your calendar.
+Use this when your Google Calendar is personal (not managed by a workplace organization).
 
-### Step 2 — Configure the plugin
+1. Open **Google Calendar** → **Settings** (gear icon).
+2. Click your calendar's name in the left sidebar.
+3. Scroll to **Integrate calendar**.
+4. Copy the **Secret address in iCal format** URL (ends in `.ics`).
+5. In Obsidian, open **Settings → Google Calendar Note Integration**.
+6. Set **Authentication mode** to **iCal URL**.
+7. Paste the URL into the **iCal URL** field.
+8. Click **Test** to confirm the connection.
+
+> **Security:** The secret iCal URL grants read access to your calendar to anyone who has it — treat it like a password. The plugin stores it encrypted in Obsidian's plugin data folder using your OS keychain.
+
+---
+
+### Option B — Google Account (work/org calendars)
+
+Use this when your organization blocks external iCal access (you see "0 events" with the iCal method, or get an error about authentication).
+
+#### One-time Google Cloud setup
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) and create or select a project.
+2. Go to **APIs & Services → Library** and enable the **Google Calendar API**.
+3. Go to **APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID**.
+4. Choose **Desktop app** as the application type.
+5. Copy the **Client ID** and **Client Secret**.
+
+> **Tip:** You may need to configure the OAuth consent screen first. Choose "External" and add your own email as a test user while in "Testing" mode.
+
+#### Plugin setup
 
 1. In Obsidian, open **Settings → Google Calendar Note Integration**.
-2. Paste the iCal URL into the **iCal URL** field.
-3. Click **Test** to verify the connection. You should see a confirmation with the event count.
-4. Optionally set **Your email address** so your own entry is hidden from the attendees table.
+2. Set **Authentication mode** to **Google Account**.
+3. Paste your **Client ID** and **Client Secret**.
+4. Click **Sign in with Google** — your browser opens Google's authorization page.
+5. Sign in and grant read-only calendar access.
+6. The browser shows "Authorization Successful" and Obsidian resumes automatically.
 
-### Step 3 — Done
+Authentication is a one-time step. The plugin stores a refresh token and automatically renews the access token in the background.
 
-The plugin will automatically create meeting notes based on your settings. Use the **Refresh** button in Settings or the command palette to trigger an immediate sweep.
+---
+
+### Option C — Apple Calendar (macOS)
+
+Use this to read from Calendar.app on macOS. All accounts already synced in Calendar.app — including Google, iCloud, Exchange, and others — are available without any additional authentication.
+
+1. In Obsidian, open **Settings → Google Calendar Note Integration**.
+2. Set **Authentication mode** to **Apple Calendar — macOS only**.
+3. The plugin loads your available calendars automatically. Use the checkboxes to select which calendars to include. Leave all checked (or uncheck all) to include every calendar.
+4. Click **Test** to verify Obsidian can read your events.
+
+> **macOS permission:** On first use, macOS shows a dialog: *"Obsidian wants to access your calendars."* Click **Allow**. The permission is saved in **System Settings → Privacy & Security → Calendars**.
 
 ---
 
 ## Usage
 
-### Commands (Command Palette)
+### Automatic (recommended)
+
+Once configured, the plugin runs quietly in the background:
+
+- **On startup:** Checks for events starting within the next N hours (default: 12 h) and creates notes.
+- **Every 30 minutes:** Re-checks for new events entering the advance window.
+- Notes are created silently; a brief notice appears only when new notes are made.
+
+### Manual — Command Palette
 
 | Command | Description |
 |---|---|
-| **Create note from Google Calendar event** | Opens a fuzzy-search picker to choose any upcoming event |
-| **Create note for next upcoming event** | Immediately creates a note for the soonest event |
-| **Auto-create notes for events in the next N hours** | Manual trigger for the same sweep that runs on startup and every poll interval |
+| `Create note from Google Calendar event` | Open the fuzzy-search event picker |
+| `Create note for next upcoming event` | Instantly create a note for the very next event |
+| `Auto-create notes for events in the next N hours` | Manual sweep with a summary |
 
-### Ribbon icon
+### Manual — Ribbon Icon
 
-Click the calendar icon in the left ribbon to open the event picker (same as the first command above).
+Click the **calendar** icon in the left ribbon to open the event picker.
 
-### Automatic note creation
+### Upgrading with BRAT
 
-The plugin creates notes automatically in two ways:
-- **On startup:** A 5-second delayed sweep creates notes for all events starting within the next N hours.
-- **On schedule:** Every `pollIntervalMinutes` minutes (default: 30), the plugin checks for new events.
+Run **Settings → BRAT → Check for updates** — BRAT handles everything automatically.
 
-Notes are **idempotent** — if a note file already exists at the computed path, it is returned as-is. Your edits are never overwritten.
+### Upgrading manually
+
+1. Download the latest `main.js`, `manifest.json`, `styles.css` from [Releases](https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration/releases).
+2. Overwrite the files in `<vault>/.obsidian/plugins/obsidian-google-calendar-notes/`.
+3. Reload the plugin: **Settings → Community Plugins → Disable**, then **Enable**.
+
+> **Your settings and tokens are preserved.** The `data.json` file is never overwritten by an upgrade.
 
 ---
 
 ## Configuration Reference
 
+All settings are in **Settings → Google Calendar Note Integration**.
+
+### Connection Method
+
+| Setting | Description |
+|---|---|
+| **Authentication mode** | Choose iCal URL, Google Account, or Apple Calendar |
+
+### iCal Connection
+
+| Setting | Description |
+|---|---|
+| **iCal URL** | Secret iCal address from Google Calendar (encrypted at rest) |
+| **Test** | Verify the URL returns valid data |
+
+### Google Account
+
+| Setting | Description |
+|---|---|
+| **Client ID** | OAuth 2.0 Client ID from Google Cloud Console |
+| **Client Secret** | OAuth 2.0 Client Secret (encrypted at rest) |
+| **Sign in with Google** | Opens browser for one-time authorization |
+| **Disconnect** | Revokes authorization and clears stored tokens |
+| **Calendar ID** | Calendar to fetch (`primary` = default calendar) |
+| **Test** | Verify the OAuth token is valid |
+
+### Apple Calendar
+
+| Setting | Description |
+|---|---|
+| **Calendar checkboxes** | Select which Calendar.app calendars to include. Uncheck all to include every calendar. |
+| **Test** | Verify Obsidian can read events from Calendar.app |
+
+### Personal Settings
+
+| Setting | Description |
+|---|---|
+| **Your email address** | Your calendar account email. When set, your own attendee entry is hidden from generated notes. |
+
+### Note Settings
+
 | Setting | Default | Range | Description |
 |---|---|---|---|
-| **iCal URL** | _(empty)_ | — | Google Calendar secret address (ends in `.ics`) |
-| **Your email address** | _(empty)_ | — | Hides your own entry from the attendees table |
-| **Note folder** | `Meeting Notes` | any path | Vault-relative folder for new notes. Empty = vault root |
-| **Hours in advance** | `12` | 1–48 h | How far before an event to auto-create its note |
-| **Poll interval** | `30` | 5–120 min | How often to check for new events needing a note |
-| **Days ahead** | `7` | 1–30 days | Lookahead window for the event picker |
-| **Max events** | `20` | 1–50 | Maximum events shown in the picker |
+| **Note folder** | `Meeting Notes` | any path | Vault folder for new notes. Empty = vault root |
+| **Hours in advance** | `12` | 1–48 h | How far ahead of an event to auto-create its note |
+| **Poll interval** | `30` | 5–120 min | How often to check for new events. Takes effect after restart. |
+| **Include past events** | Off | — | Also create notes for events that have already started |
+| **Days back to look** | `1` | 1–30 days | How many days back to look (shown when past events is enabled) |
+
+### Note Contents
+
+| Setting | Default | Description |
+|---|---|---|
+| **Include event notes / agenda** | On | Include the event's description as the Agenda section |
+| **Include conference link** | Off | Extract and include Zoom, Teams, or Google Meet links |
+| **Date position in filename** | Before name | `2026-03-30 - Meeting Title` or `Meeting Title - 2026-03-30` |
+
+### Calendar View
+
+| Setting | Default | Range | Description |
+|---|---|---|---|
+| **Days ahead to fetch** | `7` | 1–30 days | Look-ahead window for the event picker |
+| **Max events to show** | `20` | 1–50 | Max events shown in the picker |
 
 ---
 
@@ -278,115 +338,69 @@ YAML Frontmatter
 
 **Date:**      Long-form date  (e.g. Monday, March 30, 2026)
 **Time:**      Time range       (e.g. 10:00 AM – 11:00 AM, or "All day")
-**Duration:**  Length of meeting (e.g. 1h 30m — timed events only)
-**Location:**  Physical location (if present in the event)
-**<Platform>:** [Join meeting](<url>)  (if a video link is present)
+**Duration:**  Length of meeting (timed events only)
+**Location:**  Physical location (if present)
+**<Platform>:** [Join meeting](<url>)  (if conference links enabled and present)
 **Organizer:** Name / email    (if present)
 
 **Attendees:**
 | 🟢/🔴/🟡/⚪/🔷 | Name | Email |
-(one row per attendee, excluding your own entry if selfEmail is set)
 
 ---
 
-## Agenda
-  (bullet list pre-populated from the event description, or empty bullet)
-
-## Notes
-  (empty bullet list for live notes)
-
-## Summary
-  (empty bullet list for post-meeting summary)
-
-## Actions
-  (empty bullet list for action items / follow-ups)
+## Agenda        (if "Include event notes" enabled — bullet list from description)
+## Notes         (empty bullet list for live notes)
+## Summary       (empty bullet list for post-meeting summary)
+## Actions       (empty bullet list for action items)
 ```
 
 ### Filename format
 
-```
-YYYY-MM-DD Event Title.md
-```
+| Date position | Example |
+|---|---|
+| Before name (default) | `2026-03-30 - Q2 Planning Kickoff.md` |
+| After name | `Q2 Planning Kickoff - 2026-03-30.md` |
 
-Example: `2026-03-30 Q2 Planning Kickoff.md`
-
-Characters forbidden by common file systems (`\ / : * ? " < > |`) are replaced with hyphens. Leading dots are stripped (prevents hidden files on Unix).
+Characters forbidden by common file systems (`\ / : * ? " < > |`) are replaced with hyphens.
 
 ---
 
 ## Security Model
 
-### iCal URL
+### Credential storage
 
-The iCal "secret address" is a long, unguessable URL that grants **read-only** access to your calendar without requiring sign-in. It is:
-
-- **Stored in plaintext** in `.obsidian/plugins/obsidian-google-calendar-notes/data.json`.
-- **Read-only** — it cannot be used to create, modify, or delete calendar events.
-- **Revocable** — if compromised, go to Google Calendar → Settings → [calendar] → Integrate calendar → **Reset secret address**. The plugin will need to be updated with the new URL.
-
-### iCal data in transit
-
-All iCal fetches use HTTPS. The `singleevents=true` parameter is appended to Google Calendar URLs automatically; no other query parameters are added.
-
-### Note content
-
-Meeting notes are written as plain Markdown files inside your vault. All values derived from calendar event data are sanitised before being written:
-
-| Risk | Mitigation |
+| Credential | Storage |
 |---|---|
-| YAML injection | `escapeYaml()` escapes backslashes, quotes, and control characters |
-| Markdown injection | `sanitizeInline()` strips newlines from heading/bold fields |
-| Table injection | `escapeMdCell()` escapes pipes and newlines in attendee data |
-| URL injection | `isSafeHttpsUrl()` rejects non-HTTP(S) schemes from conference links |
-| HTML in description | `DOMParser` strips tags spec-compliantly before inserting into Markdown |
+| iCal URL | Encrypted via OS keychain (Electron `safeStorage`) |
+| OAuth Client Secret | Encrypted via OS keychain |
+| OAuth access token | Encrypted via OS keychain |
+| OAuth refresh token | Encrypted via OS keychain |
 
-### Fetch safety
+Encrypted tokens are stored as opaque blobs in `.obsidian/plugins/obsidian-google-calendar-notes/data.json`. They are machine-bound — moving your vault to another machine requires re-authentication.
 
-Each iCal fetch has a 15-second `AbortController` timeout. Network errors and non-2xx responses are caught and surfaced as Obsidian Notices rather than crashing the plugin.
+### OAuth 2.0 flow
 
-### Vault access
+- Uses the **installed app** flow with a dynamically allocated localhost redirect port.
+- A **cryptographically random `state` token** (`crypto.randomUUID()`) is generated per auth attempt to prevent CSRF.
+- The local HTTP server shuts down immediately after the first valid redirect.
+- A **5-minute timeout** aborts the flow if not completed.
+- The plugin requests only the **`calendar.readonly`** scope — it cannot modify calendar data.
 
-Ensure your vault folder is not shared publicly or synced to a location accessible by untrusted parties — meeting details (agenda, attendee names and emails) appear in plain text in generated notes.
+### Input sanitization
 
----
+| Context | Threat | Mitigation |
+|---|---|---|
+| YAML frontmatter values | YAML injection via newlines | `escapeYaml()` escapes `\n`, `\r`, `\t`, `"`, `\` |
+| Markdown headings / bold | Newlines breaking structure | `sanitizeInline()` collapses newlines |
+| Markdown table cells | `\|` breaking table rows | `escapeMdCell()` escapes pipes and newlines |
+| Conference link URIs | `javascript:` / `data:` URIs | `isSafeHttpsUrl()` only allows `https:` and `http:` |
+| JXA script (Apple Calendar) | Script injection | Only validated integers are interpolated — never user strings |
 
-## Architecture
+### Network requests
 
-### Source files
-
-| File | Purpose |
-|---|---|
-| `src/main.ts` | Plugin lifecycle, commands, polling, selfEmail filtering |
-| `src/settings.ts` | `GoogleCalendarSettings` interface and settings tab UI |
-| `src/icalParser.ts` | RFC 5545 iCal parser → `CalendarEvent[]` |
-| `src/calendarApi.ts` | `IcalCalendarApi`: fetch, parse, filter by time window |
-| `src/noteCreator.ts` | Markdown note builder + vault file writer |
-| `src/eventModal.ts` | `FuzzySuggestModal` for the event picker |
-| `styles.css` | Plugin CSS (settings tab, event picker suggestions) |
-| `manifest.json` | Obsidian plugin manifest |
-| `versions.json` | Maps plugin versions → minimum Obsidian app versions |
-| `CHANGELOG.md` | Release history |
-| `esbuild.config.mjs` | esbuild bundler configuration |
-| `version-bump.mjs` | Version bump script (updates manifest, package, versions) |
-| `tsconfig.json` | TypeScript compiler configuration |
-
-### Data flow
-
-```
-Google Calendar iCal URL
-        │
-        ▼  (IcalCalendarApi.fetchAllEvents)
-  Raw .ics text
-        │
-        ▼  (icalParser.parseIcal)
-  CalendarEvent[]   ──► filter by time window
-        │
-        ▼  (noteCreator.createNoteFile)
-  Markdown note content  ──► Obsidian vault file
-        │
-        ▼  (eventModal.ts)
-  FuzzySuggestModal  ──► user picks event ──► createNoteFile
-```
+- All requests use Obsidian's `requestUrl()` API (routes through Electron main process, bypasses CORS).
+- iCal feeds capped at 10 MB. Apple Calendar output capped at 5 MB.
+- All REST API calls have a 10-second timeout.
 
 ---
 
@@ -401,91 +415,86 @@ Google Calendar iCal URL
 
 ```bash
 npm install          # Install dependencies
-npm run dev          # Watch mode (rebuilds on file changes)
-npm run build        # Production build (type-check + minified bundle)
+npm run dev          # Development build (watch mode)
+npm run build        # Production build
 ```
 
 ### Versioning
 
 ```bash
-npm run version:patch   # Bug fixes       →  e.g. 1.2.0 → 1.2.1
-npm run version:minor   # New features    →  e.g. 1.2.1 → 1.3.0
-npm run version:major   # Breaking change →  e.g. 1.3.0 → 2.0.0
+npm run version:patch   # bug fixes  →  e.g. 5.0.0 → 5.0.1
+npm run version:minor   # new features  →  5.0.0 → 5.1.0
+npm run version:major   # breaking changes  →  5.0.0 → 6.0.0
 ```
 
-After bumping, update `CHANGELOG.md`, build, commit, and create a GitHub Release:
+### Publishing a release
 
 ```bash
 npm run build
-git add manifest.json versions.json package.json CHANGELOG.md main.js
-git commit -m "Release X.Y.Z"
-git tag X.Y.Z
-git push origin ical --tags
+git add manifest.json versions.json package.json main.js
+git commit -m "Release vX.Y.Z"
+git push origin main
+# Then create a GitHub Release tagged X.Y.Z (no "v" prefix for BRAT compatibility)
+# Attach: main.js, manifest.json, styles.css
 ```
 
-> **No `v` prefix on tags.** Obsidian's release validator requires the tag to exactly match the `version` field in `manifest.json` (e.g. `1.2.0`, not `v1.2.0`).
+### Architecture
 
-Then create a GitHub Release at the [releases page](https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration/releases/new), attach `main.js`, `manifest.json`, and `styles.css` as assets, and publish. BRAT users will be offered the upgrade on their next Obsidian startup.
-
-### Installing the dev build
-
-```bash
-cp main.js manifest.json styles.css \
-  "/path/to/your/vault/.obsidian/plugins/obsidian-google-calendar-notes/"
 ```
-
-Then reload the plugin in Obsidian (**Settings → Community Plugins** → disable / enable).
+src/
+├── main.ts             Plugin entry point — commands, ribbon, polling
+├── settings.ts         Settings interface, defaults, settings tab UI
+├── calendarApi.ts      Unified CalendarService + IcalCalendarApi + GoogleCalendarApi
+├── icalParser.ts       RFC 5545 iCal parser (Google Meet, Zoom, Teams detection)
+├── appleCalendarApi.ts JXA-based Apple Calendar reader
+├── googleAuth.ts       OAuth 2.0 authorize / refresh / revoke
+├── noteCreator.ts      Markdown note builder + vault file writer
+├── eventModal.ts       Fuzzy-search event picker modal
+├── secureStorage.ts    Electron safeStorage wrapper
+└── electron.d.ts       Electron type declarations
+```
 
 ---
 
 ## Troubleshooting
 
-### "No iCal URL configured"
+### "Please configure your connection"
 
-Open **Settings → Google Calendar Note Integration** and paste your iCal URL. See [Setup](#setup) for instructions on finding it.
+Open **Settings → Google Calendar Note Integration** and complete the setup for your chosen connection method.
 
-### Test connection fails
+### iCal: "0 events returned" or "did not return a valid calendar feed"
 
-- Confirm the URL ends in `.ics` and was copied from **Google Calendar → Settings → Integrate calendar → Secret address in iCal format**.
-- Check that Obsidian has internet access.
-- If the URL was recently **reset** in Google Calendar, paste the new one.
+- Make sure you copied the **Secret address in iCal format** (not the public calendar URL).
+- Your organization may have disabled external iCal access. Switch to **Google Account** mode instead.
+- Open the developer console (**Ctrl+Shift+I** → Console) for the full error details.
 
-### Notes are not being created automatically
+### Google Account: "Authorization timed out" or "OAuth state mismatch"
 
-1. Confirm the iCal URL is configured and the Test button succeeds.
-2. Check that **Hours in advance** is set high enough to cover upcoming events.
-3. Use the **"Auto-create notes for events in the next N hours"** command (verbose mode) to see exactly what the sweep finds.
+Click **Sign in with Google** again to start a fresh authorization flow.
 
-### Recurring events are missing
+### Google Account: "Google Calendar API error: …"
 
-The plugin appends `singleevents=true` to Google Calendar iCal URLs automatically, which asks Google to expand recurring instances server-side. If a recurring event is still missing:
-- Confirm the URL is a Google Calendar URL (contains `calendar.google.com`).
-- Check that the event instance falls within the time window being fetched.
-- Try the **Refresh** button in Settings for an immediate re-fetch.
+The access token may have been revoked. Click **Disconnect** then **Sign in with Google** to re-authenticate.
 
-### Attendees table shows my own entry
+### Apple Calendar: "Calendar access denied"
 
-Set **Your email address** in Settings to your Google account email. The plugin will then mark your attendee entry as `self` and exclude it from the table.
+Go to **System Settings → Privacy & Security → Calendars** and toggle Obsidian to **Allow**.
 
-### Note folder is not being created
+### Apple Calendar: "No calendars found"
 
-Ensure **Note folder** in Settings contains only valid folder characters. Leave it empty to use the vault root.
+Ensure Calendar.app is open, has at least one account configured, and that Obsidian has calendar permission.
 
-### "iCal URL" field shows asterisks (password hidden)
+### Notes are not created automatically
 
-This is intentional — the iCal URL is treated as a secret credential and displayed as a password field to prevent shoulder-surfing. The URL is stored as plaintext in `data.json` within your vault.
+1. Confirm the plugin is configured (connection test passes in Settings).
+2. Check that **Hours in advance** is large enough to cover upcoming events.
+3. Run the **"Auto-create notes for events in the next N hours"** command for a verbose status report.
 
 ---
 
 ## Privacy
 
-This plugin communicates **only** with `calendar.google.com` using your iCal URL. No data is sent to any third-party server. The iCal URL is stored locally in Obsidian's plugin data file.
-
-### Vault access and iCal URL security
-
-- **The iCal URL is read-only** — it cannot be used to modify your calendar.
-- **The iCal URL is revocable** — reset it in Google Calendar if you believe it has been compromised. Update the plugin settings with the new URL.
-- **Notes contain calendar data in plain text** — meeting titles, descriptions, attendee names, and email addresses are written to `.md` files in your vault. Ensure your vault is not publicly accessible.
+This plugin communicates only with your calendar source (Google Calendar API, iCal URL, or local Calendar.app). No data is sent to any third-party server. Credentials are stored locally and encrypted using your OS keychain.
 
 ---
 
