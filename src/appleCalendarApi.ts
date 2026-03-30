@@ -56,64 +56,99 @@ function extractConferenceFromText(text: string): CalendarEvent["conferenceData"
 /**
  * Build the JXA fetch-events script.
  *
- * @param daysBack  Integer number of days before today to start the window.
- *                  Validated to [0, 30] before interpolation.
+ * Only safe integers are interpolated — never user strings.
+ *
+ * @param daysBack   Days before today to start the window. 0 = today (no past events).
+ *                   Clamped to [0, 30].
+ * @param daysAhead  Days after today to end the window.
+ *                   Clamped to [1, 365].
  */
-function buildJxaFetchEvents(daysBack: number): string {
-  // Clamp to a safe integer range before interpolating into the script.
-  const safeDaysBack = Math.max(0, Math.min(30, Math.floor(daysBack)));
+function buildJxaFetchEvents(daysBack: number, daysAhead: number): string {
+  const safeDaysBack  = Math.max(0,   Math.min(30,  Math.floor(daysBack)));
+  const safeDaysAhead = Math.max(1,   Math.min(365, Math.floor(daysAhead)));
 
   return `
 (function () {
   var app = Application("Calendar");
   var now = new Date();
   var windowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ${safeDaysBack});
-  var windowEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ${LOOKAHEAD_DAYS});
+  var windowEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ${safeDaysAhead});
+
+  // Build a calendar ID → name lookup first (fast — no event data loaded).
+  var calMap = {};
+  try {
+    app.calendars().forEach(function (cal) {
+      var id = "", name = "";
+      try { id   = String(cal.id()   || ""); } catch (e) {}
+      try { name = String(cal.name() || ""); } catch (e) {}
+      if (id) calMap[id] = name;
+    });
+  } catch (e) {}
+
+  // Use app.eventsFrom(start, {to: end}) — the application-level API.
+  // Calendar.app executes this as a native date-range query (equivalent to
+  // CalDAV/Exchange server-side search), so it never loads every historical
+  // event from every calendar. This avoids the timeout caused by cal.events()
+  // or per-calendar eventsFrom(), which enumerate the full event store first.
+  var rawEvents = [];
+  try {
+    rawEvents = app.eventsFrom(windowStart, { to: windowEnd });
+  } catch (e) {
+    return JSON.stringify([]);
+  }
+
   var results = [];
-
-  app.calendars().forEach(function (cal) {
-    var calName = "", calId = "";
-    try { calName = cal.name();  } catch (e) {}
-    try { calId   = cal.id();    } catch (e) {}
-
+  for (var i = 0; i < rawEvents.length; i++) {
     try {
-      cal.events().forEach(function (evt) {
+      var evt = rawEvents[i];
+
+      // Determine the parent calendar from the event's JXA object specifier.
+      // Specifier format: event id "X" of calendar id "Y" of application "Calendar"
+      // The container property gives the enclosing calendar specifier.
+      var calName = "", calId = "";
+      try {
+        calId   = String(evt.container.id()   || "");
+        calName = String(evt.container.name() || "");
+      } catch (e1) {
         try {
-          var sd = evt.startDate();
-          if (!sd || sd < windowStart || sd > windowEnd) return;
+          // Fallback: parse the calendar ID out of the specifier string.
+          var specStr = String(evt.specifier());
+          var m = specStr.match(/calendar id "([^"]+)"/);
+          if (m) { calId = m[1]; calName = calMap[calId] || ""; }
+        } catch (e2) {}
+      }
 
-          var item = {
-            uid: "", summary: "",
-            startDate: sd.toISOString(), endDate: sd.toISOString(),
-            allDayEvent: false, description: "", location: "",
-            calendarName: calName, calendarId: calId,
-            attendees: []
-          };
+      var item = {
+        uid: "", summary: "",
+        startDate: windowStart.toISOString(), endDate: windowStart.toISOString(),
+        allDayEvent: false, description: "", location: "",
+        calendarName: calName, calendarId: calId,
+        attendees: []
+      };
 
-          try { item.uid         = String(evt.uid()         || ""); } catch (e) {}
-          try { item.summary     = String(evt.summary()     || ""); } catch (e) {}
-          try { var ed = evt.endDate(); if (ed) item.endDate = ed.toISOString(); } catch (e) {}
-          try { item.allDayEvent = evt.allDayEvent() === true;       } catch (e) {}
-          try { item.description = String(evt.description() || ""); } catch (e) {}
-          try { item.location    = String(evt.location()    || ""); } catch (e) {}
-          try {
-            var atts = evt.attendees();
-            if (atts) {
-              item.attendees = atts.map(function (a) {
-                return {
-                  displayName: String(a.displayName()         || ""),
-                  address:     String(a.address()             || ""),
-                  status:      String(a.participationStatus() || "unknown")
-                };
-              });
-            }
-          } catch (e) {}
+      try { item.uid         = String(evt.uid()         || ""); } catch (e) {}
+      try { item.summary     = String(evt.summary()     || ""); } catch (e) {}
+      try { var sd = evt.startDate(); if (sd) item.startDate = sd.toISOString(); } catch (e) {}
+      try { var ed = evt.endDate();   if (ed) item.endDate   = ed.toISOString(); } catch (e) {}
+      try { item.allDayEvent = evt.allDayEvent() === true;                        } catch (e) {}
+      try { item.description = String(evt.description() || ""); } catch (e) {}
+      try { item.location    = String(evt.location()    || ""); } catch (e) {}
+      try {
+        var atts = evt.attendees();
+        if (atts) {
+          item.attendees = atts.map(function (a) {
+            return {
+              displayName: String(a.displayName()         || ""),
+              address:     String(a.address()             || ""),
+              status:      String(a.participationStatus() || "unknown")
+            };
+          });
+        }
+      } catch (e) {}
 
-          results.push(item);
-        } catch (e) {}
-      });
+      results.push(item);
     } catch (e) {}
-  });
+  }
 
   return JSON.stringify(results);
 })();
@@ -156,17 +191,28 @@ interface RawJxaEvent {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Maximum time to wait for osascript to respond before aborting. */
+const OSASCRIPT_TIMEOUT_MS = 30_000;
+
 function runOsascript(script: string): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       "osascript",
       ["-l", "JavaScript", "-e", script],
-      { maxBuffer: MAX_OUTPUT_BYTES },
+      { maxBuffer: MAX_OUTPUT_BYTES, timeout: OSASCRIPT_TIMEOUT_MS },
       (err, stdout) => {
         if (err) {
+          if ((err as Error & { killed?: boolean }).killed) {
+            reject(new Error(
+              "Apple Calendar request timed out after 30 seconds. " +
+              "Calendar.app may be busy — try again in a moment."
+            ));
+            return;
+          }
           reject(new Error(
             err.message.includes("1743")
-              ? "Calendar access denied. Go to System Settings → Privacy & Security → Calendars and allow Obsidian."
+              ? "Calendar access denied. In System Settings → Privacy & Security → Calendars, " +
+                "set Obsidian to 'Full Calendar Access' (not 'Add Only')."
               : `Apple Calendar error: ${err.message}`
           ));
           return;
@@ -308,22 +354,35 @@ export async function listAppleCalendars(): Promise<AppleCalendar[]> {
 export class AppleCalendarApi {
   private readonly calendarFilter: string[];
   private readonly daysBack: number;
+  private readonly daysAhead: number;
 
-  constructor(calendarFilter: string[] = [], daysBack = 0) {
+  constructor(calendarFilter: string[] = [], daysBack = 0, daysAhead = 30) {
     this.calendarFilter = calendarFilter;
     this.daysBack = daysBack;
+    this.daysAhead = daysAhead;
   }
 
   async fetchAllEvents(): Promise<CalendarEvent[]> {
-    const script = buildJxaFetchEvents(this.daysBack);
-    const json = await runOsascript(script);
+    const tag = "[GoogleCalendarNotes] Apple Calendar";
+    const filter = this.calendarFilter.length > 0
+      ? `filter: [${this.calendarFilter.join(", ")}]`
+      : "filter: all calendars";
+    console.log(`${tag} fetchAllEvents() — ${filter}, daysBack=${this.daysBack}`);
+
+    console.log(`${tag} → window: -${this.daysBack}d … +${this.daysAhead}d, timeout ${OSASCRIPT_TIMEOUT_MS / 1000}s`);
+    const t0 = Date.now();
+    let json: string;
+    try {
+      json = await runOsascript(buildJxaFetchEvents(this.daysBack, this.daysAhead));
+    } catch (err) {
+      console.error(`${tag} ✗ osascript failed after ${Date.now() - t0}ms:`, err);
+      throw err;
+    }
+    console.log(`${tag} ✓ osascript returned ${json.length} bytes in ${Date.now() - t0}ms`);
+
+    console.log(`${tag} → parsing JSON…`);
     const events = parseJxaEvents(json, this.calendarFilter);
-    console.log(
-      `[GoogleCalendarNotes] Apple Calendar: fetched ${events.length} events` +
-      (this.calendarFilter.length > 0
-        ? ` from calendars: ${this.calendarFilter.join(", ")}`
-        : " from all calendars")
-    );
+    console.log(`${tag} ✓ parsed ${events.length} event(s)`);
     return events;
   }
 
