@@ -6,6 +6,9 @@ Notes are pre-populated with the event's existing agenda/description and include
 
 > **Desktop only.** This plugin requires Obsidian's desktop app (uses Electron APIs for the OAuth browser flow).
 
+[![GitHub release](https://img.shields.io/github/v/release/brianpavane/Obisian-Plugin-Calendar-Note-Integration)](https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 ---
 
 ## Table of Contents
@@ -479,7 +482,7 @@ npm run version:minor
 npm run version:major
 ```
 
-After bumping, update `CHANGELOG.md` with a summary of changes, then build and commit:
+After bumping, update `CHANGELOG.md` with a summary of changes, then build, commit, and create a GitHub Release:
 
 ```bash
 npm run build
@@ -489,7 +492,10 @@ git tag vX.Y.Z
 git push origin main --tags
 ```
 
-GitHub users watching the repository will receive a release notification. BRAT users will be offered the upgrade automatically on the next Obsidian startup.
+Then go to [github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration/releases/new](https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration/releases/new), select the tag you just pushed, and attach `main.js`, `manifest.json`, and `styles.css` as release assets. This is required for:
+- The release badge in the README to update.
+- BRAT to detect and offer the upgrade to users.
+- Manual installers to download the built files without building from source.
 
 ### Installing the dev build
 
