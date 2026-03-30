@@ -52,6 +52,7 @@ export interface GoogleCalendarSettings {
   maxEvents: number;
   appleTimeoutSeconds: number;
   appleSkipTier3: boolean;
+  appleMaxTier3Scan: number;
 }
 
 export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
@@ -77,6 +78,7 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   maxEvents: 20,
   appleTimeoutSeconds: 30,
   appleSkipTier3: false,
+  appleMaxTier3Scan: 500,
 };
 
 // ---------------------------------------------------------------------------
@@ -515,6 +517,30 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
               const num = parseInt(value, 10);
               if (!isNaN(num) && num >= 15 && num <= 120) {
                 this.plugin.settings.appleTimeoutSeconds = num;
+                await this.plugin.saveSettings();
+              }
+            });
+        });
+
+      new Setting(containerEl)
+        .setName("Max events for last-resort scan (Tier 3)")
+        .setDesc(
+          "If all faster strategies fail, the plugin scans the newest N events individually. " +
+          "Lower values reduce timeout risk; higher values increase the chance of finding events " +
+          "on very large calendars. Tier 2.75 (bulk date fetch) is tried first and is much faster. (50–2000)"
+        )
+        .addText((text) => {
+          text.inputEl.type = "number";
+          text.inputEl.min = "50";
+          text.inputEl.max = "2000";
+          text.inputEl.step = "50";
+          text.inputEl.style.width = "80px";
+          text
+            .setValue(String(this.plugin.settings.appleMaxTier3Scan))
+            .onChange(async (value) => {
+              const num = parseInt(value, 10);
+              if (!isNaN(num) && num >= 50 && num <= 2000) {
+                this.plugin.settings.appleMaxTier3Scan = num;
                 await this.plugin.saveSettings();
               }
             });

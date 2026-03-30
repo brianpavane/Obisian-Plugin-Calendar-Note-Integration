@@ -53,8 +53,12 @@ function extractConferenceFromText(text: string): CalendarEvent["conferenceData"
 // JXA script builder — only integers are interpolated
 // ---------------------------------------------------------------------------
 
-/** Hard cap on events scanned in Tier 3 (cal.events() full-scan fallback). */
-const MAX_TIER3_SCAN = 1_000;
+/**
+ * Default cap on events scanned in Tier 3 (individual startDate() loop).
+ * Tier 2.75 (bulk startDate fetch) is tried first and is far faster —
+ * this cap only applies if Tier 2.75 also fails.
+ */
+const DEFAULT_MAX_TIER3_SCAN = 500;
 
 // Shared JXA snippet for building one result item from an event object (variable `evt`).
 //
@@ -151,24 +155,32 @@ function buildJxaTier1Script(daysBack: number, daysAhead: number): string {
 }
 
 /**
- * Per-calendar script: queries ONE named calendar through Tier 2 → 2.5 → 3.
+ * Per-calendar script: queries ONE named calendar through Tier 2 → 2.5 → 2.75 → 3.
  * Running one call per calendar in TypeScript means a slow/hung calendar
- * only blocks its own 30s slot — other calendars still return results.
+ * only blocks its own slot — other calendars still return results.
  *
- * Returns JSON: { tier, t2ms, t25ms, t3ms, events[] }
- *   tier: 2 | 25 | 3 | -3 (skipped)
+ * Tier 2.75 is the key fix for Exchange calendars that fail Tier 2 & 2.5:
+ *   `cal.events.startDate()` fetches ALL start dates in ONE IPC call,
+ *   filters in JS, then calls `properties()` only for matching events.
+ *   This replaces the Tier 3 loop of N individual `startDate()` calls
+ *   (e.g. 1000 calls × 50–100 ms each = timeout).
+ *
+ * Returns JSON: { tier, t2ms, t25ms, t275ms, t3ms, events[] }
+ *   tier: 2 | 25 | 275 | 3 | -3 (skipped)
  *   tXms: elapsed ms for each tier attempt (-1 = not attempted)
  */
 function buildJxaPerCalendarScript(
   calName: string,
   daysBack: number,
   daysAhead: number,
-  skipTier3 = false
+  skipTier3 = false,
+  maxTier3Scan = DEFAULT_MAX_TIER3_SCAN
 ): string {
-  const safeDaysBack  = Math.max(0, Math.min(30,  Math.floor(daysBack)));
-  const safeDaysAhead = Math.max(1, Math.min(365, Math.floor(daysAhead)));
-  const safeCalName   = JSON.stringify(calName); // name came from Calendar.app
-  const skipTier3Js   = skipTier3 ? "true" : "false";
+  const safeDaysBack    = Math.max(0, Math.min(30,  Math.floor(daysBack)));
+  const safeDaysAhead   = Math.max(1, Math.min(365, Math.floor(daysAhead)));
+  const safeCalName     = JSON.stringify(calName); // name came from Calendar.app
+  const skipTier3Js     = skipTier3 ? "true" : "false";
+  const safeMaxT3Scan   = Math.max(50, Math.min(2_000, Math.floor(maxTier3Scan)));
   return `
 (function () {
   var app = Application("Calendar");
@@ -190,12 +202,12 @@ function buildJxaPerCalendarScript(
       }
     }
   } catch (e) {}
-  if (!targetCal) return JSON.stringify({ tier: 0, t2ms: -1, t25ms: -1, t3ms: -1, events: [] });
+  if (!targetCal) return JSON.stringify({ tier: 0, t2ms: -1, t25ms: -1, t275ms: -1, t3ms: -1, events: [] });
 
   var calEvts = null;
-  var t2ms = -1, t25ms = -1, t3ms = -1, tier = 0;
+  var t2ms = -1, t25ms = -1, t275ms = -1, t3ms = -1, tier = 0;
 
-  // Tier 2: cal.eventsFrom(start, {to:end})
+  // ── Tier 2: cal.eventsFrom(start, {to:end}) ──────────────────────────────
   var t2start = Date.now();
   try {
     calEvts = targetCal.eventsFrom(windowStart, { to: windowEnd });
@@ -206,7 +218,7 @@ function buildJxaPerCalendarScript(
     calEvts = null;
   }
 
-  // Tier 2.5: whose-predicate filter
+  // ── Tier 2.5: whose-predicate filter ─────────────────────────────────────
   if (calEvts === null) {
     var t25start = Date.now();
     try {
@@ -224,12 +236,43 @@ function buildJxaPerCalendarScript(
     }
   }
 
-  // Tier 3: scan the most recent ${MAX_TIER3_SCAN} events only.
-  // Calendar.app returns events oldest-first, so we skip old history and
-  // start near the end of the list where upcoming events are found.
+  // ── Tier 2.75: bulk startDate() fetch — ONE IPC call for all dates ────────
+  //
+  // cal.events.startDate() is a JXA collection-level property access that
+  // returns ALL event start dates in a SINGLE AppleEvent round-trip.
+  // We then filter purely in JS and call properties() only on matches.
+  //
+  // This replaces the Tier 3 loop of N individual startDate() calls:
+  //   Old: 1000 calls × 50–100 ms each = 50–100 s (timeout)
+  //   New: 1 bulk call + JS filter     = typically 1–5 s
+  if (calEvts === null) {
+    var t275start = Date.now();
+    try {
+      var allDates = targetCal.events.startDate();
+      calEvts = [];
+      for (var m = 0; m < allDates.length; m++) {
+        try {
+          var sd275 = allDates[m];
+          if (sd275 && sd275 >= windowStart && sd275 <= windowEnd) {
+            calEvts.push(targetCal.events[m]);
+          }
+        } catch (em) {}
+      }
+      t275ms = Date.now() - t275start;
+      tier = 275;
+    } catch (e275b) {
+      t275ms = Date.now() - t275start;
+      calEvts = null;
+    }
+  }
+
+  // ── Tier 3: individual startDate() scan of the newest N events ────────────
+  //
+  // Last resort — only reached if Tier 2.75 also fails.
+  // Calendar.app returns events oldest-first, so we start from the end
+  // where upcoming events live.
   if (calEvts === null) {
     if (${skipTier3Js}) {
-      // Tier 3 disabled in Settings — skip this calendar
       calEvts = [];
       tier = -3;
     } else {
@@ -238,7 +281,7 @@ function buildJxaPerCalendarScript(
       try {
         var allEvts = targetCal.events();
         var total   = allEvts.length;
-        var scanFrom = Math.max(0, total - ${MAX_TIER3_SCAN});
+        var scanFrom = Math.max(0, total - ${safeMaxT3Scan});
         for (var j = scanFrom; j < total; j++) {
           try {
             var evtSd = allEvts[j].startDate();
@@ -267,7 +310,7 @@ function buildJxaPerCalendarScript(
       results.push(item);
     } catch (e) {}
   }
-  return JSON.stringify({ tier: tier, t2ms: t2ms, t25ms: t25ms, t3ms: t3ms, events: results });
+  return JSON.stringify({ tier: tier, t2ms: t2ms, t25ms: t25ms, t275ms: t275ms, t3ms: t3ms, events: results });
 })();
 `.trim();
 }
@@ -574,7 +617,7 @@ export async function runAppleCalendarDiagnostic(): Promise<string> {
           const total = c.totalEvents ?? -1;
           log(`  "${c.name}": Tier 2 ✗ → Tier 2.5 ✗ → will use Tier 3 (full scan)`);
           if (total > 0) {
-            log(`    ⚠ ${total} total events — will scan newest ${MAX_TIER3_SCAN} only`);
+            log(`    ⚠ ${total} total events — will try Tier 2.75 bulk-date fetch, then scan newest ${DEFAULT_MAX_TIER3_SCAN}`);
           } else if (total < 0) {
             log(`    ⚠ Could not read event count — Tier 3 may timeout`);
           }
@@ -620,19 +663,22 @@ export class AppleCalendarApi {
   private readonly daysAhead: number;
   private readonly timeoutMs: number;
   private readonly skipTier3: boolean;
+  private readonly maxTier3Scan: number;
 
   constructor(
     calendarFilter: string[] = [],
     daysBack = 0,
     daysAhead = 30,
     timeoutMs = DEFAULT_TIMEOUT_MS,
-    skipTier3 = false
+    skipTier3 = false,
+    maxTier3Scan = DEFAULT_MAX_TIER3_SCAN
   ) {
     this.calendarFilter = calendarFilter;
     this.daysBack = daysBack;
     this.daysAhead = daysAhead;
     this.timeoutMs = timeoutMs;
     this.skipTier3 = skipTier3;
+    this.maxTier3Scan = maxTier3Scan;
   }
 
   async fetchAllEvents(): Promise<CalendarEvent[]> {
@@ -687,28 +733,35 @@ export class AppleCalendarApi {
       const t0 = Date.now();
       try {
         const json = await runOsascript(
-          buildJxaPerCalendarScript(calName, this.daysBack, this.daysAhead, this.skipTier3),
+          buildJxaPerCalendarScript(
+            calName, this.daysBack, this.daysAhead, this.skipTier3, this.maxTier3Scan
+          ),
           this.timeoutMs
         );
 
-        // Per-calendar script returns { tier, t2ms, t25ms, t3ms, events }
+        // Per-calendar script returns { tier, t2ms, t25ms, t275ms, t3ms, events }
         let eventsJson = json;
         try {
           const wrapper = JSON.parse(json) as {
-            tier?: number; t2ms?: number; t25ms?: number; t3ms?: number;
+            tier?: number;
+            t2ms?: number; t25ms?: number; t275ms?: number; t3ms?: number;
             events?: unknown[];
           };
           if (wrapper && typeof wrapper === "object" && Array.isArray(wrapper.events)) {
-            const tierLabel: Record<number, string> = { 2: "Tier 2", 25: "Tier 2.5", 3: "Tier 3", [-3]: "Tier 3 skipped" };
+            const tierLabel: Record<number, string> = {
+              2: "Tier 2", 25: "Tier 2.5", 275: "Tier 2.75 (bulk-date)", 3: "Tier 3", [-3]: "Tier 3 skipped",
+            };
             const tLabel = tierLabel[wrapper.tier ?? 0] ?? `Tier ${wrapper.tier}`;
             const timingParts: string[] = [];
-            if ((wrapper.t2ms ?? -1) >= 0)  timingParts.push(`t2:${wrapper.t2ms}ms`);
-            if ((wrapper.t25ms ?? -1) >= 0)  timingParts.push(`t2.5:${wrapper.t25ms}ms`);
-            if ((wrapper.t3ms ?? -1) >= 0)   timingParts.push(`t3:${wrapper.t3ms}ms`);
+            if ((wrapper.t2ms   ?? -1) >= 0) timingParts.push(`t2:${wrapper.t2ms}ms`);
+            if ((wrapper.t25ms  ?? -1) >= 0) timingParts.push(`t2.5:${wrapper.t25ms}ms`);
+            if ((wrapper.t275ms ?? -1) >= 0) timingParts.push(`t2.75:${wrapper.t275ms}ms`);
+            if ((wrapper.t3ms   ?? -1) >= 0) timingParts.push(`t3:${wrapper.t3ms}ms`);
             const timing = timingParts.length ? ` (${timingParts.join(" ")})` : "";
-            const skipped = wrapper.tier === -3;
-            if (skipped) {
-              console.log(`${tag} "${calName}" — Tier 2 & 2.5 failed, Tier 3 skipped (disabled in Settings)`);
+            if (wrapper.tier === -3) {
+              console.log(
+                `${tag} "${calName}" — Tier 2 & 2.5 & 2.75 all failed, Tier 3 skipped (disabled in Settings)`
+              );
             } else {
               console.log(
                 `${tag} "${calName}" ✓ ${tLabel} — ${wrapper.events.length} event(s) ` +

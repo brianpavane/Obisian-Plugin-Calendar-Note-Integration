@@ -7,6 +7,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [5.2.1] – 2026-03-30
+
+### Added
+- **Tier 2.75 — bulk start-date fetch** — new fetch strategy inserted between Tier 2.5 and the old full-scan Tier 3. Calls `cal.events.startDate()` once to retrieve ALL event start dates in a single IPC round-trip, filters in JavaScript, then calls `properties()` only on matching events. This is the primary fix for Exchange/Office 365 calendars that time out: instead of 1 000 individual `startDate()` calls (each ~50–100 ms on an Exchange calendar = 50–100 s total), one bulk call typically completes in 1–5 s.
+- **Configurable Tier 3 scan cap** — new `appleMaxTier3Scan` setting in Settings → Apple Calendar → Advanced (range 50–2 000, default 500). Tier 3 is now only reached if Tier 2.75 also fails.
+- Per-tier timing now includes `t2.75ms` in the developer console log.
+
+### Changed
+- Default `MAX_TIER3_SCAN` reduced from 1 000 to **500** (Tier 2.75 handles most cases now; Tier 3 is a last resort).
+- Tier 3 fallback description in diagnostic output updated to mention Tier 2.75 is tried first.
+
+---
+
 ## [5.2.0] – 2026-03-30
 
 ### Added

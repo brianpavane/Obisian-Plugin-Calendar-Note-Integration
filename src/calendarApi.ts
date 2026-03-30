@@ -269,12 +269,13 @@ export class CalendarService {
     daysBack = 0,
     daysAhead = 30,
     timeoutMs?: number,
-    skipTier3?: boolean
+    skipTier3?: boolean,
+    maxTier3Scan?: number
   ): CalendarService {
     return new CalendarService(
       undefined,
       undefined,
-      new AppleCalendarApi(calendarFilter, daysBack, daysAhead, timeoutMs, skipTier3),
+      new AppleCalendarApi(calendarFilter, daysBack, daysAhead, timeoutMs, skipTier3, maxTier3Scan),
       ""
     );
   }
