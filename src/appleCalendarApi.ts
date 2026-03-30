@@ -23,7 +23,6 @@ import type { CalendarEvent, ResponseStatus } from "./icalParser";
 // ---------------------------------------------------------------------------
 
 const MAX_OUTPUT_BYTES = 5 * 1024 * 1024; // 5 MB
-const LOOKAHEAD_DAYS = 365;
 
 // ---------------------------------------------------------------------------
 // Conference URL patterns (mirrors icalParser.ts)
@@ -56,19 +55,23 @@ function extractConferenceFromText(text: string): CalendarEvent["conferenceData"
 /**
  * Build the JXA fetch-events script.
  *
- * @param daysBack  Integer number of days before today to start the window.
- *                  Validated to [0, 30] before interpolation.
+ * Only safe integers are interpolated — never user strings.
+ *
+ * @param daysBack   Days before today to start the window. 0 = today (no past events).
+ *                   Clamped to [0, 30].
+ * @param daysAhead  Days after today to end the window.
+ *                   Clamped to [1, 365].
  */
-function buildJxaFetchEvents(daysBack: number): string {
-  // Clamp to a safe integer range before interpolating into the script.
-  const safeDaysBack = Math.max(0, Math.min(30, Math.floor(daysBack)));
+function buildJxaFetchEvents(daysBack: number, daysAhead: number): string {
+  const safeDaysBack  = Math.max(0,   Math.min(30,  Math.floor(daysBack)));
+  const safeDaysAhead = Math.max(1,   Math.min(365, Math.floor(daysAhead)));
 
   return `
 (function () {
   var app = Application("Calendar");
   var now = new Date();
   var windowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ${safeDaysBack});
-  var windowEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ${LOOKAHEAD_DAYS});
+  var windowEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ${safeDaysAhead});
   var results = [];
 
   app.calendars().forEach(function (cal) {
@@ -412,10 +415,12 @@ export async function listAppleCalendars(): Promise<AppleCalendar[]> {
 export class AppleCalendarApi {
   private readonly calendarFilter: string[];
   private readonly daysBack: number;
+  private readonly daysAhead: number;
 
-  constructor(calendarFilter: string[] = [], daysBack = 0) {
+  constructor(calendarFilter: string[] = [], daysBack = 0, daysAhead = 30) {
     this.calendarFilter = calendarFilter;
     this.daysBack = daysBack;
+    this.daysAhead = daysAhead;
   }
 
   async fetchAllEvents(): Promise<CalendarEvent[]> {
@@ -425,11 +430,11 @@ export class AppleCalendarApi {
       : "filter: all calendars";
     console.log(`${tag} fetchAllEvents() — ${filter}, daysBack=${this.daysBack}`);
 
-    console.log(`${tag} → running osascript (timeout ${OSASCRIPT_TIMEOUT_MS / 1000}s)…`);
+    console.log(`${tag} → window: -${this.daysBack}d … +${this.daysAhead}d, timeout ${OSASCRIPT_TIMEOUT_MS / 1000}s`);
     const t0 = Date.now();
     let json: string;
     try {
-      json = await runOsascript(buildJxaFetchEvents(this.daysBack));
+      json = await runOsascript(buildJxaFetchEvents(this.daysBack, this.daysAhead));
     } catch (err) {
       console.error(`${tag} ✗ osascript failed after ${Date.now() - t0}ms:`, err);
       throw err;

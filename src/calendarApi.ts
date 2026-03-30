@@ -264,11 +264,11 @@ export class CalendarService {
     );
   }
 
-  static fromApple(calendarFilter: string[] = [], daysBack = 0): CalendarService {
+  static fromApple(calendarFilter: string[] = [], daysBack = 0, daysAhead = 30): CalendarService {
     return new CalendarService(
       undefined,
       undefined,
-      new AppleCalendarApi(calendarFilter, daysBack),
+      new AppleCalendarApi(calendarFilter, daysBack, daysAhead),
       ""
     );
   }

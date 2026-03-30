@@ -200,8 +200,10 @@ export default class GoogleCalendarPlugin extends Plugin {
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
-      const daysBack = this.settings.includePastEvents ? this.settings.daysBack : 0;
-      return CalendarService.fromApple(calendarFilter, daysBack);
+      // daysBack = 0 when past events disabled → JXA windowStart = today.
+      const daysBack  = this.settings.includePastEvents ? this.settings.daysBack : 0;
+      const daysAhead = this.settings.daysAhead;
+      return CalendarService.fromApple(calendarFilter, daysBack, daysAhead);
     }
     return CalendarService.fromIcal(decrypt(this.settings.icalUrl));
   }
