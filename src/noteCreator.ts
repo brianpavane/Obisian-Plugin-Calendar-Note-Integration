@@ -80,8 +80,10 @@ function isSafeHttpsUrl(uri: string): boolean {
 // ---------------------------------------------------------------------------
 
 function stripHtml(html: string): string {
+  // Cap input before DOM parsing to prevent DoS on pathologically large descriptions.
+  const safe = html.length > 10_000 ? html.slice(0, 10_000) : html;
   try {
-    const doc = new DOMParser().parseFromString(html, "text/html");
+    const doc = new DOMParser().parseFromString(safe, "text/html");
 
     function walk(node: Node): string {
       if (node.nodeType === Node.TEXT_NODE) {

@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-google-calendar-notes",
-	"version": "5.2.1",
+	"version": "6.0.0",
 	"description": "Obsidian plugin for Google Calendar note integration",
 	"main": "main.js",
 	"scripts": {

@@ -466,7 +466,7 @@ function parseJxaEvents(json: string, calendarFilter: string[]): CalendarEvent[]
       }
     }
 
-    const uid = safeStr(r.uid, 500) || `apple-${startMs}-${Math.random().toString(36).slice(2)}`;
+    const uid = safeStr(r.uid, 500) || `apple-${startMs}-${crypto.randomUUID()}`;
     const description = safeStr(r.description, 50_000) || undefined;
 
     events.push({

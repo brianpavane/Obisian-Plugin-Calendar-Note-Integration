@@ -7,6 +7,39 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.0.0] – 2026-03-31
+
+### Summary
+Major release consolidating all Apple Calendar reliability improvements from the 5.x series, a full security audit with fixes, and updated documentation.
+
+### Added
+- **Tier 2.75 — bulk start-date fetch** (from 5.2.1): `cal.events.startDate()` in one IPC call, filtered in JS, `properties()` only on matches. Resolves Exchange/Office 365 timeout root cause (1 000 individual calls → 1 bulk call).
+- **Configurable timeout per calendar** (from 5.2.0): Settings → Apple Calendar → Advanced, 15–120 s default 30 s.
+- **Skip Tier 3 toggle** (from 5.2.0): Skip full-scan fallback for calendars that always time out.
+- **Max events for last-resort scan** (from 5.2.1): Tier 3 scan cap, 50–2 000, default 500.
+- **Per-tier timing in console** (from 5.2.0): `t2ms`, `t2.5ms`, `t2.75ms`, `t3ms` logged on every fetch for precise diagnostics.
+- **Diagnostic modal** (from 5.1.0): Replaces `Notice` toast with a scrollable `Modal` including Copy to Clipboard button.
+- **All-day event exclusion**: All-day events are never used as the basis for note creation.
+
+### Security fixes (audit v6.0.0)
+- **`crypto.randomUUID()` for fallback UIDs** — replaced `Math.random()` in `appleCalendarApi.ts` UID fallback path with `crypto.randomUUID()` for cryptographically sound uniqueness.
+- **`stripHtml()` DoS hardening** — `noteCreator.ts` now caps HTML input at 10 000 characters before DOM parsing, preventing CPU DoS from malformed/oversized event descriptions.
+- **iCal error preview reduced** — `calendarApi.ts` error preview trimmed from 120 → 50 characters to reduce potential information disclosure.
+- **Refresh token reuse documented** — `googleAuth.ts` now carries an explicit comment explaining why refresh token fallback is correct and intentional (not a security defect).
+- **Audit result: no critical or high-severity vulnerabilities found.** See Security Model in README for full details.
+
+### Performance (Apple Calendar — 5.x cumulative)
+- `evt.properties()` batch reads — 1 IPC call per event instead of 7+ individual getters.
+- `atts[i].properties()` batch reads for attendees — capped at 20 per event.
+- Per-calendar `osascript` isolation — each calendar has its own process and timeout; a hung calendar cannot block others.
+- Tier 3 scan cap reduced 5 000 → 500 (default), scans newest-first.
+- Tier 2.75 added as primary fallback before individual-call Tier 3.
+
+### Changed
+- Version bumped to **6.0.0** to mark the completion of the Apple Calendar reliability work and the security audit milestone.
+
+---
+
 ## [5.2.1] – 2026-03-30
 
 ### Added

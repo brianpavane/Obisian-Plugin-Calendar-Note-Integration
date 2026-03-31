@@ -224,10 +224,11 @@ Use this to read from Calendar.app on macOS. All accounts already synced in Cale
 
 If you have a large Exchange or Office 365 calendar that causes timeouts, expand the **Advanced** section below the Test button:
 
-| Option | Default | Description |
-|---|---|---|
-| **Timeout per calendar** | 30 s | Increase to 60–90 s for large Exchange calendars with thousands of recurring events |
-| **Skip full-scan fallback (Tier 3)** | Off | Prevent slow calendars from blocking other results — skip the full-scan if fast strategies fail |
+| Option | Default | Range | Description |
+|---|---|---|---|
+| **Timeout per calendar** | 30 s | 15–120 s | Increase for large Exchange calendars with thousands of recurring events |
+| **Max events for last-resort scan** | 500 | 50–2 000 | How many events Tier 3 scans individually — only applies if all faster tiers fail |
+| **Skip full-scan fallback (Tier 3)** | Off | — | Skip Tier 3 entirely — faster if you don't need events from that calendar |
 
 #### Running diagnostics
 
@@ -312,18 +313,22 @@ All settings are in **Settings → Google Calendar Note Integration**.
 | Setting | Default | Range | Description |
 |---|---|---|---|
 | **Timeout per calendar (seconds)** | `30` | 15–120 s | How long to wait for Calendar.app per calendar before giving up. Increase for large Exchange or Office 365 calendars. |
+| **Max events for last-resort scan (Tier 3)** | `500` | 50–2 000 | How many events the Tier 3 individual scan reads (newest-first). Only applies if all faster strategies fail. |
 | **Skip full-scan fallback (Tier 3)** | Off | — | When on, calendars that fail the fast fetch strategies are skipped instead of running a slow full event scan. Results from other calendars are still returned. |
 
 #### How Apple Calendar fetches events (fetch tiers)
 
-The plugin tries three strategies in order, moving to the next only if the previous fails:
+The plugin tries strategies in order, moving to the next only if the previous fails:
 
 | Tier | Method | Notes |
 |---|---|---|
-| **1** | `app.eventsFrom()` | Single call — fastest; not supported on all Calendar.app versions |
-| **2** | `cal.eventsFrom()` | Per-calendar call — works for most accounts |
-| **2.5** | `cal.events.whose()` | Predicate filter — fallback for Exchange calendars |
-| **3** | Full scan (newest 1 000 events) | Last resort — can be slow on large calendars; disable with Skip Tier 3 |
+| **1** | `app.eventsFrom()` | Single call across all calendars — fastest; not available on all macOS versions |
+| **2** | `cal.eventsFrom()` | Per-calendar date-window query — works for most accounts |
+| **2.5** | `cal.events.whose()` | Predicate filter — fallback for Exchange/Office 365 calendars |
+| **2.75** | `cal.events.startDate()` bulk + JS filter | **One IPC call** for all dates; filter in JS; `properties()` only for matches. Primary fix for Exchange timeouts |
+| **3** | Individual `startDate()` scan (newest N) | Last resort — disable with Skip Tier 3; cap with Max events setting |
+
+**Why Exchange calendars were slow:** Each individual `startDate()` call to Calendar.app is a separate IPC round-trip that may require a server sync. 1 000 calls × 50–100 ms = 50–100 s timeout. Tier 2.75 replaces 1 000 calls with one bulk call — typically 1–10 s.
 
 ### Personal Settings
 
@@ -426,7 +431,10 @@ Encrypted tokens are stored as opaque blobs in `.obsidian/plugins/obsidian-googl
 | Markdown headings / bold | Newlines breaking structure | `sanitizeInline()` collapses newlines |
 | Markdown table cells | `\|` breaking table rows | `escapeMdCell()` escapes pipes and newlines |
 | Conference link URIs | `javascript:` / `data:` URIs | `isSafeHttpsUrl()` only allows `https:` and `http:` |
-| JXA script (Apple Calendar) | Script injection | Only validated integers are interpolated — never user strings |
+| JXA script (Apple Calendar) | Script injection | Only validated integers and `JSON.stringify`-quoted strings are interpolated |
+| HTML event descriptions | DoS via large/malformed HTML | `stripHtml()` caps input at 10 000 chars before DOM parsing |
+| iCal error preview | Information disclosure | Response preview capped at 50 chars, newlines stripped |
+| Fallback event UIDs | Weak randomness | `crypto.randomUUID()` used instead of `Math.random()` |
 
 ### Network requests
 

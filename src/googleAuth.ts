@@ -300,6 +300,9 @@ export class GoogleAuth {
     fallbackRefresh: string
   ): TokenData {
     const accessToken = typeof data.access_token === "string" ? data.access_token : "";
+    // Google only returns a new refresh_token on the initial authorization
+    // exchange (not on subsequent refreshes). Reusing the existing token
+    // is correct and expected behaviour — not a security defect.
     const refreshToken =
       typeof data.refresh_token === "string" && data.refresh_token
         ? data.refresh_token

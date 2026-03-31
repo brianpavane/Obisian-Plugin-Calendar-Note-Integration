@@ -59,10 +59,10 @@ async function fetchIcalText(url: string, timeoutMs = FETCH_TIMEOUT_MS): Promise
     }
     const trimmed = text.trimStart();
     if (!trimmed.startsWith("BEGIN:VCALENDAR")) {
-      const preview = trimmed.slice(0, 120).replace(/[\r\n]+/g, " ");
+      const preview = trimmed.slice(0, 50).replace(/[\r\n]+/g, " ");
       console.error(
         "[GoogleCalendarNotes] Unexpected iCal response. " +
-        `HTTP ${response.status}. First 120 chars: ${preview}`
+        `HTTP ${response.status}. First 50 chars: ${preview}`
       );
       throw new Error(
         "iCal URL did not return a valid calendar feed. " +
