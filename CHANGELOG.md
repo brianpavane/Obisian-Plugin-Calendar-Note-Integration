@@ -7,6 +7,27 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.0.1] – 2026-03-31
+
+### Fixed
+
+**1. Notes created for declined events**
+- Added `filterDeclinedEvents()` — when **Your email address** is set in Settings, any event where your attendee entry has `responseStatus = "declined"` is excluded from note creation.
+- Applied in all three note-creation paths: auto-create (startup/poll), event picker, and "create note for next event" command.
+- Events where you are not listed as an attendee at all are kept (organiser-only events, iCal events with no attendee data).
+
+**2. Recurring meetings (set up long ago) missing from note creation**
+- Root cause: Tier 2.75's date filter compared event `startDate >= windowStart`, which excluded recurring event instances whose Calendar.app record date fell slightly before the fetch window boundary.
+- Fix: Tier 2.75 now looks back an extra **30 days** before `windowStart` (i.e., `startDate >= windowStart − 30 days`). Calendar.app materialises recurring series instances as individual records with their own occurrence `startDate`; the wider net captures those near the boundary.
+- Note: if Calendar.app stores only a recurring series master (with the original creation date from years ago) and does not expand instances, those masters will still be excluded — this is a Calendar.app limitation on Exchange/EWS accounts where only `eventsFrom()` triggers proper expansion. The diagnostic tool will show which tier your calendar uses.
+
+**3. Tier 2.75 timing out on very large calendars**
+- Root cause: `cal.events.startDate()` on a calendar with thousands of events returns a massive single AppleEvent response that can take >120 s to serialise.
+- Fix: Tier 2.75 now checks `targetCal.events.length` first. If the calendar has more than **4 × maxTier3Scan** events (default threshold: 2 000), Tier 2.75 is skipped and execution falls through to Tier 3 (bounded scan of newest N events). Avoids the unbounded bulk fetch on large calendars.
+- The `events.length` count is a lightweight property read (cached by Calendar.app) and does not trigger a full event sync.
+
+---
+
 ## [6.0.0] – 2026-03-31
 
 ### Summary

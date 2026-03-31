@@ -242,24 +242,40 @@ function buildJxaPerCalendarScript(
   // returns ALL event start dates in a SINGLE AppleEvent round-trip.
   // We then filter purely in JS and call properties() only on matches.
   //
-  // This replaces the Tier 3 loop of N individual startDate() calls:
-  //   Old: 1000 calls × 50–100 ms each = 50–100 s (timeout)
-  //   New: 1 bulk call + JS filter     = typically 1–5 s
+  //   Old Tier 3: 1000 individual startDate() calls × 50–100 ms = 50–100 s
+  //   Tier 2.75:  1 bulk call + JS filter = typically 1–10 s
+  //
+  // Guard: if the calendar has more than 4× maxTier3Scan events, the bulk
+  // response itself may be too large and slow. Skip to Tier 3 in that case.
+  //
+  // Lookback: filter uses windowStart - 30 days (not just windowStart) so
+  // that recurring event instances whose dates fall just before the window
+  // boundary are captured. Calendar.app materialises recurring instances as
+  // individual records with their own startDate; this wider net catches them.
   if (calEvts === null) {
     var t275start = Date.now();
     try {
-      var allDates = targetCal.events.startDate();
-      calEvts = [];
-      for (var m = 0; m < allDates.length; m++) {
-        try {
-          var sd275 = allDates[m];
-          if (sd275 && sd275 >= windowStart && sd275 <= windowEnd) {
-            calEvts.push(targetCal.events[m]);
-          }
-        } catch (em) {}
+      var t275Total = targetCal.events.length;
+      var t275Limit = ${safeMaxT3Scan} * 4;
+      if (t275Total > t275Limit) {
+        // Too many events — bulk response would be huge; skip to Tier 3
+        t275ms = Date.now() - t275start;
+        calEvts = null;
+      } else {
+        var recurLookback = new Date(windowStart.getTime() - 30 * 86400000);
+        var allDates = targetCal.events.startDate();
+        calEvts = [];
+        for (var m = 0; m < allDates.length; m++) {
+          try {
+            var sd275 = allDates[m];
+            if (sd275 && sd275 >= recurLookback && sd275 <= windowEnd) {
+              calEvts.push(targetCal.events[m]);
+            }
+          } catch (em) {}
+        }
+        t275ms = Date.now() - t275start;
+        tier = 275;
       }
-      t275ms = Date.now() - t275start;
-      tier = 275;
     } catch (e275b) {
       t275ms = Date.now() - t275start;
       calEvts = null;

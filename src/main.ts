@@ -233,6 +233,24 @@ export default class GoogleCalendarPlugin extends Plugin {
     return events.filter((e) => !!e.start.dateTime);
   }
 
+  /**
+   * Remove events the user has explicitly declined.
+   * Requires selfEmail to be set; if unset all events are kept.
+   * Only removes events where the user's own attendee entry is "declined" —
+   * events where the user is not listed as an attendee are kept as-is.
+   */
+  private filterDeclinedEvents(events: CalendarEvent[]): CalendarEvent[] {
+    const selfEmail = this.settings.selfEmail.trim().toLowerCase();
+    if (!selfEmail) return events;
+    return events.filter((event) => {
+      if (!event.attendees || event.attendees.length === 0) return true;
+      const self = event.attendees.find(
+        (a) => a.email.toLowerCase() === selfEmail
+      );
+      return !self || self.responseStatus !== "declined";
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Self-email helper
   // ---------------------------------------------------------------------------
@@ -276,6 +294,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
 
     events = this.filterOutAllDay(events);
+    events = this.filterDeclinedEvents(events);
     events = this.markSelfAttendee(events);
     const options = this.getNoteOptions();
 
@@ -326,6 +345,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       loadingNotice.hide();
 
       events = this.filterOutAllDay(events);
+      events = this.filterDeclinedEvents(events);
 
       if (events.length === 0) {
         new Notice(
@@ -364,6 +384,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       loadingNotice.hide();
 
       events = this.filterOutAllDay(events);
+      events = this.filterDeclinedEvents(events);
 
       if (events.length === 0) {
         new Notice("No upcoming events found.");

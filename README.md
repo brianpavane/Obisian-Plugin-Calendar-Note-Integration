@@ -334,7 +334,7 @@ The plugin tries strategies in order, moving to the next only if the previous fa
 
 | Setting | Description |
 |---|---|
-| **Your email address** | Your calendar account email. When set, your own attendee entry is hidden from generated notes. |
+| **Your email address** | Your calendar account email. When set: (1) your own attendee entry is hidden from generated notes, and (2) events you have **declined** are excluded from note creation entirely. |
 
 ### Note Settings
 
@@ -532,9 +532,17 @@ Ensure Calendar.app is open, has at least one account configured, and that Obsid
 4. If the calendar still times out after a generous timeout, enable **Skip full-scan fallback (Tier 3)**. This skips that calendar entirely and returns events from your other (faster) calendars instead.
 5. Check the developer console (**Ctrl+Shift+I → Console**) for per-tier timing (`t2ms`, `t2.5ms`, `t3ms`) to see exactly where time is spent.
 
+### Apple Calendar: recurring meetings (set up long ago) not getting notes
+
+Calendar.app materialises recurring series as individual instance records with their own start dates. Tier 2.75 looks back 30 extra days before the fetch window to catch instances near the boundary. If recurring meetings are still missing:
+
+1. Open **Calendar.app** and confirm the recurring meeting shows up on the correct date.
+2. Run **Diagnostics** — if the calendar uses Tier 3 (full scan), only the newest N events are scanned; increase **Max events for last-resort scan** or enable Skip Tier 3 and check if Tier 2.75 now finds the events.
+3. On Exchange/Office 365 accounts, Calendar.app may only expand recurring instances via `eventsFrom()` (Tier 2). If Tier 2 fails with "Can't convert types", recurring instances may not be accessible through any JXA strategy — this is a Calendar.app/Exchange scripting limitation. As a workaround, try switching to the **iCal URL** or **Google Account** connection method if your calendar supports it.
+
 ### Apple Calendar: events missing from a specific calendar
 
-Run **Diagnostics** and check the tier reported for that calendar. If it falls to Tier 3 (full scan), only the newest 1 000 events are scanned — events further back in history will not appear.
+Run **Diagnostics** and check the tier reported for that calendar. If it falls to Tier 3 (full scan), only the newest N events are scanned — increase **Max events for last-resort scan** or check the developer console for `t3ms` timing.
 
 ### Notes are not created automatically
 
