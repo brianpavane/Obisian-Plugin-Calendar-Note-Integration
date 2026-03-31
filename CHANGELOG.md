@@ -7,6 +7,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.0.4] – 2026-03-31
+
+### Fixed
+
+**Google CalDAV calendar (Google account synced to Calendar.app) timing out at 120 s**
+
+Root cause: Tier 3 called `targetCal.events()` — a JXA method call with parentheses — which forces Calendar.app to **materialise the entire event array** as a single AppleEvent response. For a Google CalDAV calendar with thousands of events this triggers a full server sync before returning, reliably exceeding the 120 s process timeout.
+
+Fix: replaced `targetCal.events()` with:
+- `targetCal.events.length` — a property access (no parentheses), which reads only the cached count without triggering a full fetch.
+- `targetCal.events[j]` — a **lazy indexed object specifier**; Calendar.app resolves only that one event record when a property is subsequently accessed on it.
+
+This brings Tier 3 behaviour in line with Tier 2.75, which already used indexed access (`targetCal.events[m]`) and had the same lazy-evaluation benefit.
+
+**Additional tuning:**
+- `DEFAULT_MAX_TIER3_SCAN` reduced from 500 → **250** (a typical active Google CalDAV calendar has ~10 events/day; 250 covers a 25-day window, more than sufficient for any reasonable `hoursInAdvance` setting).
+- Tier 2.75 count guard threshold reduced from `4 × maxTier3Scan` → **`3 × maxTier3Scan`** (default: 750 events). The previous threshold of 2 000 was overly generous; 750 keeps Tier 2.75 fast on normal-sized calendars while still falling back to Tier 3 for very large ones.
+
+---
+
 ## [6.0.3] – 2026-03-31
 
 ### Fixed

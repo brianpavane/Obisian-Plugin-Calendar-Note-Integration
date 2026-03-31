@@ -58,7 +58,7 @@ function extractConferenceFromText(text: string): CalendarEvent["conferenceData"
  * Tier 2.75 (bulk startDate fetch) is tried first and is far faster —
  * this cap only applies if Tier 2.75 also fails.
  */
-const DEFAULT_MAX_TIER3_SCAN = 500;
+const DEFAULT_MAX_TIER3_SCAN = 250;
 
 // Shared JXA snippet for building one result item from an event object (variable `evt`).
 //
@@ -267,7 +267,7 @@ function buildJxaPerCalendarScript(
     var t275start = Date.now();
     try {
       var t275Total = targetCal.events.length;
-      var t275Limit = ${safeMaxT3Scan} * 4;
+      var t275Limit = ${safeMaxT3Scan} * 3;
       if (t275Total > t275Limit) {
         // Too many events — bulk response would be huge; skip to Tier 3
         t275ms = Date.now() - t275start;
@@ -306,14 +306,17 @@ function buildJxaPerCalendarScript(
       calEvts = [];
       var t3start = Date.now();
       try {
-        var allEvts = targetCal.events();
-        var total   = allEvts.length;
+        // Use .length (fast count) then indexed access [j] (lazy object
+        // specifier) to avoid materialising the full CalDAV event array.
+        // Calling targetCal.events() forces Calendar.app to download the
+        // entire CalDAV list from Google's servers, causing 120s+ timeouts.
+        var total    = targetCal.events.length;
         var scanFrom = Math.max(0, total - ${safeMaxT3Scan});
         for (var j = scanFrom; j < total; j++) {
           try {
-            var evtSd = allEvts[j].startDate();
+            var evtSd = targetCal.events[j].startDate();
             if (evtSd && evtSd >= windowStart && evtSd <= windowEnd) {
-              calEvts.push(allEvts[j]);
+              calEvts.push(targetCal.events[j]);
             }
           } catch (e3) {}
         }
