@@ -310,12 +310,15 @@ ObjC.import('EventKit');
                     }
                   } catch (e) {}
                   try {
-                    var ps = att.participantStatus; // EKParticipantStatus int
-                    if      (ps === 2) attStatus = "accepted";
-                    else if (ps === 3) attStatus = "declined";
-                    else if (ps === 4) attStatus = "tentative";
-                    else if (ps === 1) attStatus = "needsAction";
-                    else               attStatus = "unknown";
+                    // Use Number() to coerce the ObjC NSInteger to a JS
+                    // number — strict === comparison can fail against an
+                    // ObjC-bridged integer object in JXA.
+                    var psNum = Number(att.participantStatus);
+                    if      (psNum === 2) attStatus = "accepted";
+                    else if (psNum === 3) attStatus = "declined";
+                    else if (psNum === 4) attStatus = "tentative";
+                    else if (psNum === 1) attStatus = "needsAction";
+                    else                  attStatus = "unknown";
                   } catch (e) {}
                   if (attAddr || attName) {
                     attList.push({ displayName: attName, address: attAddr, status: attStatus });

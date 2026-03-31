@@ -7,6 +7,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.0.7] – 2026-03-31
+
+### Fixed
+
+**1. Google Calendar conference block (`-::~:~::` delimiters) appearing in Agenda**
+
+Google Calendar appends the full conference invite block to the event description, wrapped between delimiter lines that start with `-::~:~::`. The previous line-by-line filter caught individual boilerplate lines but left the delimiter lines themselves and any content between them that didn't match a known prefix.
+
+`stripConferenceBoilerplate` now detects the first and last `-::~:~::` delimiter line and removes the entire span (both delimiters and everything between them) before the line-by-line filter runs. Other boilerplate filtering is unaffected.
+
+**2. Attendee accept/decline status showing ⚪ instead of 🟢 / 🔴 (EventKit)**
+
+When events are fetched via the new EventKit Tier 0 path (v6.0.6), attendee status was always showing ⚪ regardless of the actual response. Root cause: `EKParticipant.participantStatus` returns an ObjC-bridged `NSInteger`. In JXA, strict `===` comparison against a JS number literal can fail against an ObjC-wrapped integer object, so all comparisons fell to the `else` branch and status was set to `"unknown"` → ⚪.
+
+Fix: coerce with `Number(att.participantStatus)` before comparing, which correctly extracts the JS primitive value (`0`=unknown, `1`=pending/needsAction, `2`=accepted, `3`=declined, `4`=tentative).
+
+---
+
 ## [6.0.6] – 2026-03-31
 
 ### Fixed

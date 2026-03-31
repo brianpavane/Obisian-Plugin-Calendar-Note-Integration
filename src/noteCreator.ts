@@ -121,6 +121,28 @@ function stripHtml(html: string): string {
  * header when "Include conference link" is enabled.
  */
 function stripConferenceBoilerplate(text: string): string {
+  // Google Calendar wraps the entire conference block between delimiter lines
+  // that start with "-::~:~::".  Remove everything from the first such line
+  // to the last (inclusive), handling both LF and CRLF line endings.
+  const gcalDelimRe = /^-::~:~::/m;
+  if (gcalDelimRe.test(text)) {
+    // Find the first and last occurrence of the delimiter line and strip the
+    // entire span between them (the block always has an opening and closing
+    // delimiter line, but guard against a lone delimiter by trimming the rest).
+    const lines = text.split(/\r?\n/);
+    const firstIdx = lines.findIndex((l) => /^-::~:~::/.test(l));
+    const lastIdx  = lines.reduceRight(
+      (found, l, i) => (found === -1 && /^-::~:~::/.test(l) ? i : found),
+      -1
+    );
+    if (firstIdx !== -1) {
+      text = [
+        ...lines.slice(0, firstIdx),
+        ...lines.slice(lastIdx + 1),
+      ].join("\n");
+    }
+  }
+
   // Lines containing a known conference URL are always removed.
   const conferenceUrlRe =
     /https?:\/\/(?:[\w.-]+\.zoom\.us|meet\.google\.com|teams\.microsoft\.com|teams\.live\.com)\//i;
