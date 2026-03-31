@@ -7,6 +7,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.5.1] – 2026-03-31
+
+### Added
+
+**Version label in Settings pane**
+The plugin version number is now displayed directly below the Settings heading, making it easy to confirm which version is installed without leaving Obsidian.
+
+**Distinct Refresh and Rebuild actions**
+The Manual Actions section now has two clearly differentiated buttons:
+
+- **Refresh** — fetches calendar events and creates notes only for events that have never been processed before. If you previously had a note for an event and deleted it, Refresh will not recreate it. This is also the behaviour of the automatic background poll.
+- **Rebuild** — fetches calendar events and recreates notes for any event whose note file is currently missing, regardless of history. Use this to restore notes that were manually deleted.
+
+Both buttons respect the time window (Hours in advance, Days back) configured in Note Settings.
+
+**`processedEventIds` tracking**
+A new `processedEventIds` string array is stored in plugin data to track which event IDs have been processed. This enables the Refresh vs Rebuild distinction to persist across restarts. The list is automatically capped at 5 000 entries (trimmed to 4 000) to prevent unbounded growth.
+
+---
+
 ## [6.5.0] – 2026-03-31
 
 ### Added

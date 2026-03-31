@@ -53,6 +53,8 @@ export interface GoogleCalendarSettings {
   appleTimeoutSeconds: number;
   appleSkipTier3: boolean;
   appleMaxTier3Scan: number;
+  /** IDs of events that have already been processed (note created or skipped). */
+  processedEventIds: string[];
 }
 
 export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
@@ -79,6 +81,7 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   appleTimeoutSeconds: 30,
   appleSkipTier3: false,
   appleMaxTier3Scan: 250,
+  processedEventIds: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -128,6 +131,13 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     containerEl.createEl("h2", { text: "Calendar Note Integration - Apple-iCal-Google" });
+
+    const versionEl = containerEl.createEl("p", {
+      text: `Version ${this.plugin.manifest.version}`,
+    });
+    versionEl.style.color = "var(--text-muted)";
+    versionEl.style.fontSize = "var(--font-smaller)";
+    versionEl.style.marginTop = "-8px";
 
     // ----- Connection Method ------------------------------------------------
     containerEl.createEl("h3", { text: "Connection Method" });
@@ -766,33 +776,36 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           });
       });
 
-    // ----- Manual Refresh ---------------------------------------------------
+    // ----- Manual Actions ---------------------------------------------------
     containerEl.createEl("h3", { text: "Manual Actions" });
 
     new Setting(containerEl)
-      .setName("Refresh now")
-      .setDesc("Immediately fetch events and create any missing notes within the configured time window.")
+      .setName("Refresh")
+      .setDesc(
+        "Fetches calendar events and creates notes for any new events that have not been " +
+        "processed before. Events whose notes were previously deleted are not recreated — " +
+        "use Rebuild for that. Uses the time window configured in Note Settings above."
+      )
       .addButton((button) =>
         button.setButtonText("Refresh").setCta().onClick(async () => {
           button.setButtonText("Refreshing…").setDisabled(true);
-          await this.plugin.autoCreateUpcomingNotes(true);
+          await this.plugin.refreshNotes(true);
           button.setButtonText("Refresh").setDisabled(false);
         })
       );
 
     new Setting(containerEl)
-      .setName("Reimport / recreate deleted notes")
+      .setName("Rebuild")
       .setDesc(
-        "Re-runs the full import for the current time window and recreates notes for any " +
-        "events whose notes were deleted. Existing notes are not overwritten — only missing " +
-        "ones are created. Uses the same filters as the automatic import (declined and all-day " +
-        "events are excluded)."
+        "Fetches calendar events and recreates notes for any events whose note file is " +
+        "currently missing — including events whose notes were manually deleted. Existing " +
+        "notes are never overwritten. Uses the time window configured in Note Settings above."
       )
       .addButton((button) =>
-        button.setButtonText("Reimport").onClick(async () => {
-          button.setButtonText("Importing…").setDisabled(true);
-          await this.plugin.autoCreateUpcomingNotes(true);
-          button.setButtonText("Reimport").setDisabled(false);
+        button.setButtonText("Rebuild").onClick(async () => {
+          button.setButtonText("Rebuilding…").setDisabled(true);
+          await this.plugin.rebuildNotes(true);
+          button.setButtonText("Rebuild").setDisabled(false);
         })
       );
   }

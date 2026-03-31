@@ -140,6 +140,11 @@ export default class GoogleCalendarPlugin extends Plugin {
       merged.datePosition = DEFAULT_SETTINGS.datePosition;
     }
 
+    // Sanitize processedEventIds
+    if (!Array.isArray(merged.processedEventIds)) {
+      merged.processedEventIds = [];
+    }
+
     this.settings = merged;
   }
 
@@ -273,11 +278,19 @@ export default class GoogleCalendarPlugin extends Plugin {
   // Auto-create: startup + polling
   // ---------------------------------------------------------------------------
 
-  async autoCreateUpcomingNotes(verbose: boolean): Promise<void> {
-    if (!this.isConfigured()) return;
+  /** Maximum number of processed event IDs to retain. */
+  private static readonly MAX_PROCESSED_IDS = 5_000;
+  /** Trim target when the cap is exceeded. */
+  private static readonly TRIM_PROCESSED_IDS = 4_000;
+
+  /**
+   * Fetch and filter events for the configured time window.
+   * Returns null if not configured or if the fetch fails.
+   */
+  private async fetchAndFilterEvents(verbose: boolean): Promise<CalendarEvent[] | null> {
+    if (!this.isConfigured()) return null;
 
     const now = new Date();
-    // Optionally extend window backward to include past events
     const timeMin = this.settings.includePastEvents
       ? new Date(now.getTime() - this.settings.daysBack * 24 * 60 * 60 * 1_000)
       : now;
@@ -291,23 +304,51 @@ export default class GoogleCalendarPlugin extends Plugin {
       events = await svc.listEventsInTimeWindow(timeMin, timeMax);
     } catch (err) {
       if (verbose) new Notice(`Calendar Notes: ${safeErrorMessage(err)}`);
-      return;
+      return null;
     }
 
     events = this.filterOutAllDay(events);
     events = this.filterDeclinedEvents(events);
     events = this.markSelfAttendee(events);
-    const options = this.getNoteOptions();
+    return events;
+  }
 
+  /** Trim processedEventIds if it exceeds the cap, then persist. */
+  private async trimAndSaveProcessedIds(): Promise<void> {
+    if (this.settings.processedEventIds.length > GoogleCalendarPlugin.MAX_PROCESSED_IDS) {
+      this.settings.processedEventIds =
+        this.settings.processedEventIds.slice(-GoogleCalendarPlugin.TRIM_PROCESSED_IDS);
+    }
+    await this.saveSettings();
+  }
+
+  /**
+   * Refresh: create notes only for events that have never been processed before.
+   * Events whose notes were manually deleted are NOT recreated — use rebuildNotes for that.
+   * Called by the background poller, startup sweep, and the Refresh button.
+   */
+  async refreshNotes(verbose: boolean): Promise<void> {
+    const events = await this.fetchAndFilterEvents(verbose);
+    if (!events) return;
+
+    const processedSet = new Set(this.settings.processedEventIds);
+    const options = this.getNoteOptions();
     let created = 0;
+
     for (const event of events) {
+      if (processedSet.has(event.id)) continue;
       try {
         const result = await createNoteFile(this.app, event, options);
         if (result.wasCreated) created++;
+        // Mark as processed whether or not the file existed (covers migration from older versions)
+        this.settings.processedEventIds.push(event.id);
+        processedSet.add(event.id);
       } catch (err) {
         console.debug("[cal-notes] Failed to create note for event:", err);
       }
     }
+
+    await this.trimAndSaveProcessedIds();
 
     if (verbose) {
       new Notice(
@@ -321,6 +362,48 @@ export default class GoogleCalendarPlugin extends Plugin {
         4_000
       );
     }
+  }
+
+  /**
+   * Rebuild: create notes for every event in the window whose note file is currently missing.
+   * Ignores processedEventIds — this is the "recreate deleted notes" action.
+   * Called by the Rebuild button.
+   */
+  async rebuildNotes(verbose: boolean): Promise<void> {
+    const events = await this.fetchAndFilterEvents(verbose);
+    if (!events) return;
+
+    const options = this.getNoteOptions();
+    let created = 0;
+
+    for (const event of events) {
+      try {
+        const result = await createNoteFile(this.app, event, options);
+        if (result.wasCreated) {
+          created++;
+          if (!this.settings.processedEventIds.includes(event.id)) {
+            this.settings.processedEventIds.push(event.id);
+          }
+        }
+      } catch (err) {
+        console.debug("[cal-notes] Failed to create note for event:", err);
+      }
+    }
+
+    await this.trimAndSaveProcessedIds();
+
+    if (verbose) {
+      new Notice(
+        created > 0
+          ? `Calendar Notes: Rebuilt ${created} note${created !== 1 ? "s" : ""}.`
+          : `Calendar Notes: No missing notes found — nothing to rebuild.`
+      );
+    }
+  }
+
+  /** Delegates to refreshNotes — background poller and startup sweep entry point. */
+  async autoCreateUpcomingNotes(verbose: boolean): Promise<void> {
+    await this.refreshNotes(verbose);
   }
 
   // ---------------------------------------------------------------------------
