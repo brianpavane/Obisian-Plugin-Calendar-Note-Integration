@@ -193,6 +193,7 @@ function buildJxaPerCalendarScript(
   const skipTier3Js     = skipTier3 ? "true" : "false";
   const safeMaxT3Scan   = Math.max(50, Math.min(2_000, Math.floor(maxTier3Scan)));
   return `
+ObjC.import('Foundation');
 (function () {
   var app = Application("Calendar");
   var targetName = ${safeCalName};
@@ -219,14 +220,30 @@ function buildJxaPerCalendarScript(
   var t2ms = -1, t25ms = -1, t275ms = -1, t3ms = -1, tier = 0;
 
   // ── Tier 2: cal.eventsFrom(start, {to:end}) ──────────────────────────────
+  //
+  // Attempt A: pass NSDate objects (required for CalDAV calendars — Google
+  // CalDAV / iCloud).  JXA's auto-conversion of JS Date → AppleScript date
+  // triggers a "Can't convert types" error on CalDAV; NSDate bypasses it and
+  // allows Calendar.app to issue a proper CalDAV REPORT time-range query,
+  // which Google answers with only the matching events (1–5 s vs 60–150 s).
+  //
+  // Attempt B: fall back to raw JS Date (works for Exchange/EWS accounts).
   var t2start = Date.now();
   try {
-    calEvts = targetCal.eventsFrom(windowStart, { to: windowEnd });
+    var startNS = $.NSDate.dateWithTimeIntervalSince1970(windowStart.getTime() / 1000);
+    var endNS   = $.NSDate.dateWithTimeIntervalSince1970(windowEnd.getTime()   / 1000);
+    calEvts = targetCal.eventsFrom(startNS, { to: endNS });
     t2ms = Date.now() - t2start;
     tier = 2;
-  } catch (e2) {
-    t2ms = Date.now() - t2start;
-    calEvts = null;
+  } catch (e2a) {
+    try {
+      calEvts = targetCal.eventsFrom(windowStart, { to: windowEnd });
+      t2ms = Date.now() - t2start;
+      tier = 2;
+    } catch (e2b) {
+      t2ms = Date.now() - t2start;
+      calEvts = null;
+    }
   }
 
   // ── Tier 2.5: whose-predicate filter ─────────────────────────────────────

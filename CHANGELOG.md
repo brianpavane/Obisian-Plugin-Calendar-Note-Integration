@@ -7,6 +7,25 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.0.5] – 2026-03-31
+
+### Fixed
+
+**Google CalDAV (Google account synced to Calendar.app) — root-cause fix for persistent timeouts**
+
+Previous releases reduced `maxTier3Scan` and switched to lazy indexed access in Tier 3, which helped Exchange accounts but did not fix Google CalDAV. The reason: for CalDAV, **every access to `targetCal.events.*`** (including `.length`) forces Calendar.app to fully sync the calendar from Google's servers before returning. On a cold cache this sync takes 60–150 s regardless of how many events are subsequently iterated.
+
+**Root cause**: Tier 2 (`cal.eventsFrom(windowStart, {to: windowEnd})`) was the correct fix all along — it tells Calendar.app to issue a CalDAV `REPORT` request with a `<time-range>` filter, which Google answers with *only* the matching events (typically 1–5 s). Tier 2 was skipped because it threw `"Can't convert types"` — a JXA type-coercion bug where the automatic JS `Date` → AppleScript `date` conversion fails for CalDAV calendars (it works for Exchange/EWS via a different code path).
+
+**Fix**: Tier 2 now first tries passing `$.NSDate` objects (via `ObjC.import('Foundation')`), which Calendar.app accepts without the type-coercion error. If that also fails, it falls back to the original JS Date attempt (Exchange compatibility). The NSDate path should resolve immediately for Google CalDAV.
+
+**Also:**
+- Timeout setting maximum raised 120 s → **300 s** (useful safety net during the first cold sync, or for extremely large calendars). Step size changed from 5 s to 15 s.
+- Timeout setting description updated to mention the CalDAV NSDate fix.
+- Default `appleMaxTier3Scan` in `DEFAULT_SETTINGS` aligned to 250 (matching the code constant).
+
+---
+
 ## [6.0.4] – 2026-03-31
 
 ### Fixed

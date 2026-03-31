@@ -78,7 +78,7 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   maxEvents: 20,
   appleTimeoutSeconds: 30,
   appleSkipTier3: false,
-  appleMaxTier3Scan: 500,
+  appleMaxTier3Scan: 250,
 };
 
 // ---------------------------------------------------------------------------
@@ -503,19 +503,20 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
         .setName("Timeout per calendar (seconds)")
         .setDesc(
           "How long to wait for Calendar.app to respond per calendar before giving up. " +
-          "Increase if you have a large Exchange or Office 365 calendar. (15–120)"
+          "Google CalDAV calendars now use a fast date-range query (Tier 2 NSDate) that " +
+          "typically completes in under 10 s — increase this only if you still see timeouts. (15–300)"
         )
         .addText((text) => {
           text.inputEl.type = "number";
           text.inputEl.min = "15";
-          text.inputEl.max = "120";
-          text.inputEl.step = "5";
+          text.inputEl.max = "300";
+          text.inputEl.step = "15";
           text.inputEl.style.width = "80px";
           text
             .setValue(String(this.plugin.settings.appleTimeoutSeconds))
             .onChange(async (value) => {
               const num = parseInt(value, 10);
-              if (!isNaN(num) && num >= 15 && num <= 120) {
+              if (!isNaN(num) && num >= 15 && num <= 300) {
                 this.plugin.settings.appleTimeoutSeconds = num;
                 await this.plugin.saveSettings();
               }
