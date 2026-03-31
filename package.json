@@ -1,6 +1,6 @@
 {
 	"name": "calendar-note-integration",
-	"version": "6.5.1",
+	"version": "6.5.2",
 	"description": "Obsidian plugin: create structured notes from Apple Calendar, Google Calendar (iCal or OAuth), or any iCal feed",
 	"main": "main.js",
 	"scripts": {

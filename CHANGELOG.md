@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.5.2] – 2026-03-31
+
+### Fixed
+
+**Background poll no longer recreates manually deleted notes**
+`refreshNotes` (used by the background poll, startup sweep, and Refresh button) now uses a two-layer guard. In addition to checking `processedEventIds`, it performs a file-existence pre-check before attempting to create a note. If a note file already exists on disk for an untracked event, the event is silently marked as processed without touching the file. This bootstraps the tracking list for notes created before v6.5.1 and eliminates the edge case where a deleted note could be spuriously recreated.
+
+---
+
 ## [6.5.1] – 2026-03-31
 
 ### Added
