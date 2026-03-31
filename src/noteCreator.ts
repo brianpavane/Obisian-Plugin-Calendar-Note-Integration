@@ -471,6 +471,21 @@ export interface CreateNoteResult {
 }
 
 /**
+ * Compute the vault file path that {@link createNoteFile} would use for a given event,
+ * without creating or modifying any files. Useful for existence checks before calling
+ * {@link createNoteFile}.
+ */
+export function resolveNoteFilePath(
+  event: CalendarEvent,
+  options: Pick<NoteOptions, "noteFolder" | "datePosition">
+): string {
+  const filename = generateNoteFilename(event, options.datePosition);
+  const trimmedFolder = options.noteFolder.trim();
+  const folderPath = trimmedFolder ? normalizePath(trimmedFolder) : "";
+  return normalizePath(folderPath ? `${folderPath}/${filename}.md` : `${filename}.md`);
+}
+
+/**
  * Create a meeting-note file in the vault for the given event.
  *
  * Idempotent — if the file already exists it is returned unchanged.

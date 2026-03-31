@@ -26,7 +26,7 @@ import { CalendarService, CalendarEvent } from "./calendarApi";
 import { GoogleAuth } from "./googleAuth";
 import { encrypt, decrypt } from "./secureStorage";
 import { EventSuggestModal } from "./eventModal";
-import { createNoteFile, NoteOptions } from "./noteCreator";
+import { createNoteFile, resolveNoteFilePath, NoteOptions } from "./noteCreator";
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -326,6 +326,13 @@ export default class GoogleCalendarPlugin extends Plugin {
    * Refresh: create notes only for events that have never been processed before.
    * Events whose notes were manually deleted are NOT recreated — use rebuildNotes for that.
    * Called by the background poller, startup sweep, and the Refresh button.
+   *
+   * Two-layer guard:
+   *  1. processedEventIds — skip events already seen in a previous run.
+   *  2. File existence check — if a note file already exists for an untracked event,
+   *     mark it as processed without touching the file (migration bootstrap, handles
+   *     notes created before processedEventIds tracking was introduced).
+   * A note is only ever created when BOTH guards confirm the event is genuinely new.
    */
   async refreshNotes(verbose: boolean): Promise<void> {
     const events = await this.fetchAndFilterEvents(verbose);
@@ -333,14 +340,29 @@ export default class GoogleCalendarPlugin extends Plugin {
 
     const processedSet = new Set(this.settings.processedEventIds);
     const options = this.getNoteOptions();
-    let created = 0;
+    let bootstrapped = false;
 
+    // Layer 2 bootstrap: for any untracked event whose note file already exists,
+    // mark it as processed without creating or modifying the file. This prevents
+    // recreating notes that pre-date processedEventIds tracking.
+    for (const event of events) {
+      if (processedSet.has(event.id)) continue;
+      const filePath = resolveNoteFilePath(event, options);
+      if (this.app.vault.getAbstractFileByPath(filePath) instanceof TFile) {
+        this.settings.processedEventIds.push(event.id);
+        processedSet.add(event.id);
+        bootstrapped = true;
+      }
+    }
+    if (bootstrapped) await this.saveSettings();
+
+    // Layer 1 + 2: only create notes for events that are genuinely new.
+    let created = 0;
     for (const event of events) {
       if (processedSet.has(event.id)) continue;
       try {
         const result = await createNoteFile(this.app, event, options);
         if (result.wasCreated) created++;
-        // Mark as processed whether or not the file existed (covers migration from older versions)
         this.settings.processedEventIds.push(event.id);
         processedSet.add(event.id);
       } catch (err) {
