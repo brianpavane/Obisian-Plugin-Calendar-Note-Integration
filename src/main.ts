@@ -1,11 +1,12 @@
 /**
  * @file main.ts
- * @description Entry point for the Google Calendar Note Integration plugin.
+ * @description Entry point for Calendar Note Integration - Apple-iCal-Google.
  *
- * Supports three authentication modes:
- *   - iCal URL  — fetches from the Google Calendar secret iCal address
- *   - OAuth 2.0 — fetches from the Google Calendar REST API with user tokens
- *   - Apple     — reads from Calendar.app on macOS via JXA (no auth)
+ * Supports three calendar sources:
+ *   - Apple Calendar — reads from Calendar.app on macOS via EventKit (primary)
+ *                      with JXA scripting-bridge fallback tiers
+ *   - iCal URL       — fetches from the Google Calendar secret iCal address
+ *   - OAuth 2.0      — fetches from the Google Calendar REST API with user tokens
  *
  * Responsibilities:
  *   - Register Obsidian commands and the ribbon icon.
@@ -54,13 +55,13 @@ export default class GoogleCalendarPlugin extends Plugin {
 
     this.addRibbonIcon(
       "calendar-days",
-      "Create note from Google Calendar event",
+      "Create note from calendar event",
       () => this.pickEventAndCreateNote()
     );
 
     this.addCommand({
       id: "create-note-from-event",
-      name: "Create note from Google Calendar event",
+      name: "Create note from calendar event",
       callback: () => this.pickEventAndCreateNote(),
     });
 
@@ -172,7 +173,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     const refreshToken = decrypt(this.settings.refreshToken);
     if (!refreshToken) {
       throw new Error(
-        "Not authenticated. Please sign in via Settings → Google Calendar Note Integration."
+        "Not authenticated. Please sign in via Settings → Calendar Note Integration - Apple-iCal-Google."
       );
     }
 
@@ -289,7 +290,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       const svc = await this.getCalendarService();
       events = await svc.listEventsInTimeWindow(timeMin, timeMax);
     } catch (err) {
-      if (verbose) new Notice(`Google Calendar: ${safeErrorMessage(err)}`);
+      if (verbose) new Notice(`Calendar Notes: ${safeErrorMessage(err)}`);
       return;
     }
 
@@ -304,19 +305,19 @@ export default class GoogleCalendarPlugin extends Plugin {
         const result = await createNoteFile(this.app, event, options);
         if (result.wasCreated) created++;
       } catch (err) {
-        console.debug("[gcal-notes] Failed to create note for event:", err);
+        console.debug("[cal-notes] Failed to create note for event:", err);
       }
     }
 
     if (verbose) {
       new Notice(
         created > 0
-          ? `Google Calendar: Created ${created} new note${created !== 1 ? "s" : ""}.`
-          : `Google Calendar: No new notes needed — all events already have notes.`
+          ? `Calendar Notes: Created ${created} new note${created !== 1 ? "s" : ""}.`
+          : `Calendar Notes: No new notes needed — all events already have notes.`
       );
     } else if (created > 0) {
       new Notice(
-        `Google Calendar: Auto-created ${created} meeting note${created !== 1 ? "s" : ""}.`,
+        `Calendar Notes: Auto-created ${created} meeting note${created !== 1 ? "s" : ""}.`,
         4_000
       );
     }
@@ -329,8 +330,8 @@ export default class GoogleCalendarPlugin extends Plugin {
   async pickEventAndCreateNote(): Promise<void> {
     if (!this.isConfigured()) {
       new Notice(
-        "Google Calendar: Please configure your connection in " +
-          "Settings → Google Calendar Note Integration."
+        "Calendar Notes: Please configure your connection in " +
+          "Settings → Calendar Note Integration - Apple-iCal-Google."
       );
       return;
     }
@@ -361,15 +362,15 @@ export default class GoogleCalendarPlugin extends Plugin {
       ).open();
     } catch (err) {
       loadingNotice.hide();
-      new Notice(`Google Calendar: ${safeErrorMessage(err)}`);
+      new Notice(`Calendar Notes: ${safeErrorMessage(err)}`);
     }
   }
 
   async createNoteForNextEvent(): Promise<void> {
     if (!this.isConfigured()) {
       new Notice(
-        "Google Calendar: Please configure your connection in " +
-          "Settings → Google Calendar Note Integration."
+        "Calendar Notes: Please configure your connection in " +
+          "Settings → Calendar Note Integration - Apple-iCal-Google."
       );
       return;
     }
@@ -395,7 +396,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       await this.createAndOpenNote(events[0]);
     } catch (err) {
       loadingNotice.hide();
-      new Notice(`Google Calendar: ${safeErrorMessage(err)}`);
+      new Notice(`Calendar Notes: ${safeErrorMessage(err)}`);
     }
   }
 
@@ -410,7 +411,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       new Notice(`Note ready: ${file.name}`);
     } catch (err) {
       new Notice(
-        `Google Calendar: Failed to create note — ${safeErrorMessage(err)}`
+        `Calendar Notes: Failed to create note — ${safeErrorMessage(err)}`
       );
     }
   }

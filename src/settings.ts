@@ -1,7 +1,7 @@
 /**
  * @file settings.ts
  * @description Plugin settings interface, defaults, and the Obsidian settings
- * tab UI for Google Calendar Note Integration.
+ * tab UI for Calendar Note Integration - Apple-iCal-Google.
  *
  * Supports three authentication modes:
  *   - "ical"  — iCal secret URL, no account required (personal calendars)
@@ -127,7 +127,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "Google Calendar Note Integration" });
+    containerEl.createEl("h2", { text: "Calendar Note Integration - Apple-iCal-Google" });
 
     // ----- Connection Method ------------------------------------------------
     containerEl.createEl("h3", { text: "Connection Method" });
@@ -767,16 +767,32 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
       });
 
     // ----- Manual Refresh ---------------------------------------------------
-    containerEl.createEl("h3", { text: "Manual Refresh" });
+    containerEl.createEl("h3", { text: "Manual Actions" });
 
     new Setting(containerEl)
       .setName("Refresh now")
-      .setDesc("Immediately fetch events and create any missing notes.")
+      .setDesc("Immediately fetch events and create any missing notes within the configured time window.")
       .addButton((button) =>
         button.setButtonText("Refresh").setCta().onClick(async () => {
           button.setButtonText("Refreshing…").setDisabled(true);
           await this.plugin.autoCreateUpcomingNotes(true);
           button.setButtonText("Refresh").setDisabled(false);
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Reimport / recreate deleted notes")
+      .setDesc(
+        "Re-runs the full import for the current time window and recreates notes for any " +
+        "events whose notes were deleted. Existing notes are not overwritten — only missing " +
+        "ones are created. Uses the same filters as the automatic import (declined and all-day " +
+        "events are excluded)."
+      )
+      .addButton((button) =>
+        button.setButtonText("Reimport").onClick(async () => {
+          button.setButtonText("Importing…").setDisabled(true);
+          await this.plugin.autoCreateUpcomingNotes(true);
+          button.setButtonText("Reimport").setDisabled(false);
         })
       );
   }

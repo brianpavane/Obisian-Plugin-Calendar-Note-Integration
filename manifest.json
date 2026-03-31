@@ -1,9 +1,9 @@
 {
-	"id": "obsidian-google-calendar-notes",
-	"name": "Google Calendar Note Integration",
-	"version": "6.0.7",
+	"id": "calendar-note-integration",
+	"name": "Calendar Note Integration - Apple-iCal-Google",
+	"version": "6.5.0",
 	"minAppVersion": "0.15.0",
-	"description": "Create structured Obsidian notes from Google Calendar, Apple Calendar, or iCal events, pre-populated with event agenda/description and sections for Notes, Summary, and Actions.",
+	"description": "Create structured Obsidian notes from Apple Calendar, Google Calendar (iCal or OAuth), or any iCal feed. Notes are pre-populated with event agenda, attendees, and sections for Notes, Summary, and Actions.",
 	"author": "Brian Pavane",
 	"authorUrl": "https://github.com/brianpavane",
 	"isDesktopOnly": true

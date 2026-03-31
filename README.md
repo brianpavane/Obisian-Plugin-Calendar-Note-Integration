@@ -1,560 +1,270 @@
-# Google Calendar Note Integration
+# Calendar Note Integration - Apple-iCal-Google
 
-An [Obsidian](https://obsidian.md) plugin that automatically creates structured meeting notes from your calendar events.
+An Obsidian plugin that automatically creates structured meeting notes from your calendar events.
 
-Notes are pre-populated with the event's agenda/description and include ready-to-use sections for **Agenda**, **Notes**, **Summary**, and **Actions**. Notes are created automatically in advance of your meetings, keeping your vault in sync with your calendar.
-
-> **Desktop only.** This plugin requires the Obsidian desktop app (macOS, Windows, or Linux).
-
----
-
-## Table of Contents
-
-1. [Features](#features)
-2. [Connection Methods](#connection-methods)
-3. [Example Note](#example-note)
-4. [Installation](#installation)
-5. [Setup](#setup)
-   - [iCal URL (personal calendars)](#option-a--ical-url-personal--public-calendars)
-   - [Google Account (work/org calendars)](#option-b--google-account-workorg-calendars)
-   - [Apple Calendar (macOS)](#option-c--apple-calendar-macos)
-6. [Usage](#usage)
-7. [Configuration Reference](#configuration-reference)
-8. [Note Template Anatomy](#note-template-anatomy)
-9. [Security Model](#security-model)
-10. [Development](#development)
-11. [Troubleshooting](#troubleshooting)
+Supports **Apple Calendar** (macOS), **Google Calendar** (via OAuth 2.0 or secret iCal URL), and **any standard iCal feed**.
 
 ---
 
 ## Features
 
-| Feature | Details |
-|---|---|
-| **Three connection methods** | iCal URL, Google Account (OAuth 2.0), or Apple Calendar |
-| **Auto-create notes** | Notes created automatically N hours before each event |
-| **Startup sweep** | Creates notes for events already within the advance window on launch |
-| **Background polling** | Checks every 30 minutes (configurable) for events needing a note |
-| **Past events** | Optionally create notes for past events within a configurable lookback window |
-| **Event picker** | Fuzzy-search across upcoming events to create a note on demand |
-| **Agenda from invite** | Event description is parsed and placed in the Agenda section |
-| **Attendee RSVP table** | Attendees shown with name, email, and color-coded accept/decline status |
-| **Conference links** | Google Meet, Zoom, and Microsoft Teams links detected and included (optional) |
-| **YAML frontmatter** | Structured metadata compatible with Dataview and other plugins |
-| **Flexible filenames** | Date before or after event name — your choice |
-| **Idempotent** | Re-running never overwrites a note you've already started editing |
+- **Automatic note creation** — notes appear before your meetings without any manual action
+- **Three calendar sources** — Apple Calendar, Google Calendar OAuth, or any iCal/CalDAV URL
+- **Structured note template** — Agenda (from event description), Notes, Summary, and Actions sections
+- **Attendee table** — shows every participant with their RSVP status (🟢 accepted, 🔴 declined, 🟡 tentative, ⚪ awaiting)
+- **Conference link extraction** — Zoom, Google Meet, and Microsoft Teams links are pulled into the note header
+- **Declined event filtering** — events you have declined are never given notes
+- **All-day event filtering** — all-day events (holidays, OOO blocks) are skipped
+- **Configurable time window** — look ahead 1–72 hours; optionally include past events
+- **Background polling** — re-checks on a configurable interval (1–60 minutes)
+- **Reimport on demand** — recreate notes for deleted events with a single button click
+- macOS only for Apple Calendar mode; iCal and OAuth work on any desktop platform
 
 ---
 
-## Connection Methods
+## Installation
 
-| Method | Best for | Auth required |
-|---|---|---|
-| **iCal URL** | Personal Google Calendar | None — just the secret URL |
-| **Google Account** | Work/organization Google Calendar | Google OAuth 2.0 (one-time setup) |
-| **Apple Calendar** | Any calendar synced to Calendar.app on macOS | None — reads locally |
+### From Obsidian Community Plugins (recommended)
 
-Switch between methods at any time in **Settings → Google Calendar Note Integration → Authentication mode**.
+1. Open Obsidian → **Settings → Community plugins → Browse**
+2. Search for **Calendar Note Integration**
+3. Click **Install**, then **Enable**
+
+### Manual installation
+
+1. Download `main.js` and `manifest.json` from the [latest release](https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration/releases/latest)
+2. Copy both files to `<vault>/.obsidian/plugins/calendar-note-integration/`
+3. Reload Obsidian and enable the plugin under **Settings → Community plugins**
 
 ---
 
-## Example Note
+## Setup
+
+Open **Settings → Calendar Note Integration - Apple-iCal-Google** and choose a connection method.
+
+### Apple Calendar (macOS)
+
+Reads events directly from **Calendar.app** using Apple's **EventKit** framework — no API keys, no OAuth, no Google Cloud project required. All accounts synced to Calendar.app are available: Google CalDAV, iCloud, Exchange/Office 365, and local calendars.
+
+**Required permission:**
+1. The first time the plugin runs, macOS will prompt:
+   *"Obsidian would like to access your Calendar data"*
+2. Click **OK**. If you missed it, go to **System Settings → Privacy & Security → Calendars** and set Obsidian to **Full Calendar Access**.
+
+**How event fetching works:**
+
+The plugin uses a tiered strategy, always trying the fastest approach first:
+
+| Tier | Method | Notes |
+|------|--------|-------|
+| **EventKit global** *(primary)* | `EKEventStore` via ObjC — single call, all calendars | Reads local SQLite cache, no network. < 100 ms. |
+| Tier 1 | `app.eventsFrom()` — Calendar.app scripting bridge | Fast for some configurations |
+| Tier 2 | `cal.eventsFrom()` with NSDate — per calendar | CalDAV/Exchange date-range query |
+| Tier 2.5 | `whose`-predicate filter | Exchange fallback |
+| Tier 2.75 | Bulk `events.startDate()` fetch | Large Exchange calendars |
+| Tier 3 | Lazy indexed `events[j]` scan | Last resort |
+
+For most users, **EventKit global** handles everything in a single call and the remaining tiers are never reached.
+
+**Apple Calendar Settings:**
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Calendars to include | *(all)* | Toggle specific calendars or leave blank for all |
+| Timeout per calendar | 30 s | Seconds to wait per calendar in fallback tiers (15–300 s) |
+| Max events for last-resort scan | 250 | Upper bound for Tier 3 fallback (50–2000) |
+| Skip full scan | Off | Disable Tier 3 entirely for very large Exchange calendars |
+
+### Google Calendar — iCal URL
+
+No Google Cloud project needed. Uses the private iCal feed URL from your Google Calendar account.
+
+1. Open [Google Calendar](https://calendar.google.com) → **Settings (gear icon)**
+2. Click your calendar name in the left sidebar
+3. Scroll to **Integrate calendar**
+4. Copy the **Secret address in iCal format** URL
+5. Paste it into **Settings → iCal URL** in Obsidian
+
+### Google Calendar — OAuth 2.0
+
+Full API access. Required for shared/workspace calendars or precise filtering.
+
+**One-time Google Cloud setup:**
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com)
+2. Create a project and enable the **Google Calendar API**
+3. Go to **APIs & Services → OAuth consent screen** → External → add your account as a test user
+4. Go to **Credentials → Create Credentials → OAuth client ID** → Desktop app
+5. Copy the **Client ID** and **Client Secret** into Obsidian Settings, then click **Sign in with Google**
+6. Enter the **Calendar ID** (found in Google Calendar → Settings → Integrate calendar)
+
+---
+
+## Settings Reference
+
+### Personal
+
+| Setting | Description |
+|---------|-------------|
+| Your email address | Identifies your own attendee entry. Used to show your RSVP status and exclude events you have declined. |
+
+### Note Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Note folder | *(vault root)* | Vault-relative folder for created notes |
+| Hours in advance | 24 | Create notes for events starting within this many hours |
+| Poll interval | 5 min | How often to check for new upcoming events |
+| Include past events | Off | Also create notes for events that have already started |
+| Days back | 1 | How many days back to look (when past events enabled) |
+| Include event notes | On | Include the event description as the Agenda section |
+| Include conference link | Off | Add a Join Meeting link to the note header |
+| Date position in filename | Before | `2026-01-15 - Meeting Name.md` or `Meeting Name - 2026-01-15.md` |
+
+### Calendar View (event picker)
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Days ahead to fetch | 7 | Look-ahead window for the event picker modal |
+| Max events to show | 10 | Maximum events listed in the picker modal |
+
+### Manual Actions
+
+| Button | Description |
+|--------|-------------|
+| **Refresh** | Immediately fetch events and create any missing notes |
+| **Reimport** | Re-runs the full import and recreates notes for any events whose notes were deleted. Existing notes are not overwritten. |
+
+---
+
+## Generated Note Format
 
 ```markdown
 ---
-title: "Q2 Planning Kickoff"
-date: 2026-03-30
-calendar_event_id: "abc123xyz"
+title: "Weekly Sync"
+date: 2026-01-15
+calendar_event_id: "abc123..."
 location: "Conference Room B"
 attendees:
   - "Alice Smith <alice@example.com>"
   - "Bob Jones <bob@example.com>"
-duration: "1h"
-conference_platform: "Google Meet"
+duration: "1h 0m"
+conference: "Google Meet"
 ---
 
-# Q2 Planning Kickoff
+# Weekly Sync
 
-**Date:** Monday, March 30, 2026
-**Time:** 10:00 AM – 11:00 AM
-**Duration:** 1h
-**Location:** Conference Room B
-**Google Meet:** [Join meeting](https://meet.google.com/xxx-yyy-zzz)
+**Date:** Wednesday, January 15, 2026
+**Time:** 10:00 AM - 11:00 AM
+**Duration:** 1h 0m
+**Google Meet:** [Join meeting](https://meet.google.com/abc-defg-hij)
 **Organizer:** Alice Smith
 
 **Attendees:**
 
 |   | Name | Email |
 |:-:|:-----|:------|
-| 🔷 | Alice Smith *(organizer)* | alice@example.com |
-| 🟢 | Bob Jones | bob@example.com |
-| 🔴 | Carol White | carol@example.com |
+| green | Alice Smith *(organizer)* | alice@example.com |
+| green | Bob Jones | bob@example.com |
+| white | Carol White | carol@example.com |
 
 ---
 
 ## Agenda
 
-- Review Q1 results
-- Discuss Q2 OKRs
--
+- Weekly status update
+- Q1 planning discussion
+
+---
 
 ## Notes
 
--
+
+
+---
 
 ## Summary
 
--
+
+
+---
 
 ## Actions
 
--
-```
 
-**RSVP icon legend:**
-
-| Icon | Status |
-|:----:|--------|
-| 🟢 | Accepted |
-| 🔴 | Declined |
-| 🟡 | Tentative |
-| ⚪ | Awaiting response |
-| 🔷 | Organizer |
-
----
-
-## Installation
-
-### Option A — BRAT (recommended for beta users)
-
-[BRAT](https://github.com/TfTHacker/obsidian42-brat) installs and auto-updates plugins directly from GitHub.
-
-1. Install and enable **Obsidian42 - BRAT** from the Community Plugins list.
-2. Open **Settings → BRAT → Add Beta plugin**.
-3. Enter the repository URL:
-   ```
-   https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration
-   ```
-4. Click **Add Plugin**. BRAT downloads the latest release from the `main` branch automatically.
-5. Enable **Google Calendar Note Integration** in **Settings → Community Plugins**.
-
-### Option B — Manual installation
-
-1. Go to the [Releases page](https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration/releases) and download the latest release assets: `main.js`, `manifest.json`, `styles.css`.
-2. Copy them into your vault's plugin folder:
-   ```
-   <vault>/.obsidian/plugins/obsidian-google-calendar-notes/
-   ```
-3. Enable the plugin in **Settings → Community Plugins**.
-
-### Option C — Build from source
-
-```bash
-git clone https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration.git
-cd Obisian-Plugin-Calendar-Note-Integration
-npm install
-npm run build
-cp main.js manifest.json styles.css "/path/to/vault/.obsidian/plugins/obsidian-google-calendar-notes/"
 ```
 
 ---
 
-## Setup
-
-Choose the connection method that matches your calendar:
-
----
-
-### Option A — iCal URL (personal / public calendars)
-
-Use this when your Google Calendar is personal (not managed by a workplace organization).
-
-1. Open **Google Calendar** → **Settings** (gear icon).
-2. Click your calendar's name in the left sidebar.
-3. Scroll to **Integrate calendar**.
-4. Copy the **Secret address in iCal format** URL (ends in `.ics`).
-5. In Obsidian, open **Settings → Google Calendar Note Integration**.
-6. Set **Authentication mode** to **iCal URL**.
-7. Paste the URL into the **iCal URL** field.
-8. Click **Test** to confirm the connection.
-
-> **Security:** The secret iCal URL grants read access to your calendar to anyone who has it — treat it like a password. The plugin stores it encrypted in Obsidian's plugin data folder using your OS keychain.
-
----
-
-### Option B — Google Account (work/org calendars)
-
-Use this when your organization blocks external iCal access (you see "0 events" with the iCal method, or get an error about authentication).
-
-#### One-time Google Cloud setup
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/) and create or select a project.
-2. Go to **APIs & Services → Library** and enable the **Google Calendar API**.
-3. Go to **APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID**.
-4. Choose **Desktop app** as the application type.
-5. Copy the **Client ID** and **Client Secret**.
-
-> **Tip:** You may need to configure the OAuth consent screen first. Choose "External" and add your own email as a test user while in "Testing" mode.
-
-#### Plugin setup
-
-1. In Obsidian, open **Settings → Google Calendar Note Integration**.
-2. Set **Authentication mode** to **Google Account**.
-3. Paste your **Client ID** and **Client Secret**.
-4. Click **Sign in with Google** — your browser opens Google's authorization page.
-5. Sign in and grant read-only calendar access.
-6. The browser shows "Authorization Successful" and Obsidian resumes automatically.
-
-Authentication is a one-time step. The plugin stores a refresh token and automatically renews the access token in the background.
-
----
-
-### Option C — Apple Calendar (macOS)
-
-Use this to read from Calendar.app on macOS. All accounts already synced in Calendar.app — including Google, iCloud, Exchange, and others — are available without any additional authentication.
-
-1. In Obsidian, open **Settings → Google Calendar Note Integration**.
-2. Set **Authentication mode** to **Apple Calendar — macOS only**.
-3. The plugin loads your available calendars automatically. Use the checkboxes to select which calendars to include. Leave all checked (or uncheck all) to include every calendar.
-4. Click **Test** to verify Obsidian can read your events.
-
-> **macOS permission — important:** Go to **System Settings → Privacy & Security → Calendars** and set Obsidian to **Full Calendar Access**. "Add Only" access cannot read events and will cause timeouts or return no results.
-
-#### Advanced options
-
-If you have a large Exchange or Office 365 calendar that causes timeouts, expand the **Advanced** section below the Test button:
-
-| Option | Default | Range | Description |
-|---|---|---|---|
-| **Timeout per calendar** | 30 s | 15–120 s | Increase for large Exchange calendars with thousands of recurring events |
-| **Max events for last-resort scan** | 500 | 50–2 000 | How many events Tier 3 scans individually — only applies if all faster tiers fail |
-| **Skip full-scan fallback (Tier 3)** | Off | — | Skip Tier 3 entirely — faster if you don't need events from that calendar |
-
-#### Running diagnostics
-
-Click **Run Diagnostics** to run a three-step check that identifies exactly which fetch strategy each calendar uses and where slowdowns occur. Results appear in a scrollable dialog and are also logged to the developer console (**Ctrl+Shift+I → Console**).
-
----
-
-## Usage
-
-### Automatic (recommended)
-
-Once configured, the plugin runs quietly in the background:
-
-- **On startup:** Checks for events starting within the next N hours (default: 12 h) and creates notes.
-- **Every 30 minutes:** Re-checks for new events entering the advance window.
-- Notes are created silently; a brief notice appears only when new notes are made.
-
-### Manual — Command Palette
+## Commands
 
 | Command | Description |
-|---|---|
-| `Create note from Google Calendar event` | Open the fuzzy-search event picker |
-| `Create note for next upcoming event` | Instantly create a note for the very next event |
-| `Auto-create notes for events in the next N hours` | Manual sweep with a summary |
-
-### Manual — Ribbon Icon
-
-Click the **calendar** icon in the left ribbon to open the event picker.
-
-### Upgrading with BRAT
-
-Run **Settings → BRAT → Check for updates** — BRAT handles everything automatically.
-
-### Upgrading manually
-
-1. Download the latest `main.js`, `manifest.json`, `styles.css` from [Releases](https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration/releases).
-2. Overwrite the files in `<vault>/.obsidian/plugins/obsidian-google-calendar-notes/`.
-3. Reload the plugin: **Settings → Community Plugins → Disable**, then **Enable**.
-
-> **Your settings and tokens are preserved.** The `data.json` file is never overwritten by an upgrade.
-
----
-
-## Configuration Reference
-
-All settings are in **Settings → Google Calendar Note Integration**.
-
-### Connection Method
-
-| Setting | Description |
-|---|---|
-| **Authentication mode** | Choose iCal URL, Google Account, or Apple Calendar |
-
-### iCal Connection
-
-| Setting | Description |
-|---|---|
-| **iCal URL** | Secret iCal address from Google Calendar (encrypted at rest) |
-| **Test** | Verify the URL returns valid data |
-
-### Google Account
-
-| Setting | Description |
-|---|---|
-| **Client ID** | OAuth 2.0 Client ID from Google Cloud Console |
-| **Client Secret** | OAuth 2.0 Client Secret (encrypted at rest) |
-| **Sign in with Google** | Opens browser for one-time authorization |
-| **Disconnect** | Revokes authorization and clears stored tokens |
-| **Calendar ID** | Calendar to fetch (`primary` = default calendar) |
-| **Test** | Verify the OAuth token is valid |
-
-### Apple Calendar
-
-| Setting | Description |
-|---|---|
-| **Calendar checkboxes** | Select which Calendar.app calendars to include. Uncheck all to include every calendar. |
-| **Run Diagnostics** | Three-step check: JXA execution → list calendars → per-calendar fetch strategy probe. Shows which tier each calendar uses and logs timing detail to the developer console. |
-| **Test** | Verify Obsidian can read events from Calendar.app |
-
-#### Apple Calendar — Advanced
-
-| Setting | Default | Range | Description |
-|---|---|---|---|
-| **Timeout per calendar (seconds)** | `30` | 15–120 s | How long to wait for Calendar.app per calendar before giving up. Increase for large Exchange or Office 365 calendars. |
-| **Max events for last-resort scan (Tier 3)** | `500` | 50–2 000 | How many events the Tier 3 individual scan reads (newest-first). Only applies if all faster strategies fail. |
-| **Skip full-scan fallback (Tier 3)** | Off | — | When on, calendars that fail the fast fetch strategies are skipped instead of running a slow full event scan. Results from other calendars are still returned. |
-
-#### How Apple Calendar fetches events (fetch tiers)
-
-The plugin tries strategies in order, moving to the next only if the previous fails:
-
-| Tier | Method | Notes |
-|---|---|---|
-| **1** | `app.eventsFrom()` | Single call across all calendars — fastest; not available on all macOS versions |
-| **2** | `cal.eventsFrom()` | Per-calendar date-window query — works for most accounts |
-| **2.5** | `cal.events.whose()` | Predicate filter — fallback for Exchange/Office 365 calendars |
-| **2.75** | `cal.events.startDate()` bulk + JS filter | **One IPC call** for all dates; filter in JS; `properties()` only for matches. Primary fix for Exchange timeouts |
-| **3** | Individual `startDate()` scan (newest N) | Last resort — disable with Skip Tier 3; cap with Max events setting |
-
-**Why Exchange calendars were slow:** Each individual `startDate()` call to Calendar.app is a separate IPC round-trip that may require a server sync. 1 000 calls × 50–100 ms = 50–100 s timeout. Tier 2.75 replaces 1 000 calls with one bulk call — typically 1–10 s.
-
-### Personal Settings
-
-| Setting | Description |
-|---|---|
-| **Your email address** | Your calendar account email. When set: (1) your own attendee entry is hidden from generated notes, and (2) events you have **declined** are excluded from note creation entirely. |
-
-### Note Settings
-
-| Setting | Default | Range | Description |
-|---|---|---|---|
-| **Note folder** | `Meeting Notes` | any path | Vault folder for new notes. Empty = vault root |
-| **Hours in advance** | `12` | 1–48 h | How far ahead of an event to auto-create its note |
-| **Poll interval** | `30` | 5–120 min | How often to check for new events. Takes effect after restart. |
-| **Include past events** | Off | — | Also create notes for events that have already started |
-| **Days back to look** | `1` | 1–30 days | How many days back to look (shown when past events is enabled) |
-
-### Note Contents
-
-| Setting | Default | Description |
-|---|---|---|
-| **Include event notes / agenda** | On | Include the event's description as the Agenda section |
-| **Include conference link** | Off | Extract and include Zoom, Teams, or Google Meet links |
-| **Date position in filename** | Before name | `2026-03-30 - Meeting Title` or `Meeting Title - 2026-03-30` |
-
-### Calendar View
-
-| Setting | Default | Range | Description |
-|---|---|---|---|
-| **Days ahead to fetch** | `7` | 1–30 days | Look-ahead window for the event picker |
-| **Max events to show** | `20` | 1–50 | Max events shown in the picker |
-
----
-
-## Note Template Anatomy
-
-Every generated note has the following structure:
-
-```
-YAML Frontmatter
-  title, date, calendar_event_id, location?, attendees?, duration?, conference_platform?
-
-# Event Title
-
-**Date:**      Long-form date  (e.g. Monday, March 30, 2026)
-**Time:**      Time range       (e.g. 10:00 AM – 11:00 AM, or "All day")
-**Duration:**  Length of meeting (timed events only)
-**Location:**  Physical location (if present)
-**<Platform>:** [Join meeting](<url>)  (if conference links enabled and present)
-**Organizer:** Name / email    (if present)
-
-**Attendees:**
-| 🟢/🔴/🟡/⚪/🔷 | Name | Email |
-
----
-
-## Agenda        (if "Include event notes" enabled — bullet list from description)
-## Notes         (empty bullet list for live notes)
-## Summary       (empty bullet list for post-meeting summary)
-## Actions       (empty bullet list for action items)
-```
-
-### Filename format
-
-| Date position | Example |
-|---|---|
-| Before name (default) | `2026-03-30 - Q2 Planning Kickoff.md` |
-| After name | `Q2 Planning Kickoff - 2026-03-30.md` |
-
-Characters forbidden by common file systems (`\ / : * ? " < > |`) are replaced with hyphens.
-
----
-
-## Security Model
-
-### Credential storage
-
-| Credential | Storage |
-|---|---|
-| iCal URL | Encrypted via OS keychain (Electron `safeStorage`) |
-| OAuth Client Secret | Encrypted via OS keychain |
-| OAuth access token | Encrypted via OS keychain |
-| OAuth refresh token | Encrypted via OS keychain |
-
-Encrypted tokens are stored as opaque blobs in `.obsidian/plugins/obsidian-google-calendar-notes/data.json`. They are machine-bound — moving your vault to another machine requires re-authentication.
-
-### OAuth 2.0 flow
-
-- Uses the **installed app** flow with a dynamically allocated localhost redirect port.
-- A **cryptographically random `state` token** (`crypto.randomUUID()`) is generated per auth attempt to prevent CSRF.
-- The local HTTP server shuts down immediately after the first valid redirect.
-- A **5-minute timeout** aborts the flow if not completed.
-- The plugin requests only the **`calendar.readonly`** scope — it cannot modify calendar data.
-
-### Input sanitization
-
-| Context | Threat | Mitigation |
-|---|---|---|
-| YAML frontmatter values | YAML injection via newlines | `escapeYaml()` escapes `\n`, `\r`, `\t`, `"`, `\` |
-| Markdown headings / bold | Newlines breaking structure | `sanitizeInline()` collapses newlines |
-| Markdown table cells | `\|` breaking table rows | `escapeMdCell()` escapes pipes and newlines |
-| Conference link URIs | `javascript:` / `data:` URIs | `isSafeHttpsUrl()` only allows `https:` and `http:` |
-| JXA script (Apple Calendar) | Script injection | Only validated integers and `JSON.stringify`-quoted strings are interpolated |
-| HTML event descriptions | DoS via large/malformed HTML | `stripHtml()` caps input at 10 000 chars before DOM parsing |
-| iCal error preview | Information disclosure | Response preview capped at 50 chars, newlines stripped |
-| Fallback event UIDs | Weak randomness | `crypto.randomUUID()` used instead of `Math.random()` |
-
-### Network requests
-
-- All requests use Obsidian's `requestUrl()` API (routes through Electron main process, bypasses CORS).
-- iCal feeds capped at 10 MB. Apple Calendar output capped at 5 MB.
-- All REST API calls have a 10-second timeout.
-
----
-
-## Development
-
-### Prerequisites
-
-- Node.js 18+
-- An Obsidian vault for testing
-
-### Commands
-
-```bash
-npm install          # Install dependencies
-npm run dev          # Development build (watch mode)
-npm run build        # Production build
-```
-
-### Versioning
-
-```bash
-npm run version:patch   # bug fixes  →  e.g. 5.0.0 → 5.0.1
-npm run version:minor   # new features  →  5.0.0 → 5.1.0
-npm run version:major   # breaking changes  →  5.0.0 → 6.0.0
-```
-
-### Publishing a release
-
-```bash
-npm run build
-git add manifest.json versions.json package.json main.js
-git commit -m "Release vX.Y.Z"
-git push origin main
-# Then create a GitHub Release tagged X.Y.Z (no "v" prefix for BRAT compatibility)
-# Attach: main.js, manifest.json, styles.css
-```
-
-### Architecture
-
-```
-src/
-├── main.ts             Plugin entry point — commands, ribbon, polling
-├── settings.ts         Settings interface, defaults, settings tab UI
-├── calendarApi.ts      Unified CalendarService + IcalCalendarApi + GoogleCalendarApi
-├── icalParser.ts       RFC 5545 iCal parser (Google Meet, Zoom, Teams detection)
-├── appleCalendarApi.ts JXA-based Apple Calendar reader
-├── googleAuth.ts       OAuth 2.0 authorize / refresh / revoke
-├── noteCreator.ts      Markdown note builder + vault file writer
-├── eventModal.ts       Fuzzy-search event picker modal
-├── secureStorage.ts    Electron safeStorage wrapper
-└── electron.d.ts       Electron type declarations
-```
+|---------|-------------|
+| **Create note from calendar event** | Opens a fuzzy-search modal to pick any upcoming event |
+| **Create note for next event** | Immediately creates and opens a note for the next upcoming event |
+
+Both commands are also available via the ribbon icon (calendar icon, left sidebar).
 
 ---
 
 ## Troubleshooting
 
-### "Please configure your connection"
+### Apple Calendar — no events found
 
-Open **Settings → Google Calendar Note Integration** and complete the setup for your chosen connection method.
+1. Run **Settings → Apple Calendar → Run Diagnostics** to identify the issue
+2. Verify Obsidian has **Full Calendar Access** in **System Settings → Privacy & Security → Calendars**
+3. Make sure Calendar.app is open and the relevant calendars are synced and enabled
 
-### iCal: "0 events returned" or "did not return a valid calendar feed"
+### Apple Calendar — timeout or slow
 
-- Make sure you copied the **Secret address in iCal format** (not the public calendar URL).
-- Your organization may have disabled external iCal access. Switch to **Google Account** mode instead.
-- Open the developer console (**Ctrl+Shift+I** → Console) for the full error details.
+The **EventKit global** path (primary) reads the local cache and is not expected to time out. If it falls through to the Calendar.app scripting bridge:
+- Open Calendar.app and wait for it to finish syncing, then retry
+- Increase **Timeout** in Settings → Apple Calendar → Advanced
+- For very large Exchange calendars, enable **Skip full scan**
 
-### Google Account: "Authorization timed out" or "OAuth state mismatch"
+### Notes not being created
 
-Click **Sign in with Google** again to start a fresh authorization flow.
+- Check **Hours in advance** — events too far in the future are not in the window yet
+- Check **Your email address** — if set, declined events are filtered out
+- Use the **Reimport** button (Settings → Manual Actions) to force a re-check
+- Check the Obsidian developer console (Ctrl+Shift+I → Console) for `[CalendarNoteIntegration]` log entries
 
-### Google Account: "Google Calendar API error: …"
+### Google Calendar — authentication errors
 
-The access token may have been revoked. Click **Disconnect** then **Sign in with Google** to re-authenticate.
-
-### Apple Calendar: "Calendar access denied"
-
-Go to **System Settings → Privacy & Security → Calendars** and set Obsidian to **Full Calendar Access** (not "Add Only"). "Add Only" cannot read events and causes timeouts.
-
-### Apple Calendar: "No calendars found"
-
-Ensure Calendar.app is open, has at least one account configured, and that Obsidian has calendar permission.
-
-### Apple Calendar: request times out on a large Exchange/Office 365 calendar
-
-1. Click **Run Diagnostics** to see which fetch tier the calendar uses.
-2. Go to **Settings → Apple Calendar → Advanced** and increase **Timeout per calendar** to **60** or **90 seconds**.
-3. Make sure Calendar.app has finished its initial sync — open Calendar.app and wait for the spinner in the bottom status bar to stop before retrying.
-4. If the calendar still times out after a generous timeout, enable **Skip full-scan fallback (Tier 3)**. This skips that calendar entirely and returns events from your other (faster) calendars instead.
-5. Check the developer console (**Ctrl+Shift+I → Console**) for per-tier timing (`t2ms`, `t2.5ms`, `t3ms`) to see exactly where time is spent.
-
-### Apple Calendar: recurring meetings (set up long ago) not getting notes
-
-Calendar.app materialises recurring series as individual instance records with their own start dates. Tier 2.75 looks back 30 extra days before the fetch window to catch instances near the boundary. If recurring meetings are still missing:
-
-1. Open **Calendar.app** and confirm the recurring meeting shows up on the correct date.
-2. Run **Diagnostics** — if the calendar uses Tier 3 (full scan), only the newest N events are scanned; increase **Max events for last-resort scan** or enable Skip Tier 3 and check if Tier 2.75 now finds the events.
-3. On Exchange/Office 365 accounts, Calendar.app may only expand recurring instances via `eventsFrom()` (Tier 2). If Tier 2 fails with "Can't convert types", recurring instances may not be accessible through any JXA strategy — this is a Calendar.app/Exchange scripting limitation. As a workaround, try switching to the **iCal URL** or **Google Account** connection method if your calendar supports it.
-
-### Apple Calendar: events missing from a specific calendar
-
-Run **Diagnostics** and check the tier reported for that calendar. If it falls to Tier 3 (full scan), only the newest N events are scanned — increase **Max events for last-resort scan** or check the developer console for `t3ms` timing.
-
-### Notes are not created automatically
-
-1. Confirm the plugin is configured (connection test passes in Settings).
-2. Check that **Hours in advance** is large enough to cover upcoming events.
-3. Run the **"Auto-create notes for events in the next N hours"** command for a verbose status report.
+- **OAuth**: click **Sign in with Google** in Settings to refresh the token
+- **iCal**: verify the secret iCal URL is still valid; regenerate it in Google Calendar if needed
 
 ---
 
-## Privacy
+## Privacy and Security
 
-This plugin communicates only with your calendar source (Google Calendar API, iCal URL, or local Calendar.app). No data is sent to any third-party server. Credentials are stored locally and encrypted using your OS keychain.
+| Mode | Data handling |
+|------|--------------|
+| Apple Calendar | All data stays on-device. No network requests are made by the plugin; Calendar.app manages its own syncing independently. |
+| iCal URL | The plugin fetches your iCal URL directly from Obsidian. The URL is stored encrypted in your vault. |
+| OAuth | Access tokens are stored encrypted in your vault. The plugin requests read-only scope (`calendar.readonly`). No data is sent to any third-party server. |
+
+Security measures in the code:
+
+- All user-controlled strings written to YAML frontmatter are escaped to prevent injection
+- Markdown table fields (attendee names/emails) are sanitised against pipe/newline injection
+- Conference link URIs are validated against an HTTPS allowlist before embedding
+- JXA scripts interpolate only validated integers (never raw user strings)
+- `execFile` is used instead of `exec` — no shell expansion possible
+- OAuth refresh tokens are preserved across refreshes to prevent auth loss
+- JXA output is capped at 5 MB before JSON parsing to prevent OOM
+
+---
+
+## Building from Source
+
+```bash
+git clone https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration.git
+cd Obisian-Plugin-Calendar-Note-Integration
+npm install
+npm run build   # production build -> main.js
+npm run dev     # watch mode for development
+```
 
 ---
 

@@ -1,10 +1,21 @@
 /**
  * @file appleCalendarApi.ts
- * @description Read events from Apple Calendar (Calendar.app) on macOS via
- * JavaScript for Automation (JXA) running through osascript.
+ * @description Read events from Apple Calendar on macOS via EventKit (primary)
+ * and the Calendar.app JXA scripting bridge (fallback).
  *
- * No network calls, no API keys, no OAuth required. Calendar.app already
- * handles authentication for all synced accounts (Google, iCloud, Exchange).
+ * Primary path: EKEventStore via ObjC bridge — reads the local EventKit SQLite
+ * cache without triggering any CalDAV/Exchange network sync.  Returns in <100ms
+ * regardless of cache age or calendar size.
+ *
+ * Fallback chain (Calendar.app scripting bridge):
+ *   Tier 1   → app.eventsFrom() — all calendars, single call
+ *   Tier 2   → cal.eventsFrom() with NSDate — per-calendar CalDAV/Exchange
+ *   Tier 2.5 → whose-predicate filter — Exchange fallback
+ *   Tier 2.75→ bulk events.startDate() fetch — large Exchange calendars
+ *   Tier 3   → lazy indexed events[j] scan — last resort
+ *
+ * No API keys or OAuth required. Calendar.app handles authentication for all
+ * synced accounts (Google CalDAV, iCloud, Exchange, local).
  *
  * Security notes:
  *   - The JXA script template only interpolates validated integers (daysBack,
@@ -60,12 +71,13 @@ function extractConferenceFromText(text: string): CalendarEvent["conferenceData"
  */
 const DEFAULT_MAX_TIER3_SCAN = 250;
 
-// Shared JXA snippet for building one result item from an event object (variable `evt`).
-//
-// Uses evt.properties() to fetch all scalar fields in ONE IPC call instead of
-// 7+ individual getter calls. This is critical for calendars with recurring
-// events — each instance requires its own IPC round-trip per property, so
-// 300 events × 7 getters = 2100 calls vs. 300 × 1 = 300 with properties().
+// ---------------------------------------------------------------------------
+// Shared JXA snippets
+// ---------------------------------------------------------------------------
+
+// Builds one Calendar.app scripting-bridge event item (variable `evt` must be in scope,
+// `item` pre-initialized with default values). Uses evt.properties() for a bulk IPC
+// read instead of 7+ individual getter calls.
 const JXA_BUILD_ITEM = `
       var p = {};
       try { p = evt.properties(); } catch (ep) {}
@@ -104,6 +116,67 @@ const JXA_BUILD_ITEM = `
             } catch (e) {}
           }
           item.attendees = attList;
+        }
+      } catch (e) {}`.trimStart();
+
+// Serialises one EKEvent (variable `ev`) into `item` (pre-initialised with
+// calendarName / calendarId). All variable names are prefixed with `ek` to
+// avoid collisions when embedded in a loop body alongside other JXA code.
+//
+// EKParticipantStatus integers: 0=unknown 1=pending 2=accepted 3=declined
+//                               4=tentative 5=delegated 6=completed 7=inProcess
+// EKParticipant.URL is a mailto: URI — scheme stripped to get the email address.
+// Number() coercion is required because participantStatus is an ObjC NSInteger
+// that does not satisfy strict === against a JS number literal in JXA.
+const JXA_SERIALIZE_EK_EVENT = `
+      try { item.uid     = ev.eventIdentifier ? ev.eventIdentifier.js : ""; } catch (e) {}
+      try { item.summary = ev.title            ? ev.title.js            : ""; } catch (e) {}
+      try {
+        if (ev.startDate) {
+          var ekSs = parseFloat(String(ev.startDate.timeIntervalSince1970));
+          item.startDate = new Date(ekSs * 1000).toISOString();
+        }
+      } catch (e) {}
+      try {
+        if (ev.endDate) {
+          var ekEs = parseFloat(String(ev.endDate.timeIntervalSince1970));
+          item.endDate = new Date(ekEs * 1000).toISOString();
+        }
+      } catch (e) {}
+      try { item.allDayEvent = ev.isAllDay ? true : false; } catch (e) {}
+      try { item.description = ev.notes    ? ev.notes.js    : ""; } catch (e) {}
+      try { item.location    = ev.location ? ev.location.js : ""; } catch (e) {}
+      try {
+        var ekAtts = ev.attendees;
+        if (ekAtts && ekAtts.count > 0) {
+          var ekAttList = [];
+          var ekMaxA    = Math.min(ekAtts.count, 20);
+          for (var ekAi = 0; ekAi < ekMaxA; ekAi++) {
+            try {
+              var ekAtt   = ekAtts.objectAtIndex(ekAi);
+              var ekAName = "";
+              var ekAAddr = "";
+              var ekAStat = "unknown";
+              try { ekAName = ekAtt.name ? ekAtt.name.js : ""; } catch (e) {}
+              try {
+                if (ekAtt.URL) {
+                  ekAAddr = ekAtt.URL.absoluteString.js.replace(/^mailto:/i, "");
+                }
+              } catch (e) {}
+              try {
+                var ekPs = Number(ekAtt.participantStatus);
+                if      (ekPs === 2) ekAStat = "accepted";
+                else if (ekPs === 3) ekAStat = "declined";
+                else if (ekPs === 4) ekAStat = "tentative";
+                else if (ekPs === 1) ekAStat = "needsAction";
+                else                 ekAStat = "unknown";
+              } catch (e) {}
+              if (ekAAddr || ekAName) {
+                ekAttList.push({ displayName: ekAName, address: ekAAddr, status: ekAStat });
+              }
+            } catch (e) {}
+          }
+          item.attendees = ekAttList;
         }
       } catch (e) {}`.trimStart();
 
@@ -161,6 +234,95 @@ function buildJxaTier1Script(daysBack: number, daysAhead: number): string {
     } catch (e) {}
   }
   return JSON.stringify(results);
+})();
+`.trim();
+}
+
+/**
+ * EventKit global script — ONE osascript call that reads ALL calendars from the
+ * local EventKit cache without touching any CalDAV/Exchange server.
+ *
+ * This is the fastest possible path and is tried before anything else in
+ * fetchAllEvents(). If calendarFilter is non-empty only those calendars are
+ * queried; otherwise all EKCalendars are included.
+ *
+ * Returns JSON: { tier: "ek_global", events[] }
+ */
+function buildJxaEventKitGlobalScript(
+  calendarFilter: string[],
+  daysBack: number,
+  daysAhead: number
+): string {
+  const safeDaysBack  = Math.max(0, Math.min(30,  Math.floor(daysBack)));
+  const safeDaysAhead = Math.max(1, Math.min(365, Math.floor(daysAhead)));
+  const hasFilter     = calendarFilter.length > 0 ? "true" : "false";
+  // calendarFilter contains names sourced from Calendar.app (never raw user input).
+  // JSON.stringify provides safe serialisation for embedding in the JXA literal.
+  const filterJson    = JSON.stringify(calendarFilter);
+  return `
+ObjC.import('Foundation');
+ObjC.import('EventKit');
+(function () {
+  var now = new Date();
+  var windowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ${safeDaysBack});
+  var windowEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ${safeDaysAhead});
+  // 30-day lookback so recurring instances whose record date precedes the window are caught
+  var recurStart  = new Date(windowStart.getTime() - 30 * 86400000);
+  var startNS = $.NSDate.dateWithTimeIntervalSince1970(windowStart.getTime() / 1000);
+  var endNS   = $.NSDate.dateWithTimeIntervalSince1970(windowEnd.getTime()   / 1000);
+  var recurNS = $.NSDate.dateWithTimeIntervalSince1970(recurStart.getTime()  / 1000);
+
+  var store     = $.EKEventStore.alloc.init;
+  var allEKCals = store.calendarsForEntityType(0); // 0 = EKEntityTypeEvent
+
+  // Build the calendar set to query
+  var targetCals;
+  if (${hasFilter}) {
+    var filterNames = ${filterJson};
+    var ns = $.NSMutableArray.alloc.init;
+    for (var fc = 0; fc < allEKCals.count; fc++) {
+      try {
+        var ekc = allEKCals.objectAtIndex(fc);
+        var n = ekc.title ? ekc.title.js : "";
+        if (filterNames.indexOf(n) !== -1) { ns.addObject(ekc); }
+      } catch (e) {}
+    }
+    targetCals = ns;
+  } else {
+    targetCals = allEKCals;
+  }
+
+  if (targetCals.count === 0) {
+    return JSON.stringify({ tier: "ek_global", events: [] });
+  }
+
+  var pred   = store.predicateForEventsWithStartDateEndDateCalendars(recurNS, endNS, targetCals);
+  var ekEvts = store.eventsMatchingPredicate(pred); // reads local cache — no network calls
+
+  var results = [];
+  for (var ek = 0; ek < ekEvts.count; ek++) {
+    try {
+      var ev        = ekEvts.objectAtIndex(ek);
+      var ekCalId   = "";
+      var ekCalName = "";
+      try {
+        if (ev.calendar) {
+          ekCalId   = ev.calendar.calendarIdentifier ? ev.calendar.calendarIdentifier.js : "";
+          ekCalName = ev.calendar.title              ? ev.calendar.title.js              : "";
+        }
+      } catch (e) {}
+      var item = {
+        uid: "", summary: "",
+        startDate: windowStart.toISOString(), endDate: windowStart.toISOString(),
+        allDayEvent: false, description: "", location: "",
+        calendarName: ekCalName, calendarId: ekCalId, attendees: []
+      };
+      ${JXA_SERIALIZE_EK_EVENT}
+      results.push(item);
+    } catch (e) {}
+  }
+
+  return JSON.stringify({ tier: "ek_global", events: results });
 })();
 `.trim();
 }
@@ -274,60 +436,7 @@ ObjC.import('EventKit');
             allDayEvent: false, description: "", location: "",
             calendarName: targetName, calendarId: ekCalId, attendees: []
           };
-          try { item.uid     = ev.eventIdentifier ? ev.eventIdentifier.js : ""; } catch (e) {}
-          try { item.summary = ev.title            ? ev.title.js            : ""; } catch (e) {}
-          try {
-            if (ev.startDate) {
-              var secs0 = parseFloat(String(ev.startDate.timeIntervalSince1970));
-              item.startDate = new Date(secs0 * 1000).toISOString();
-            }
-          } catch (e) {}
-          try {
-            if (ev.endDate) {
-              var sece0 = parseFloat(String(ev.endDate.timeIntervalSince1970));
-              item.endDate = new Date(sece0 * 1000).toISOString();
-            }
-          } catch (e) {}
-          try { item.allDayEvent = ev.isAllDay ? true : false; } catch (e) {}
-          try { item.description = ev.notes    ? ev.notes.js    : ""; } catch (e) {}
-          try { item.location    = ev.location ? ev.location.js : ""; } catch (e) {}
-          try {
-            var ekAtts = ev.attendees;
-            if (ekAtts && ekAtts.count > 0) {
-              var attList = [];
-              var maxAtts = Math.min(ekAtts.count, 20);
-              for (var ai = 0; ai < maxAtts; ai++) {
-                try {
-                  var att       = ekAtts.objectAtIndex(ai);
-                  var attName   = "";
-                  var attAddr   = "";
-                  var attStatus = "unknown";
-                  try { attName = att.name ? att.name.js : ""; } catch (e) {}
-                  try {
-                    if (att.URL) {
-                      var mto = att.URL.absoluteString.js;
-                      attAddr = mto.replace(/^mailto:/i, "");
-                    }
-                  } catch (e) {}
-                  try {
-                    // Use Number() to coerce the ObjC NSInteger to a JS
-                    // number — strict === comparison can fail against an
-                    // ObjC-bridged integer object in JXA.
-                    var psNum = Number(att.participantStatus);
-                    if      (psNum === 2) attStatus = "accepted";
-                    else if (psNum === 3) attStatus = "declined";
-                    else if (psNum === 4) attStatus = "tentative";
-                    else if (psNum === 1) attStatus = "needsAction";
-                    else                  attStatus = "unknown";
-                  } catch (e) {}
-                  if (attAddr || attName) {
-                    attList.push({ displayName: attName, address: attAddr, status: attStatus });
-                  }
-                } catch (e) {}
-              }
-              item.attendees = attList;
-            }
-          } catch (e) {}
+          ${JXA_SERIALIZE_EK_EVENT}
           ek0results.push(item);
         } catch (e) {}
       }
@@ -681,7 +790,7 @@ export async function runAppleCalendarDiagnostic(): Promise<string> {
 
   const log = (line: string) => {
     lines.push(line);
-    console.log("[GoogleCalendarNotes] DIAG", line);
+    console.log("[CalendarNoteIntegration] DIAG", line);
   };
 
   // Step 1 — basic JXA execution
@@ -713,7 +822,7 @@ export async function runAppleCalendarDiagnostic(): Promise<string> {
 
   // Step 3 — probe all fetch tiers per calendar
   log("Step 3: Probing all fetch strategies per calendar (next 7 days)…");
-  log("  (Tier 1 = app.eventsFrom, Tier 2 = cal.eventsFrom, 2.5 = whose-predicate, 3 = full scan)");
+  log("  (EventKit global = primary path; Tier 1 = app.eventsFrom; Tier 2 = cal.eventsFrom; 2.5 = whose-predicate; 3 = full scan)");
   const probeScript = `
 (function(){
   var app = Application("Calendar");
@@ -859,14 +968,37 @@ export class AppleCalendarApi {
   }
 
   async fetchAllEvents(): Promise<CalendarEvent[]> {
-    const tag = "[GoogleCalendarNotes] Apple Calendar";
+    const tag = "[CalendarNoteIntegration] Apple Calendar";
     const timeoutSec = Math.round(this.timeoutMs / 1000);
     console.log(
       `${tag} fetchAllEvents() window: -${this.daysBack}d…+${this.daysAhead}d ` +
       `timeout:${timeoutSec}s skipTier3:${this.skipTier3}`
     );
 
-    // ── Step 1: Try Tier 1 (app.eventsFrom — single fast call) ───────────────
+    // ── Step 0: EventKit global — one call reads all calendars from local cache ─
+    // EKEventStore never makes a CalDAV/Exchange network request; it reads the
+    // same local SQLite store that Calendar.app syncs to in the background.
+    // This is the primary path for ALL calendar types (CalDAV, Exchange, iCloud,
+    // local). Falls back to the Calendar.app scripting-bridge chain only if
+    // EventKit is unavailable or the process lacks Calendar permission.
+    try {
+      const t0 = Date.now();
+      const json = await runOsascript(
+        buildJxaEventKitGlobalScript(this.calendarFilter, this.daysBack, this.daysAhead),
+        this.timeoutMs
+      );
+      const wrapper = JSON.parse(json) as { tier: string; events: unknown[] };
+      if (wrapper && Array.isArray(wrapper.events)) {
+        const events = parseJxaEvents(JSON.stringify(wrapper.events), this.calendarFilter);
+        console.log(`${tag} EventKit global ✓ — ${events.length} event(s) in ${Date.now() - t0}ms`);
+        return events;
+      }
+    } catch (ekErr) {
+      const msg = ekErr instanceof Error ? ekErr.message : String(ekErr);
+      console.log(`${tag} EventKit global failed (${msg.slice(0, 120)}), falling back to Calendar.app bridge`);
+    }
+
+    // ── Step 1: Try Tier 1 (app.eventsFrom — Calendar.app scripting bridge) ────
     try {
       const t0 = Date.now();
       const json = await runOsascript(

@@ -7,6 +7,44 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.5.0] – 2026-03-31
+
+### Added
+
+**Reimport / recreate deleted notes button**
+A dedicated "Reimport" button is now available in Settings → Manual Actions. It re-runs the full import for the current time window and recreates notes for any events whose notes were manually deleted. Existing notes are not overwritten — only missing ones are created. The same filters apply: declined events and all-day events are excluded.
+
+**EventKit global as the primary calendar path (Tier 0 global)**
+A new `buildJxaEventKitGlobalScript` function queries **all** configured calendars in a **single** `osascript` call via `EKEventStore`, rather than one call per calendar. This is tried before all other strategies and before the Calendar.app scripting bridge is touched at all. Benefits:
+- Works for all calendar types: Google CalDAV, iCloud, Exchange, local
+- Reads the local EventKit SQLite cache — no CalDAV/Exchange network sync triggered
+- Returns in < 100 ms regardless of calendar size or cache freshness
+- Eliminates per-calendar timeout risk (one hung calendar can no longer block others)
+
+The full fallback chain (Tier 1 → per-calendar Tiers 2/2.5/2.75/3) remains in place if EventKit is unavailable or Calendar permission is not granted.
+
+**Shared `JXA_SERIALIZE_EK_EVENT` constant**
+The EventKit event serialisation code is now a single shared constant (`JXA_SERIALIZE_EK_EVENT`) used by both the new global script and the per-calendar Tier 0 fallback. This eliminates the previous code duplication and ensures consistent EKParticipantStatus mapping and attendee handling in both paths.
+
+### Changed
+
+**Renamed to "Calendar Note Integration - Apple-iCal-Google"**
+- Plugin `id`: `calendar-note-integration`
+- Plugin `name`: `Calendar Note Integration - Apple-iCal-Google`
+- All in-app notices updated: `Google Calendar: …` → `Calendar Notes: …`
+- Console log tag updated: `[CalendarNoteIntegration]`
+- Command names updated to remove Google-specific language
+- Settings tab heading updated
+
+**Settings → Manual Refresh → Manual Actions**
+Section renamed. The existing Refresh button description is clarified; the new Reimport button is added beneath it.
+
+### Proposed optimisations (not yet removed — kept for robustness)
+
+With EventKit global handling > 99% of cases, Tiers 2.5 (whose-predicate) and 2.75 (bulk `startDate()`) are now effectively vestigial. They add JXA script complexity without benefiting most users. A future cleanup release can safely remove them once EventKit global proves stable across the user base. The `skipTier3` setting similarly has less value now but is retained for edge cases.
+
+---
+
 ## [6.0.7] – 2026-03-31
 
 ### Fixed
