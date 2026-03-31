@@ -85,11 +85,22 @@ const JXA_BUILD_ITEM = `
             try {
               var ap = {};
               try { ap = atts[ai].properties(); } catch (e) {}
-              attList.push({
-                displayName: String(ap.displayName         || ""),
-                address:     String(ap.address             || ""),
-                status:      String(ap.participationStatus || "unknown")
-              });
+              // properties() may return empty on Exchange — fall back to
+              // individual getters for each field so we always get what we can.
+              var attAddr   = String(ap.address             || "");
+              var attName   = String(ap.displayName         || "");
+              var attStatus = String(ap.participationStatus || "");
+              if (!attAddr)   { try { attAddr   = String(atts[ai].address()             || ""); } catch (e) {} }
+              if (!attName)   { try { attName   = String(atts[ai].displayName()         || ""); } catch (e) {} }
+              if (!attStatus) { try { attStatus = String(atts[ai].participationStatus() || ""); } catch (e) {} }
+              // Only push if we have at least a name or address to show.
+              if (attAddr || attName) {
+                attList.push({
+                  displayName: attName,
+                  address:     attAddr,
+                  status:      attStatus || "unknown"
+                });
+              }
             } catch (e) {}
           }
           item.attendees = attList;
@@ -414,6 +425,9 @@ function mapAppleStatus(status: string): ResponseStatus {
     case "accepted":  return "accepted";
     case "declined":  return "declined";
     case "tentative": return "tentative";
+    // "invited" and "notresponded" are Calendar.app variants for "awaiting reply"
+    case "invited":
+    case "notresponded":
     default:          return "needsAction";
   }
 }
@@ -472,11 +486,15 @@ function parseJxaEvents(json: string, calendarFilter: string[]): CalendarEvent[]
       for (const a of r.attendees) {
         if (typeof a !== "object" || a === null) continue;
         const ar = a as Record<string, unknown>;
-        const email = safeStr(ar.address, 200).trim();
-        if (!email) continue;
+        const email       = safeStr(ar.address,     200).trim();
+        const displayName = safeStr(ar.displayName, 200).trim();
+        // Exchange attendees often have a display name but no email address in
+        // Calendar.app's scripting bridge. Include them using the display name
+        // as a fallback identifier so the attendee table is never silently empty.
+        if (!email && !displayName) continue;
         attendees.push({
-          email,
-          displayName: safeStr(ar.displayName, 200) || undefined,
+          email: email || displayName,
+          displayName: displayName || undefined,
           responseStatus: mapAppleStatus(safeStr(ar.status)),
         });
       }

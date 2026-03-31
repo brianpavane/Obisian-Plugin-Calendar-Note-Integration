@@ -7,6 +7,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.0.3] – 2026-03-31
+
+### Fixed
+
+**Attendee list and response status not appearing in notes (Apple Calendar / Exchange)**
+
+Two bugs caused attendees to be silently dropped:
+
+1. **JXA individual-getter fallback** — `atts[ai].properties()` often returns an empty object for Exchange-backed attendees (Calendar.app does not always expose Exchange contact data via the bulk properties call). The JXA code now falls back to individual `address()`, `displayName()`, and `participationStatus()` getters when `properties()` yields an empty result.
+
+2. **Display-name-only attendees** — Exchange attendees frequently have a display name but no email address in Calendar.app's scripting bridge (internal contacts, external guests). The previous code did `if (!email) continue` which silently dropped every such attendee. The fix uses the display name as a fallback identifier so the attendee table is populated even without email addresses.
+
+3. **Additional participation status strings** — Added `"invited"` and `"notResponded"` to the status mapping (both map to ⚪ Awaiting response), covering Calendar.app variants seen on macOS Ventura/Sonoma with Exchange.
+
+---
+
 ## [6.0.2] – 2026-03-31
 
 ### Fixed
