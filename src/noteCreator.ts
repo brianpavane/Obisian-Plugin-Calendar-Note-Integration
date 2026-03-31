@@ -114,8 +114,46 @@ function stripHtml(html: string): string {
   }
 }
 
+/**
+ * Remove Zoom / Google Meet / Teams invite boilerplate from plain text so
+ * it does not appear in the Agenda section of the generated note.
+ * The conference link itself is already extracted and placed in the note
+ * header when "Include conference link" is enabled.
+ */
+function stripConferenceBoilerplate(text: string): string {
+  // Lines containing a known conference URL are always removed.
+  const conferenceUrlRe =
+    /https?:\/\/(?:[\w.-]+\.zoom\.us|meet\.google\.com|teams\.microsoft\.com|teams\.live\.com)\//i;
+
+  // Common Zoom / Teams / Meet invite boilerplate line prefixes.
+  const boilerplatePrefixes = [
+    /^join\s+(?:zoom\s+)?meeting\b/i,
+    /^meeting\s+id\s*:/i,
+    /^passcode\s*:/i,
+    /^password\s*:/i,
+    /^dial\s+by\s+your\s+location\b/i,
+    /^dial\s+in\s+by\s+phone\b/i,
+    /^one\s+tap\s+mobile\b/i,
+    /^find\s+your\s+local\s+number\b/i,
+    /^join\s+by\s+sip\b/i,
+    /^join\s+by\s+h\.?323\b/i,
+    /^join\s+by\s+skype\b/i,
+    /^\+\d[\d\s,*#]{6,}$/,  // dial-in phone numbers
+    /^\d{6,}(?:\s*#)+$/,    // numeric conference codes
+  ];
+
+  const cleaned = text.split("\n").filter((line) => {
+    const t = line.trim();
+    if (!t) return true;
+    if (conferenceUrlRe.test(t)) return false;
+    if (boilerplatePrefixes.some((re) => re.test(t))) return false;
+    return true;
+  });
+  return cleaned.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function parseAgendaItems(description: string): string[] {
-  const text = stripHtml(description);
+  const text = stripConferenceBoilerplate(stripHtml(description));
   return text
     .split("\n")
     .map((line) => line.trim())

@@ -7,6 +7,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.0.2] – 2026-03-31
+
+### Fixed
+
+**Zoom / Google Meet / Teams invite text no longer appears in the Agenda section**
+
+Calendar event descriptions often contain the full video-conferencing invite block — join URL, Meeting ID, Passcode, dial-in numbers, "One tap mobile" lines, etc. This text was being included verbatim in the Agenda section of generated notes.
+
+`stripConferenceBoilerplate()` is now applied to the description before it is split into agenda items. It removes:
+- Any line containing a Zoom, Google Meet, or Microsoft Teams URL
+- Common Zoom/Teams/Meet boilerplate prefixes: `Join Meeting`, `Meeting ID:`, `Passcode:`, `Password:`, `Dial by your location`, `Dial in by phone`, `One tap mobile`, `Find your local number`, `Join by SIP`, `Join by H.323`, dial-in phone number lines, and numeric conference code lines
+
+The conference join link itself continues to appear in the note **header** when **Include conference link** is enabled in Settings.
+
+---
+
 ## [6.0.1] – 2026-03-31
 
 ### Fixed
