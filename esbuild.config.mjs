@@ -10,12 +10,17 @@ If you want to view the source, please visit the GitHub repository of this plugi
 
 const prod = process.argv[2] === "production";
 
+const buildDate = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
 const context = await esbuild.context({
   banner: {
     js: banner,
   },
   entryPoints: ["src/main.ts"],
   bundle: true,
+  define: {
+    __BUILD_DATE__: JSON.stringify(buildDate),
+  },
   external: [
     "obsidian",
     "electron",

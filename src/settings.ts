@@ -133,7 +133,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
     containerEl.createEl("h2", { text: "Calendar Note Integration - Apple-iCal-Google" });
 
     const versionEl = containerEl.createEl("p", {
-      text: `Version ${this.plugin.manifest.version}`,
+      text: `Version ${this.plugin.manifest.version} — built ${__BUILD_DATE__}`,
     });
     versionEl.style.color = "var(--text-muted)";
     versionEl.style.fontSize = "var(--font-smaller)";
