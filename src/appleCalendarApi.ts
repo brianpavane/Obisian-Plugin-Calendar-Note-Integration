@@ -194,6 +194,7 @@ function buildJxaPerCalendarScript(
   const safeMaxT3Scan   = Math.max(50, Math.min(2_000, Math.floor(maxTier3Scan)));
   return `
 ObjC.import('Foundation');
+ObjC.import('EventKit');
 (function () {
   var app = Application("Calendar");
   var targetName = ${safeCalName};
@@ -218,6 +219,125 @@ ObjC.import('Foundation');
 
   var calEvts = null;
   var t2ms = -1, t25ms = -1, t275ms = -1, t3ms = -1, tier = 0;
+
+  // ── Tier 0: EventKit (EKEventStore) — reads local cache, no network ────────
+  //
+  // EKEventStore queries the same local SQLite store that Calendar.app writes
+  // to during its background syncs. It does NOT trigger a CalDAV or Exchange
+  // server round-trip, so it returns in milliseconds regardless of how stale
+  // the in-process scripting-bridge cache is.
+  //
+  // If EventKit is unavailable, or the process lacks Calendar permission, or
+  // the target calendar is not found, we fall through to the scripting-bridge
+  // tiers below which remain as a full fallback.
+  //
+  // Attendee email: EKParticipant.URL is a mailto: URL — strip the scheme.
+  // EKParticipantStatus integers: 0=unknown 1=pending 2=accepted 3=declined
+  //                               4=tentative 5=delegated 6=completed 7=inProcess
+  var t0start = Date.now();
+  try {
+    var store   = $.EKEventStore.alloc.init;
+    var startNS = $.NSDate.dateWithTimeIntervalSince1970(windowStart.getTime() / 1000);
+    var endNS   = $.NSDate.dateWithTimeIntervalSince1970(windowEnd.getTime()   / 1000);
+    // 30-day lookback so recurring instances near the window boundary are included
+    var recurNS = $.NSDate.dateWithTimeIntervalSince1970(
+      (windowStart.getTime() - 30 * 86400000) / 1000
+    );
+
+    // Find the target EKCalendar by name
+    var ekCals       = store.calendarsForEntityType(0); // 0 = EKEntityTypeEvent
+    var targetEKCal  = null;
+    var ekCalId      = "";
+    for (var ec = 0; ec < ekCals.count; ec++) {
+      try {
+        var ekc = ekCals.objectAtIndex(ec);
+        if (ekc.title.js === targetName) {
+          targetEKCal = ekc;
+          try { ekCalId = ekc.calendarIdentifier.js; } catch (e) {}
+          break;
+        }
+      } catch (e) {}
+    }
+
+    if (targetEKCal) {
+      var calsNS = $.NSArray.arrayWithObject(targetEKCal);
+      var pred   = store.predicateForEventsWithStartDateEndDateCalendars(recurNS, endNS, calsNS);
+      var ekEvts = store.eventsMatchingPredicate(pred); // reads local cache only
+      var t0ms   = Date.now() - t0start;
+      var ek0results = [];
+      for (var ek = 0; ek < ekEvts.count; ek++) {
+        try {
+          var ev   = ekEvts.objectAtIndex(ek);
+          var item = {
+            uid: "", summary: "",
+            startDate: windowStart.toISOString(), endDate: windowStart.toISOString(),
+            allDayEvent: false, description: "", location: "",
+            calendarName: targetName, calendarId: ekCalId, attendees: []
+          };
+          try { item.uid     = ev.eventIdentifier ? ev.eventIdentifier.js : ""; } catch (e) {}
+          try { item.summary = ev.title            ? ev.title.js            : ""; } catch (e) {}
+          try {
+            if (ev.startDate) {
+              var secs0 = parseFloat(String(ev.startDate.timeIntervalSince1970));
+              item.startDate = new Date(secs0 * 1000).toISOString();
+            }
+          } catch (e) {}
+          try {
+            if (ev.endDate) {
+              var sece0 = parseFloat(String(ev.endDate.timeIntervalSince1970));
+              item.endDate = new Date(sece0 * 1000).toISOString();
+            }
+          } catch (e) {}
+          try { item.allDayEvent = ev.isAllDay ? true : false; } catch (e) {}
+          try { item.description = ev.notes    ? ev.notes.js    : ""; } catch (e) {}
+          try { item.location    = ev.location ? ev.location.js : ""; } catch (e) {}
+          try {
+            var ekAtts = ev.attendees;
+            if (ekAtts && ekAtts.count > 0) {
+              var attList = [];
+              var maxAtts = Math.min(ekAtts.count, 20);
+              for (var ai = 0; ai < maxAtts; ai++) {
+                try {
+                  var att       = ekAtts.objectAtIndex(ai);
+                  var attName   = "";
+                  var attAddr   = "";
+                  var attStatus = "unknown";
+                  try { attName = att.name ? att.name.js : ""; } catch (e) {}
+                  try {
+                    if (att.URL) {
+                      var mto = att.URL.absoluteString.js;
+                      attAddr = mto.replace(/^mailto:/i, "");
+                    }
+                  } catch (e) {}
+                  try {
+                    var ps = att.participantStatus; // EKParticipantStatus int
+                    if      (ps === 2) attStatus = "accepted";
+                    else if (ps === 3) attStatus = "declined";
+                    else if (ps === 4) attStatus = "tentative";
+                    else if (ps === 1) attStatus = "needsAction";
+                    else               attStatus = "unknown";
+                  } catch (e) {}
+                  if (attAddr || attName) {
+                    attList.push({ displayName: attName, address: attAddr, status: attStatus });
+                  }
+                } catch (e) {}
+              }
+              item.attendees = attList;
+            }
+          } catch (e) {}
+          ek0results.push(item);
+        } catch (e) {}
+      }
+      // Return early — no need to touch Calendar.app scripting bridge at all
+      return JSON.stringify({
+        tier: 0, t0ms: t0ms, t2ms: -1, t25ms: -1, t275ms: -1, t3ms: -1,
+        events: ek0results
+      });
+    }
+  } catch (e0) {
+    // EventKit unavailable or permission denied — fall through to
+    // Calendar.app scripting-bridge tiers below
+  }
 
   // ── Tier 2: cal.eventsFrom(start, {to:end}) ──────────────────────────────
   //
@@ -798,15 +918,17 @@ export class AppleCalendarApi {
         try {
           const wrapper = JSON.parse(json) as {
             tier?: number;
-            t2ms?: number; t25ms?: number; t275ms?: number; t3ms?: number;
+            t0ms?: number; t2ms?: number; t25ms?: number; t275ms?: number; t3ms?: number;
             events?: unknown[];
           };
           if (wrapper && typeof wrapper === "object" && Array.isArray(wrapper.events)) {
             const tierLabel: Record<number, string> = {
+              0: "Tier 0 (EventKit local cache)",
               2: "Tier 2", 25: "Tier 2.5", 275: "Tier 2.75 (bulk-date)", 3: "Tier 3", [-3]: "Tier 3 skipped",
             };
-            const tLabel = tierLabel[wrapper.tier ?? 0] ?? `Tier ${wrapper.tier}`;
+            const tLabel = tierLabel[wrapper.tier ?? -1] ?? `Tier ${wrapper.tier}`;
             const timingParts: string[] = [];
+            if ((wrapper.t0ms   ?? -1) >= 0) timingParts.push(`t0:${wrapper.t0ms}ms`);
             if ((wrapper.t2ms   ?? -1) >= 0) timingParts.push(`t2:${wrapper.t2ms}ms`);
             if ((wrapper.t25ms  ?? -1) >= 0) timingParts.push(`t2.5:${wrapper.t25ms}ms`);
             if ((wrapper.t275ms ?? -1) >= 0) timingParts.push(`t2.75:${wrapper.t275ms}ms`);
@@ -814,7 +936,7 @@ export class AppleCalendarApi {
             const timing = timingParts.length ? ` (${timingParts.join(" ")})` : "";
             if (wrapper.tier === -3) {
               console.log(
-                `${tag} "${calName}" — Tier 2 & 2.5 & 2.75 all failed, Tier 3 skipped (disabled in Settings)`
+                `${tag} "${calName}" — EventKit + Tier 2/2.5/2.75 all failed, Tier 3 skipped (disabled in Settings)`
               );
             } else {
               console.log(

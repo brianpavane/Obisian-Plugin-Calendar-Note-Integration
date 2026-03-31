@@ -7,6 +7,35 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.0.6] – 2026-03-31
+
+### Fixed
+
+**Google CalDAV persistent timeouts — root-cause architectural fix via EventKit**
+
+The core issue was architectural: every approach that goes through Calendar.app's scripting bridge (`Application("Calendar")`) — including `eventsFrom`, `events.length`, `events.startDate()`, and `events[j]` — can trigger Calendar.app to sync the CalDAV calendar from Google's servers when its in-process cache is stale. This sync is what causes the 60–150 s timeouts, and no amount of tuning the scan size or JXA method selection fully avoids it.
+
+**The correct approach**: Use **EventKit** (`EKEventStore`) directly via the JXA/Objective-C bridge, bypassing Calendar.app's scripting layer entirely.
+
+- `EKEventStore` reads from the same **local SQLite cache** that Calendar.app maintains.
+- That cache is kept current by a macOS background daemon (separate from Calendar.app's process).
+- `EKEventStore.eventsMatchingPredicate()` reads from the local store only — it **never makes a CalDAV network request**.
+- With a proper date-range predicate, the query returns in **< 100 ms** on any size calendar.
+
+**New Tier 0** (tried before any Calendar.app scripting-bridge access):
+```
+ObjC.import('EventKit');
+var store = $.EKEventStore.alloc.init;
+var pred  = store.predicateForEventsWithStartDateEndDateCalendars(startNS, endNS, [calRef]);
+var evts  = store.eventsMatchingPredicate(pred);  // local cache only, no network
+```
+
+If Tier 0 succeeds, Tiers 2–3 are skipped entirely. If EventKit is unavailable or the process lacks Calendar permission, the full Calendar.app scripting-bridge chain (Tiers 2, 2.5, 2.75, 3) remains as a fallback.
+
+**Attendee data via EventKit**: `EKParticipant.URL` provides the email as a `mailto:` URL (scheme stripped). `EKParticipant.participantStatus` is an integer (`0` unknown, `1` pending, `2` accepted, `3` declined, `4` tentative). Both are correctly mapped to the existing attendee format.
+
+---
+
 ## [6.0.5] – 2026-03-31
 
 ### Fixed
