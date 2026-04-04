@@ -141,7 +141,65 @@ function unescapeText(value: string): string {
     .replace(/\\\\/g, "\\");
 }
 
-function parseIcalDate(value: string): { dateTime?: string; date?: string } {
+function getTimeZoneOffsetMs(timeZone: string, instant: Date): number {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(instant);
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+
+  return Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+    Number(values.hour),
+    Number(values.minute),
+    Number(values.second)
+  ) - instant.getTime();
+}
+
+function convertTzidDateTimeToUtcIso(
+  value: string,
+  timeZone: string
+): string | undefined {
+  const m = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/);
+  if (!m) return undefined;
+
+  const [, yr, mo, dy, hr, mn, sc] = m;
+  const year = Number(yr);
+  const month = Number(mo);
+  const day = Number(dy);
+  const hour = Number(hr);
+  const minute = Number(mn);
+  const second = Number(sc);
+
+  let utcMs = Date.UTC(year, month - 1, day, hour, minute, second);
+
+  for (let i = 0; i < 3; i++) {
+    const offsetMs = getTimeZoneOffsetMs(timeZone, new Date(utcMs));
+    const nextUtcMs = Date.UTC(year, month - 1, day, hour, minute, second) - offsetMs;
+    if (nextUtcMs === utcMs) break;
+    utcMs = nextUtcMs;
+  }
+
+  return new Date(utcMs).toISOString().replace(".000Z", "Z");
+}
+
+function parseIcalDate(
+  value: string,
+  params: Record<string, string> = {}
+): { dateTime?: string; date?: string } {
   if (/^\d{8}$/.test(value)) {
     return {
       date: `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`,
@@ -150,9 +208,32 @@ function parseIcalDate(value: string): { dateTime?: string; date?: string } {
   const m = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/);
   if (!m) return {};
   const [, yr, mo, dy, hr, mn, sc, utc] = m;
+  const tzid = params["TZID"]?.trim();
+  if (tzid && utc !== "Z") {
+    try {
+      const utcIso = convertTzidDateTimeToUtcIso(value, tzid);
+      if (utcIso) {
+        return { dateTime: utcIso };
+      }
+    } catch {
+      // Fall back to the original floating timestamp if the TZID is unknown.
+    }
+  }
   return {
     dateTime: `${yr}-${mo}-${dy}T${hr}:${mn}:${sc}${utc === "Z" ? "Z" : ""}`,
   };
+}
+
+function buildInstanceKey(
+  start: { dateTime?: string; date?: string },
+  recurrenceId?: { dateTime?: string; date?: string }
+): string | undefined {
+  return (
+    recurrenceId?.dateTime ??
+    recurrenceId?.date ??
+    start.dateTime ??
+    start.date
+  );
 }
 
 function mapPartstat(partstat: string | undefined): ResponseStatus {
@@ -222,7 +303,7 @@ function extractConference(
  */
 export function parseIcal(raw: string): CalendarEvent[] {
   const lines = unfoldLines(raw);
-  const events: CalendarEvent[] = [];
+  const events: Array<CalendarEvent & { rawUid: string; instanceKey?: string }> = [];
 
   let inVEvent = false;
   let uid = "";
@@ -235,6 +316,7 @@ export function parseIcal(raw: string): CalendarEvent[] {
   let attendees: NonNullable<CalendarEvent["attendees"]> = [];
   let xConf: string | undefined;
   let xHangout: string | undefined;
+  let recurrenceId: ReturnType<typeof parseIcalDate> | undefined;
   let cancelled = false;
 
   const resetState = (): void => {
@@ -242,6 +324,7 @@ export function parseIcal(raw: string): CalendarEvent[] {
     startResult = {}; endResult = {};
     organizer = undefined; attendees = [];
     xConf = undefined; xHangout = undefined;
+    recurrenceId = undefined;
     cancelled = false;
   };
 
@@ -272,6 +355,8 @@ export function parseIcal(raw: string): CalendarEvent[] {
           organizer,
           attendees: attendees.length > 0 ? attendees : undefined,
           conferenceData: extractConference(xConf, xHangout, description),
+          rawUid: uid,
+          instanceKey: buildInstanceKey(startResult, recurrenceId),
         });
       }
       continue;
@@ -298,10 +383,13 @@ export function parseIcal(raw: string): CalendarEvent[] {
         if (prop.value.toUpperCase() === "CANCELLED") cancelled = true;
         break;
       case "DTSTART":
-        startResult = parseIcalDate(prop.value);
+        startResult = parseIcalDate(prop.value, prop.params);
         break;
       case "DTEND":
-        endResult = parseIcalDate(prop.value);
+        endResult = parseIcalDate(prop.value, prop.params);
+        break;
+      case "RECURRENCE-ID":
+        recurrenceId = parseIcalDate(prop.value, prop.params);
         break;
       case "ORGANIZER": {
         const email = prop.value.replace(/^mailto:/i, "").trim();
@@ -326,5 +414,16 @@ export function parseIcal(raw: string): CalendarEvent[] {
     }
   }
 
-  return events;
+  const duplicateUidCounts = new Map<string, number>();
+  for (const event of events) {
+    duplicateUidCounts.set(event.rawUid, (duplicateUidCounts.get(event.rawUid) ?? 0) + 1);
+  }
+
+  return events.map(({ rawUid, instanceKey, ...event }) => ({
+    ...event,
+    id:
+      (duplicateUidCounts.get(rawUid) ?? 0) > 1 && instanceKey
+        ? `${rawUid}::${instanceKey}`
+        : rawUid,
+  }));
 }

@@ -206,11 +206,20 @@ function formatTime(isoDateTime: string): string {
 }
 
 function formatIsoDate(isoDateOrDateTime: string): string {
+  const directMatch = isoDateOrDateTime.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (directMatch) {
+    return directMatch[1];
+  }
+
   const d = new Date(isoDateOrDateTime);
   if (isNaN(d.getTime())) {
     return new Date().toISOString().slice(0, 10);
   }
-  return d.toISOString().slice(0, 10);
+
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function formatDuration(ms: number): string {
