@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.5.4] – 2026-04-03
+
+### Added
+
+**Claude AI pre-commit QA workflow (`CLAUDE.md` + `.claude/settings.json`)**
+A `CLAUDE.md` file now documents the full developer commit contract: run the test suite, bump the patch version, update `CHANGELOG.md`, and refresh `README.md` on every commit. A Claude Code agent hook (`.claude/settings.json`) enforces this automatically — before any `git commit`, an AI agent runs `npm test`, performs a TypeScript compile check, audits the staged diff for secrets and logic errors, validates that a changelog entry is present when source files changed, and bumps the patch version. The commit is blocked with a plain-English explanation if any check fails.
+
+---
+
 ## [6.5.3] – 2026-04-03
 
 ### Fixed

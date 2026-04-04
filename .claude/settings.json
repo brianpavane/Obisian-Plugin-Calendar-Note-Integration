@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "agent",
+            "if": "Bash(git commit*)",
+            "model": "claude-sonnet-4-6",
+            "timeout": 180,
+            "statusMessage": "Claude agent running pre-commit QA validation...",
+            "prompt": "You are a pre-commit QA agent for the Calendar Note Integration Obsidian plugin. A git commit is about to be made. You must run a full validation suite and either allow or block the commit.\n\nProject root: /Users/bpavane/Code/Obisian-Plugin-Calendar-Note-Integration\n\nRun ALL of the following checks in order using your Bash tool:\n\n## 1. Full Test Suite\nRun: npm test\nAll tests must pass (fail count must be 0). If any test fails, block the commit and report which tests failed.\n\n## 2. TypeScript Compile Check\nRun: npx tsc --noEmit --skipLibCheck 2>&1\nZero TypeScript errors required. If errors are found, block the commit and list them.\n\n## 3. Git Diff Audit\nRun: git diff --staged 2>&1\nReview the staged diff for:\n- Security issues: hardcoded secrets, credentials, API keys, or tokens\n- Obvious logic errors or undefined behavior\n- console.log or debug statements left in production paths\nReport any findings. Block the commit if secrets or critical bugs are found.\n\n## 4. CHANGELOG Validation\nRun: git diff --staged -- CHANGELOG.md\nIf the staged diff touches any .ts or .js source file, a CHANGELOG.md entry MUST also be staged. If CHANGELOG.md has no staged changes but source files do, block the commit with a clear message asking the user to add a changelog entry.\n\n## 5. Version Bump\nRun: node version-bump.mjs patch\nThen: git add manifest.json versions.json package.json\nDo this only if all previous checks passed. This stages the version files so they are included in the commit.\n\n## Decision\n- If ALL checks pass: allow the commit to proceed. Output a brief summary of what passed and the new version number.\n- If ANY check fails: block the commit. Use decision=block and provide a clear, actionable reason so the developer knows exactly what to fix."
+          }
+        ]
+      }
+    ]
+  }
+}
