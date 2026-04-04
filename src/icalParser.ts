@@ -136,7 +136,7 @@ function parsePropLine(line: string): Prop {
 function unescapeText(value: string): string {
   return value
     .replace(/\\[nN]/g, "\n")
-    .replace(/\;/g, ";")
+    .replace(/\\;/g, ";")
     .replace(/\\,/g, ",")
     .replace(/\\\\/g, "\\");
 }

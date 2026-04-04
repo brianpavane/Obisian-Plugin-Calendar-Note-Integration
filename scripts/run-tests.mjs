@@ -50,6 +50,10 @@ await esbuild.build({
   logLevel: "silent",
   alias: {
     obsidian: path.join(repoRoot, "tests/support/obsidianStub.ts"),
+    electron: path.join(repoRoot, "tests/support/electronStub.ts"),
+  },
+  define: {
+    __BUILD_DATE__: JSON.stringify("2026-04-03"),
   },
 });
 
@@ -61,6 +65,8 @@ const result = spawnSync(process.execPath, ["--test", ...bundledTests], {
   cwd: repoRoot,
   stdio: "inherit",
 });
+
+rmSync(outDir, { recursive: true, force: true });
 
 if (result.error) {
   throw result.error;
