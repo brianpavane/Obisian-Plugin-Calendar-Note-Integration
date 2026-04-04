@@ -1,6 +1,6 @@
 # Release Process
 
-**Current released version: `6.5.4`**
+**Current released version: `6.5.5`**
 **Repository: `brianpavane/Obisian-Plugin-Calendar-Note-Integration`**
 
 > This file is updated on every release. All commands below use a single `VERSION`
@@ -11,7 +11,7 @@
 ## Step 1 — Set the version (change this line only)
 
 ```bash
-VERSION=6.5.4
+VERSION=6.5.5
 ```
 
 Run this in your terminal first. Every subsequent block uses `$VERSION`.
@@ -38,9 +38,9 @@ All three must show `$VERSION`. If any are out of sync, update them before conti
 
 | File | Field | Expected value |
 |---|---|---|
-| `manifest.json` | `"version"` | `6.5.4` |
-| `package.json` | `"version"` | `6.5.4` |
-| `versions.json` | new entry | `"6.5.4": "0.15.0"` |
+| `manifest.json` | `"version"` | `6.5.5` |
+| `package.json` | `"version"` | `6.5.5` |
+| `versions.json` | new entry | `"6.5.5": "0.15.0"` |
 
 ---
 
@@ -115,7 +115,7 @@ gh release view $VERSION --repo brianpavane/Obisian-Plugin-Calendar-Note-Integra
 
 ```bash
 # ── SET VERSION ONCE ──────────────────────────────────────────────────────────
-VERSION=6.5.4
+VERSION=6.5.5
 
 # ── PULL & BUILD ─────────────────────────────────────────────────────────────
 git checkout main

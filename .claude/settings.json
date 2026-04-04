@@ -1,5 +1,17 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 30,
+            "statusMessage": "Refreshing codebase context...",
+            "command": "cd /Users/bpavane/Code/Obisian-Plugin-Calendar-Note-Integration && VERSION=$(node -p \"require('./manifest.json').version\" 2>/dev/null || echo 'unknown') && BRANCH=$(git branch --show-current 2>/dev/null || echo 'unknown') && RECENT=$(git log --oneline -8 2>/dev/null || echo 'no git log') && STATUS=$(git status --short 2>/dev/null || echo 'clean') && SRC_FILES=$(find src -name '*.ts' | sort 2>/dev/null | tr '\\n' ' ') && TEST_FILES=$(find tests -name '*.test.ts' | sort 2>/dev/null | tr '\\n' ' ') && CONTEXT=$(printf '## Live Codebase Snapshot\\n\\n**Version:** %s\\n**Branch:** %s\\n\\n**Recent commits:**\\n%s\\n\\n**Working tree status:**\\n%s\\n\\n**Source files (src/):**\\n%s\\n\\n**Test files (tests/):**\\n%s\\n\\n**Run tests:** npm test\\n**Build:** npm run build' \"$VERSION\" \"$BRANCH\" \"$RECENT\" \"$STATUS\" \"$SRC_FILES\" \"$TEST_FILES\") && jq -n --arg ctx \"$CONTEXT\" '{hookSpecificOutput:{hookEventName:\"SessionStart\",additionalContext:$ctx}}'"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",

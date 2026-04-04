@@ -7,6 +7,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.5.5] – 2026-04-03
+
+### Added
+
+**Automatic codebase refresh on every session start**
+A `SessionStart` hook in `.claude/settings.json` now injects a live codebase snapshot into Claude's context each time a session opens: current version, branch, last 8 commits, working-tree status, and the full list of source and test files. Claude no longer needs to re-derive this state from memory of prior conversations.
+
+**Corrected and expanded developer contract in `CLAUDE.md`**
+Fixed two inaccuracies (`main.js` is a release asset, not a committed file; test files are `.test.ts` TypeScript, not `.mjs`). Added a "Codebase Refresh" section instructing Claude to always read current file state before editing, with specific commands to run and files to check at session start. Added full details on the test support stubs (`obsidianStub.ts`, `electronStub.ts`, `testHelpers.ts`).
+
+---
+
 ## [6.5.4] – 2026-04-03
 
 ### Added

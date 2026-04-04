@@ -6,7 +6,7 @@ Obsidian plugin that creates structured notes from Apple Calendar, Google Calend
 
 **Key files:**
 - `src/` — TypeScript source
-- `main.js` — compiled output (committed to repo for Obsidian)
+- `main.js` — compiled output (gitignored; uploaded as a GitHub release asset, not committed)
 - `manifest.json` — plugin metadata including version
 - `versions.json` — maps plugin version → minimum Obsidian app version
 - `version-bump.mjs` — bumps version across manifest.json, package.json, versions.json
@@ -100,4 +100,30 @@ Commit message format: `type: summary` where type is `fix`, `feat`, `refactor`, 
 npm test          # run all tests
 ```
 
-Tests live in `tests/`. The runner is `scripts/run-tests.mjs`. It is Node-based — no Jest, no Mocha. Add new test files as `.mjs` modules that export a default async function.
+Tests live in `tests/` as `*.test.ts` TypeScript files. The runner (`scripts/run-tests.mjs`) compiles them with esbuild then executes them with Node's built-in `--test` runner. No Jest, no Mocha. Add new test files as `tests/<name>.test.ts`.
+
+Support stubs live in `tests/support/`: `obsidianStub.ts` (Obsidian API mock), `electronStub.ts` (electron mock), `testHelpers.ts` (in-memory vault and plugin helpers). Use these rather than mocking the filesystem directly.
+
+---
+
+## Codebase Refresh — Read Before Working
+
+At the start of every session, before making any changes, read the current state of the codebase. Do not rely on memory of previous sessions — files may have changed.
+
+**Always run at session start:**
+
+```bash
+git log --oneline -10          # recent commits
+git status                     # uncommitted changes
+grep '"version"' manifest.json # current version
+```
+
+**Read these files when relevant to the task:**
+- `src/` — read the specific `.ts` file(s) you are about to change
+- `tests/<area>.test.ts` — read the test file covering the area you are modifying
+- `CHANGELOG.md` — read the top entry to understand the most recent change
+- `README.md` — read before updating docs
+
+**Do not assume file contents from a prior conversation.** Always use the Read or Grep tool to verify current state before editing. If a file has changed since you last read it, re-read it.
+
+The `.claude/settings.json` `SessionStart` hook automatically injects a live snapshot (version, branch, recent commits, file list, working tree status) into your context at the start of each session. Use that snapshot as your starting point, then read individual files as needed.
