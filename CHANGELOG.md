@@ -7,6 +7,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.5.3] – 2026-04-03
+
+### Fixed
+
+**Recurring iCal events now create distinct notes per instance**
+Recurring events imported from iCal feeds no longer collapse under a single processed ID. Instance-aware IDs are now derived from `UID` plus recurrence/start information when needed, so separate occurrences are tracked and noted independently.
+
+**TZID-aware iCal timestamps now resolve correctly**
+iCal `DTSTART` / `DTEND` values with `TZID` are now converted using the declared timezone instead of being interpreted in the local Obsidian machine timezone. This prevents meetings from appearing at the wrong time when feeds contain explicit timezone metadata.
+
+**Note dates no longer drift by a day for late-night events**
+Generated note filenames and frontmatter now preserve the event's original local calendar date instead of deriving the date from a UTC-normalized timestamp.
+
+### Added
+
+**Expanded audit-style regression suite**
+The project now includes a substantially broader Node-based test suite covering iCal parsing edge cases, note rendering and sanitization, API client behavior, secure storage fallbacks, OAuth helper paths, and the plugin's refresh/rebuild workflow against an in-memory vault.
+
+---
+
 ## [6.5.2] – 2026-03-31
 
 ### Fixed

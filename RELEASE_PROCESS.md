@@ -1,6 +1,6 @@
 # Release Process
 
-**Current released version: `6.5.2`**
+**Current released version: `6.5.3`**
 **Repository: `brianpavane/Obisian-Plugin-Calendar-Note-Integration`**
 
 > This file is updated on every release. All commands below use a single `VERSION`
@@ -11,7 +11,7 @@
 ## Step 1 — Set the version (change this line only)
 
 ```bash
-VERSION=6.5.2
+VERSION=6.5.3
 ```
 
 Run this in your terminal first. Every subsequent block uses `$VERSION`.
@@ -38,9 +38,9 @@ All three must show `$VERSION`. If any are out of sync, update them before conti
 
 | File | Field | Expected value |
 |---|---|---|
-| `manifest.json` | `"version"` | `6.5.2` |
-| `package.json` | `"version"` | `6.5.2` |
-| `versions.json` | new entry | `"6.5.2": "0.15.0"` |
+| `manifest.json` | `"version"` | `6.5.3` |
+| `package.json` | `"version"` | `6.5.3` |
+| `versions.json` | new entry | `"6.5.3": "0.15.0"` |
 
 ---
 
@@ -115,7 +115,7 @@ gh release view $VERSION --repo brianpavane/Obisian-Plugin-Calendar-Note-Integra
 
 ```bash
 # ── SET VERSION ONCE ──────────────────────────────────────────────────────────
-VERSION=6.5.2
+VERSION=6.5.3
 
 # ── PULL & BUILD ─────────────────────────────────────────────────────────────
 git checkout main
@@ -195,8 +195,8 @@ gh release upload $VERSION styles.css \
 
 | Change type | Bump | Example |
 |---|---|---|
-| Bug fix, minor improvement | **patch** (Z) | 6.5.2 → 6.5.3 |
-| New feature, backwards-compatible | **minor** (Y) | 6.5.2 → 6.6.0 |
+| Bug fix, minor improvement | **patch** (Z) | 6.5.3 → 6.5.4 |
+| New feature, backwards-compatible | **minor** (Y) | 6.5.3 → 6.6.0 |
 | Breaking change, major rework | **major** (X) | 6.6.0 → 7.0.0 |
 
 Files to update on every bump:
