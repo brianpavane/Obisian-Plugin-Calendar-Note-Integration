@@ -14,7 +14,7 @@
  *     {@link isSafeHttpsUrl} before being embedded in a Markdown link.
  */
 
-import { App, normalizePath, TFile } from "obsidian";
+import { App, moment, normalizePath, TFile } from "obsidian";
 import { CalendarEvent, ResponseStatus } from "./calendarApi";
 
 // ---------------------------------------------------------------------------
@@ -29,11 +29,21 @@ export interface NoteOptions {
   includeEventNotes: boolean;
   /** When true, attendees and organizer are written as `[[Name]]` links. */
   linkAttendees: boolean;
+  /** Daily-note naming used to link each meeting to its day. Undefined = no link. */
+  dailyNote?: DailyNoteConfig;
+  /** Contents of the user's template note. Undefined = built-in template. */
+  template?: string;
   /**
    * "before" → "2026-03-30 - Meeting Title.md"
    * "after"  → "Meeting Title - 2026-03-30.md"
    */
   datePosition: "before" | "after";
+}
+
+/** Where daily notes live and how they are named (a moment.js format). */
+export interface DailyNoteConfig {
+  format: string;
+  folder: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -350,9 +360,27 @@ function organizerName(event: CalendarEvent): string | undefined {
 }
 
 /** Frontmatter keys the plugin keeps in sync with the calendar. `null` = remove. */
+type SyncOptions = Pick<NoteOptions, "linkAttendees" | "dailyNote">;
+
+interface DailyLink {
+  target: string;
+  name: string;
+}
+
+function dailyNoteLink(date: string, config: DailyNoteConfig | undefined): DailyLink | undefined {
+  if (!config) return undefined;
+  const formatted = moment(date, "YYYY-MM-DD").format(config.format || "YYYY-MM-DD");
+  const folder = config.folder.trim() ? normalizePath(config.folder.trim()) + "/" : "";
+  return { target: `${folder}${formatted}`, name: formatted.split("/").pop() ?? formatted };
+}
+
+function wikilink(link: DailyLink, alias = link.name): string {
+  return link.target === alias ? `[[${link.target}]]` : `[[${link.target}|${alias}]]`;
+}
+
 function managedFrontmatter(
   event: CalendarEvent,
-  options: Pick<NoteOptions, "linkAttendees">
+  options: SyncOptions
 ): Array<[string, string[] | null]> {
   const timing = getEventTiming(event);
   const people = buildPeople(event).filter((p) => !p.organizer || (event.attendees ?? []).some((a) => a.email === p.email));
@@ -365,6 +393,10 @@ function managedFrontmatter(
   return [
     quoted("title", sanitizeInline(event.summary?.trim() || "Untitled Event")),
     ["date", [`date: ${timing.date}`]],
+    quoted("daily_note", (() => {
+      const link = dailyNoteLink(timing.date, options.dailyNote);
+      return link ? wikilink(link) : undefined;
+    })()),
     ["start", timing.start ? [`start: ${timing.start}`] : null],
     ["end", timing.end ? [`end: ${timing.end}`] : null],
     quoted("calendar", event.calendarName ? sanitizeInline(event.calendarName) : undefined),
@@ -382,18 +414,17 @@ function managedFrontmatter(
 
 const DETAILS_CALLOUT_RE = /^> \[!(info|danger)\] Meeting (details|cancelled)\s*$/;
 
-function renderDetailsCallout(
-  event: CalendarEvent,
-  options: Pick<NoteOptions, "linkAttendees">
-): string[] {
+function renderDetailsCallout(event: CalendarEvent, options: SyncOptions): string[] {
   const timing = getEventTiming(event);
   const link = meetingLink(event);
   const lines = [event.cancelled ? "> [!danger] Meeting cancelled" : "> [!info] Meeting details"];
 
+  const daily = dailyNoteLink(timing.date, options.dailyNote);
+  const day = daily ? wikilink(daily, timing.dateLong) : timing.dateLong;
   lines.push(
     timing.allDay
-      ? `> **When:** ${timing.dateLong} · All day`
-      : `> **When:** ${timing.dateLong} · ${timing.timeRange} (${timing.duration})`
+      ? `> **When:** ${day} · All day`
+      : `> **When:** ${day} · ${timing.timeRange} (${timing.duration})`
   );
   if (event.location) lines.push(`> **Where:** ${escapeInlineMd(event.location)}`);
   if (link) lines.push(`> **Join:** [Join ${escapeInlineMd(link.platform)}](${link.url})`);
@@ -408,42 +439,166 @@ function renderDetailsCallout(
   return lines;
 }
 
-/**
- * Build the full Markdown content for a new meeting note.
- *
- * @param event   Calendar event.
- * @param options Controls which sections are included.
- * @returns       Complete Markdown string ready to write to a `.md` file.
- */
-export function createNoteContent(
+/** The built-in note layout, written in the same placeholder syntax as user templates. */
+export const DEFAULT_TEMPLATE = `---
+type: meeting
+tags:
+  - meeting
+---
+
+# {{title}}
+
+{{details}}
+
+## Agenda
+
+{{agenda}}
+
+## Notes
+
+- 
+
+## Decisions
+
+- 
+
+## Action items
+
+- [ ] 
+`;
+
+/** Placeholders available in templates, mapped to their value for this event. */
+function templateValues(
   event: CalendarEvent,
-  options: Pick<NoteOptions, "includeEventNotes" | "linkAttendees">
-): string {
-  const title = sanitizeInline(event.summary?.trim() || "Untitled Event");
-
-  const frontmatter = ["---", "type: meeting"];
-  for (const [, lines] of managedFrontmatter(event, options)) {
-    if (lines) frontmatter.push(...lines);
-  }
-  frontmatter.push("tags:", "  - meeting", "---");
-
-  const lines = [...frontmatter, "", `# ${title}`, "", ...renderDetailsCallout(event, options), ""];
-
+  options: Pick<NoteOptions, "includeEventNotes" | "linkAttendees" | "dailyNote">
+): Record<string, string> {
+  const timing = getEventTiming(event);
+  const link = meetingLink(event);
+  const people = buildPeople(event);
+  const organizer = buildPeople(event).find((p) => p.organizer);
+  const daily = dailyNoteLink(timing.date, options.dailyNote);
   const description = options.includeEventNotes && event.description
     ? descriptionLines(event.description)
     : [];
-  if (description.length > 0) {
-    lines.push("> [!quote]- Event description");
-    for (const line of description) lines.push(line.trim() ? `> ${line}` : ">");
-    lines.push("");
+  const [startTime = "", endTime = ""] = timing.allDay ? [] : timing.timeRange.split(" – ");
+
+  return {
+    title: sanitizeInline(event.summary?.trim() || "Untitled Event"),
+    date: timing.date,
+    date_long: timing.dateLong,
+    start: timing.start ?? "",
+    end: timing.end ?? "",
+    start_time: startTime,
+    end_time: endTime,
+    time: timing.timeRange,
+    duration: timing.duration,
+    location: event.location ? escapeInlineMd(event.location) : "",
+    calendar: event.calendarName ? escapeInlineMd(event.calendarName) : "",
+    organizer: organizer
+      ? personInline({ ...organizer, organizer: false }, options.linkAttendees)
+      : escapeInlineMd(organizerName(event) ?? ""),
+    attendees: people.map((p) => personInline({ ...p, organizer: false }, options.linkAttendees)).join(", "),
+    attendee_list: people.map((p) => `- ${p.icon} ${personInline(p, options.linkAttendees)}`).join("\n"),
+    meeting_url: link?.url ?? "",
+    platform: link ? escapeInlineMd(link.platform) : "",
+    join_link: link ? `[Join ${escapeInlineMd(link.platform)}](${link.url})` : "",
+    description: description.join("\n"),
+    agenda: [...description.filter((l) => l.trim()).map((l) => `- ${l.trim()}`), "- "].join("\n"),
+    description_callout: description.length > 0
+      ? ["> [!quote]- Event description", ...description.map((l) => (l.trim() ? `> ${l}` : ">"))].join("\n")
+      : "",
+    details: renderDetailsCallout(event, options).join("\n"),
+    daily_note: daily ? wikilink(daily) : "",
+    event_id: escapeInlineMd(event.id),
+  };
+}
+
+const PLACEHOLDER_RE = /\{\{\s*([a-z_]+)\s*\}\}/g;
+
+/**
+ * Fill a template's placeholders. A line holding only placeholders that come
+ * out empty is dropped, together with a blank line that would then double up.
+ * Unknown placeholders (and other syntax such as Templater's) are left as-is.
+ */
+function fillPlaceholders(text: string, values: Record<string, string>): string {
+  const out: string[] = [];
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const filled = line.replace(PLACEHOLDER_RE, (m, key: string) => (key in values ? values[key] : m));
+    const onlyPlaceholders = line.trim() !== "" && line.replace(PLACEHOLDER_RE, "").trim() === "";
+    if (onlyPlaceholders && filled.trim() === "") {
+      if (out.length > 0 && out[out.length - 1].trim() === "" && lines[i + 1]?.trim() === "") i++;
+      continue;
+    }
+    out.push(filled);
+  }
+  return out.join("\n");
+}
+
+type FrontmatterBlock = { key: string | null; lines: string[] };
+
+function parseFrontmatter(content: string): { blocks: FrontmatterBlock[]; end: string; rest: string } | null {
+  const fm = content.match(/^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/) ?? content.match(/^---\r?\n()---(\r?\n|$)/);
+  if (!fm) return null;
+  const blocks: FrontmatterBlock[] = [];
+  for (const line of fm[1] ? fm[1].split(/\r?\n/) : []) {
+    const key = line.match(/^([A-Za-z0-9_-]+):/)?.[1] ?? null;
+    if (key || blocks.length === 0) blocks.push({ key, lines: [line] });
+    else blocks[blocks.length - 1].lines.push(line);
+  }
+  return { blocks, end: fm[2], rest: content.slice(fm[0].length) };
+}
+
+/**
+ * Write the managed keys into a frontmatter block list: existing keys are
+ * replaced in place, keys set to null are removed, and new keys go before
+ * `tags` (or at the end).
+ */
+function applyManagedFrontmatter(blocks: FrontmatterBlock[], entries: Array<[string, string[] | null]>): void {
+  for (const [key, lines] of entries) {
+    const index = blocks.findIndex((b) => b.key === key);
+    if (lines === null) {
+      if (index !== -1) blocks.splice(index, 1);
+    } else if (index !== -1) {
+      blocks[index] = { key, lines };
+    } else {
+      const tags = blocks.findIndex((b) => b.key === "tags");
+      blocks.splice(tags === -1 ? blocks.length : tags, 0, { key, lines });
+    }
+  }
+}
+
+/**
+ * Build the full Markdown content for a new meeting note from the user's
+ * template (or the built-in one). The plugin's calendar properties are always
+ * added to the frontmatter so the note can be kept in sync.
+ */
+export function createNoteContent(
+  event: CalendarEvent,
+  options: Pick<NoteOptions, "includeEventNotes" | "linkAttendees" | "dailyNote" | "template">
+): string {
+  const template = (options.template ?? DEFAULT_TEMPLATE).replace(/\r\n/g, "\n");
+  const values = templateValues(event, options);
+  const managed = managedFrontmatter(event, options);
+
+  const parsed = parseFrontmatter(template);
+  if (!parsed) {
+    const lines = managed.flatMap(([, l]) => l ?? []);
+    return `---\n${lines.join("\n")}\n---\n\n${fillPlaceholders(template, values)}`;
   }
 
-  lines.push("## Agenda", "", "- ", "");
-  lines.push("## Notes", "", "- ", "");
-  lines.push("## Decisions", "", "- ", "");
-  lines.push("## Action items", "", "- [ ] ", "");
+  const yamlValues: Record<string, string> = {};
+  for (const [key, value] of Object.entries(values)) {
+    yamlValues[key] = value.includes("\n") ? "" : escapeYaml(value);
+  }
+  const blocks = parsed.blocks.map((b) => ({
+    key: b.key,
+    lines: b.lines.map((l) => l.replace(PLACEHOLDER_RE, (m, key: string) => (key in yamlValues ? yamlValues[key] : m))),
+  }));
+  applyManagedFrontmatter(blocks, managed);
 
-  return lines.join("\n");
+  return `---\n${blocks.flatMap((b) => b.lines).join("\n")}\n---\n${fillPlaceholders(parsed.rest, values)}`;
 }
 
 /**
@@ -456,32 +611,15 @@ export function createNoteContent(
 export function updateNoteContent(
   content: string,
   event: CalendarEvent,
-  options: Pick<NoteOptions, "linkAttendees">
+  options: SyncOptions
 ): string {
-  const fm = content.match(/^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/);
-  if (!fm) return content;
+  const parsed = parseFrontmatter(content);
+  if (!parsed) return content;
 
-  type Block = { key: string | null; lines: string[] };
-  const blocks: Block[] = [];
-  for (const line of fm[1].split(/\r?\n/)) {
-    const key = line.match(/^([A-Za-z0-9_-]+):/)?.[1] ?? null;
-    if (key || blocks.length === 0) blocks.push({ key, lines: [line] });
-    else blocks[blocks.length - 1].lines.push(line);
-  }
+  applyManagedFrontmatter(parsed.blocks, managedFrontmatter(event, options));
 
-  for (const [key, lines] of managedFrontmatter(event, options)) {
-    const index = blocks.findIndex((b) => b.key === key);
-    if (lines === null) {
-      if (index !== -1) blocks.splice(index, 1);
-    } else if (index !== -1) {
-      blocks[index] = { key, lines };
-    } else {
-      blocks.push({ key, lines });
-    }
-  }
-
-  const newFrontmatter = `---\n${blocks.flatMap((b) => b.lines).join("\n")}\n---${fm[2]}`;
-  const bodyLines = content.slice(fm[0].length).split("\n");
+  const newFrontmatter = `---\n${parsed.blocks.flatMap((b) => b.lines).join("\n")}\n---${parsed.end}`;
+  const bodyLines = parsed.rest.split("\n");
 
   const start = bodyLines.findIndex((line) => DETAILS_CALLOUT_RE.test(line.replace(/\r$/, "")));
   if (start !== -1) {
@@ -612,7 +750,7 @@ export async function syncNoteFile(
   app: App,
   file: TFile,
   event: CalendarEvent,
-  options: Pick<NoteOptions, "linkAttendees">
+  options: SyncOptions
 ): Promise<boolean> {
   let changed = false;
   const current = await app.vault.read(file);

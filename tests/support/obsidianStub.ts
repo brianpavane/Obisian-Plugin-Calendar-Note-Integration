@@ -199,6 +199,14 @@ export interface App {
   };
 }
 
+export function moment(date: string, _inputFormat?: string) {
+  const [year, month, day] = date.split("-");
+  return {
+    format: (fmt: string) =>
+      fmt.replace(/YYYY/g, year).replace(/MM/g, month).replace(/DD/g, day),
+  };
+}
+
 export function normalizePath(path: string): string {
   return path
     .replace(/\\/g, "/")

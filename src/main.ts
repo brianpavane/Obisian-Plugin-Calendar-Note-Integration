@@ -16,7 +16,7 @@
  *   - Expose the settings tab.
  */
 
-import { Notice, Plugin, TFile } from "obsidian";
+import { normalizePath, Notice, Plugin, TFile } from "obsidian";
 import {
   GoogleCalendarSettings,
   DEFAULT_SETTINGS,
@@ -31,6 +31,7 @@ import {
   findNotesByEventId,
   resolveNoteFilePath,
   syncNoteFile,
+  DailyNoteConfig,
   NoteOptions,
 } from "./noteCreator";
 
@@ -154,6 +155,12 @@ export default class GoogleCalendarPlugin extends Plugin {
     if (typeof merged.linkAttendees !== "boolean") {
       merged.linkAttendees = DEFAULT_SETTINGS.linkAttendees;
     }
+    if (typeof merged.dailyNoteLink !== "boolean") {
+      merged.dailyNoteLink = DEFAULT_SETTINGS.dailyNoteLink;
+    }
+    if (typeof merged.templatePath !== "string") {
+      merged.templatePath = DEFAULT_SETTINGS.templatePath;
+    }
     if (typeof merged.lastRunVersion !== "string") {
       merged.lastRunVersion = DEFAULT_SETTINGS.lastRunVersion;
     }
@@ -244,12 +251,40 @@ export default class GoogleCalendarPlugin extends Plugin {
   // NoteOptions builder
   // ---------------------------------------------------------------------------
 
-  private getNoteOptions(): NoteOptions {
+  private async getNoteOptions(verbose: boolean): Promise<NoteOptions> {
     return {
       noteFolder: this.settings.noteFolder,
       includeEventNotes: this.settings.includeEventNotes,
       linkAttendees: this.settings.linkAttendees,
       datePosition: this.settings.datePosition,
+      dailyNote: this.settings.dailyNoteLink ? this.getDailyNoteConfig() : undefined,
+      template: await this.loadTemplate(verbose),
+    };
+  }
+
+  /** Read the template note, or return undefined to use the built-in template. */
+  private async loadTemplate(verbose: boolean): Promise<string | undefined> {
+    const path = this.settings.templatePath.trim();
+    if (!path) return undefined;
+    const normalized = normalizePath(path.endsWith(".md") ? path : `${path}.md`);
+    const file = this.app.vault.getAbstractFileByPath(normalized);
+    if (file instanceof TFile) return this.app.vault.read(file);
+
+    console.warn(`[CalendarNoteIntegration] Template "${normalized}" not found; using the built-in template.`);
+    if (verbose) new Notice(`Calendar Notes: template "${normalized}" not found — using the built-in format.`);
+    return undefined;
+  }
+
+  /** Daily-note format and folder from Obsidian's Daily Notes core plugin, if set. */
+  getDailyNoteConfig(): DailyNoteConfig {
+    type DailyNotesPlugin = { enabled?: boolean; instance?: { options?: { format?: string; folder?: string } } };
+    const internal = (this.app as unknown as {
+      internalPlugins?: { getPluginById?: (id: string) => DailyNotesPlugin | null };
+    }).internalPlugins;
+    const options = internal?.getPluginById?.("daily-notes")?.instance?.options;
+    return {
+      format: options?.format?.trim() || "YYYY-MM-DD",
+      folder: options?.folder?.trim() ?? "",
     };
   }
 
@@ -367,7 +402,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       processedSet.add(id);
       this.settings.processedEventIds.push(id);
     };
-    const options = this.getNoteOptions();
+    const options = await this.getNoteOptions(verbose);
     const notesById = findNotesByEventId(this.app, options.noteFolder);
     let created = 0;
     let updated = 0;
@@ -514,7 +549,7 @@ export default class GoogleCalendarPlugin extends Plugin {
 
   private async createAndOpenNote(event: CalendarEvent): Promise<void> {
     try {
-      const { file } = await createNoteFile(this.app, event, this.getNoteOptions());
+      const { file } = await createNoteFile(this.app, event, await this.getNoteOptions(true));
       await this.app.workspace.getLeaf(false).openFile(file as TFile);
       new Notice(`Note ready: ${file.name}`);
     } catch (err) {

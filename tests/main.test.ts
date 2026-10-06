@@ -328,3 +328,40 @@ test("refreshNotes leaves unchanged notes untouched", async () => {
   assert.equal(writes, 0);
   assert.match(getNotices().at(-1)?.message ?? "", /All notes are up to date/);
 });
+
+test("refreshNotes uses the template note and the Daily Notes format", async () => {
+  const app = createMemoryApp([
+    { path: "Meeting Notes", content: "" },
+    { path: "Templates/Meeting.md", content: "# {{title}}\n\nDay: {{daily_note}}\n" },
+  ]);
+  (app as unknown as { internalPlugins: unknown }).internalPlugins = {
+    getPluginById: (id: string) =>
+      id === "daily-notes" ? { instance: { options: { format: "YYYY/MM/DD", folder: "Journal" } } } : null,
+  };
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ templatePath: "Templates/Meeting" });
+  plugin.getCalendarService = async () =>
+    ({ listEventsInTimeWindow: async () => [buildEvent({ id: "t", summary: "Templated" })] } as never);
+
+  await plugin.refreshNotes(false);
+
+  const content = (app.files.get("Meeting Notes/2026-04-03 - Templated.md") as TFile).content ?? "";
+  assert.match(content, /^# Templated$/m);
+  assert.match(content, /^Day: \[\[Journal\/2026\/04\/03\|03\]\]$/m);
+  assert.match(content, /^calendar_event_id: "t"$/m);
+});
+
+test("refreshNotes falls back to the built-in format when the template is missing", async () => {
+  const app = createMemoryApp([{ path: "Meeting Notes", content: "" }]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ templatePath: "Templates/Missing.md", dailyNoteLink: false });
+  plugin.getCalendarService = async () =>
+    ({ listEventsInTimeWindow: async () => [buildEvent({ id: "m", summary: "Fallback" })] } as never);
+
+  await plugin.refreshNotes(true);
+
+  const content = (app.files.get("Meeting Notes/2026-04-03 - Fallback.md") as TFile).content ?? "";
+  assert.match(content, /^> \[!info\] Meeting details$/m);
+  assert.doesNotMatch(content, /daily_note/);
+  assert.ok(getNotices().some((n) => /template "Templates\/Missing\.md" not found/.test(n.message)));
+});

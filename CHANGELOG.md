@@ -7,6 +7,23 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+**Custom templates**
+A new **Template file** setting creates meeting notes from a note in your vault, using placeholders such as `{{title}}`, `{{details}}`, `{{join_link}}`, `{{agenda}}`, `{{attendees}}`, and `{{daily_note}}` (full list in the README). The plugin's calendar properties are always added, so notes made from any template keep syncing. Templater commands are left in place for Templater to run.
+
+**Daily-note links**
+With the new **Link to daily note** setting (on by default), each meeting note gets a `daily_note` property and its date in the Meeting details box links to that day's daily note, using your Daily Notes format and folder. The day's meetings then appear in the daily note's backlinks. The link follows the meeting if it is rescheduled.
+
+### Fixed
+
+**Event description is back in the Agenda section**
+6.7.0 moved the event description into a collapsed callout and left Agenda empty. New notes again list the description lines as Agenda bullets. The collapsed callout is still available to custom templates as `{{description_callout}}`.
+
+---
+
 ## [6.7.0] – 2026-10-06
 
 ### Added

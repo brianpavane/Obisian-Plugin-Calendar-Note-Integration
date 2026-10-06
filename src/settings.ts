@@ -16,6 +16,7 @@ import {
   Notice,
   PluginSettingTab,
   Setting,
+  TFile,
   TFolder,
   ToggleComponent,
 } from "obsidian";
@@ -47,6 +48,9 @@ export interface GoogleCalendarSettings {
   daysBack: number;
   includeEventNotes: boolean;
   linkAttendees: boolean;
+  dailyNoteLink: boolean;
+  /** Vault path of a template note; empty = built-in template. */
+  templatePath: string;
   datePosition: "before" | "after";
   daysAhead: number;
   maxEvents: number;
@@ -77,6 +81,8 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   daysBack: 1,
   includeEventNotes: true,
   linkAttendees: false,
+  dailyNoteLink: true,
+  templatePath: "",
   datePosition: "before",
   daysAhead: 7,
   maxEvents: 20,
@@ -112,6 +118,31 @@ class FolderSuggest extends AbstractInputSuggest<TFolder> {
 
   selectSuggestion(folder: TFolder): void {
     this.setValue(folder.path);
+    this.el.dispatchEvent(new Event("input"));
+    this.close();
+  }
+}
+
+class FileSuggest extends AbstractInputSuggest<TFile> {
+  private el: HTMLInputElement;
+
+  constructor(app: App, inputEl: HTMLInputElement) {
+    super(app, inputEl);
+    this.el = inputEl;
+  }
+
+  getSuggestions(query: string): TFile[] {
+    return this.app.vault
+      .getMarkdownFiles()
+      .filter((f) => f.path.toLowerCase().includes(query.toLowerCase()));
+  }
+
+  renderSuggestion(file: TFile, el: HTMLElement): void {
+    el.setText(file.path);
+  }
+
+  selectSuggestion(file: TFile): void {
+    this.setValue(file.path);
     this.el.dispatchEvent(new Event("input"));
     this.close();
   }
@@ -703,7 +734,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Include event description")
       .setDesc(
-        "When enabled, the event's original description is added to new notes in a collapsed callout."
+        "When enabled, the event's description is added to the Agenda section of new notes."
       )
       .addToggle((toggle) =>
         toggle
@@ -725,6 +756,41 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.linkAttendees)
           .onChange(async (value) => {
             this.plugin.settings.linkAttendees = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Template file")
+      .setDesc(
+        "A note to use as the template for new meeting notes, with placeholders such as " +
+          "{{title}}, {{details}}, {{join_link}}, {{agenda}}, and {{attendees}} (see the README " +
+          "for the full list). Leave empty to use the built-in format."
+      )
+      .addText((text) => {
+        new FileSuggest(this.app, text.inputEl);
+        text
+          .setPlaceholder("Templates/Meeting.md")
+          .setValue(this.plugin.settings.templatePath)
+          .onChange(async (value) => {
+            this.plugin.settings.templatePath = value.trim();
+            await this.plugin.saveSettings();
+          });
+      });
+
+    const daily = this.plugin.getDailyNoteConfig();
+    new Setting(containerEl)
+      .setName("Link to daily note")
+      .setDesc(
+        "Link each meeting note to that day's daily note, so the daily note's backlinks list " +
+          `the day's meetings. Uses your Daily Notes settings (format ${daily.format}` +
+          (daily.folder ? `, folder ${daily.folder}` : "") + ")."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.dailyNoteLink)
+          .onChange(async (value) => {
+            this.plugin.settings.dailyNoteLink = value;
             await this.plugin.saveSettings();
           })
       );

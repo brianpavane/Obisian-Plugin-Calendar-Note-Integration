@@ -17,6 +17,8 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 - **Attendees with RSVP status** — 🟢 accepted, 🔴 declined, 🟡 tentative, ⚪ awaiting; optionally as `[[Name]]` links to your people notes
 - **Notes stay in sync** — time, attendee, and location changes are applied to existing notes; moved meetings are renamed to their new date; cancelled meetings are marked cancelled
 - **Recurring meetings** — every occurrence gets its own note
+- **Your own template** — point the plugin at a template note with placeholders, or use the built-in format
+- **Daily-note links** — each meeting links to that day's daily note, so the day's meetings appear in its backlinks
 - **Declined event filtering** — events you have declined are skipped, when the calendar identifies you as an attendee or your email address is set
 - **All-day event filtering** — all-day events (holidays, OOO blocks) are skipped
 - **Configurable time window** — look ahead 1–48 hours; optionally include past events
@@ -129,8 +131,10 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 | Poll interval | 30 min | How often to check for new upcoming events (5–120); takes effect after restart |
 | Include past events | Off | Also create notes for events that have already started |
 | Days back | 1 | How many days back to look when past events are enabled (1–30) |
-| Include event description | On | Add the event's original description to new notes in a collapsed callout |
+| Include event description | On | Add the event's description to the Agenda section of new notes |
 | Link attendees | Off | Write the organizer and attendees as `[[Name]]` links instead of plain names and emails |
+| Template file | *(built-in)* | A note to use as the template for new meeting notes — see [Custom templates](#custom-templates) |
+| Link to daily note | On | Link each meeting note to that day's daily note, using your Daily Notes format and folder |
 | Date position in filename | Before | `2026-01-15 - Meeting Name.md` or `Meeting Name - 2026-01-15.md` |
 
 ### Calendar View (event picker)
@@ -156,6 +160,7 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 type: meeting
 title: "Weekly Sync"
 date: 2026-01-15
+daily_note: "[[2026-01-15]]"
 start: 2026-01-15T10:00
 end: 2026-01-15T11:00
 calendar: "Work"
@@ -175,18 +180,16 @@ tags:
 # Weekly Sync
 
 > [!info] Meeting details
-> **When:** Thursday, January 15, 2026 · 10:00 AM – 11:00 AM (1h)
+> **When:** [[2026-01-15|Thursday, January 15, 2026]] · 10:00 AM – 11:00 AM (1h)
 > **Where:** Conference Room B
 > **Join:** [Join Google Meet](https://meet.google.com/abc-defg-hij)
 > **Organizer:** Alice Smith
 > **Attendees:** 🟢 Alice Smith *(organizer)* · 🟢 Bob Jones · ⚪ Carol White
 
-> [!quote]- Event description
-> Review Q1 goals
-> Staffing update
-
 ## Agenda
 
+- Review Q1 goals
+- Staffing update
 - 
 
 ## Notes
@@ -203,13 +206,85 @@ tags:
 ```
 
 - **Properties** hold the meeting's details so you can search, sort, and query meetings (for example with Bases or Dataview). `meeting_url` is clickable in the Properties panel.
-- **Meeting details** has the **Join** link. A cancelled meeting shows a red **Meeting cancelled** box instead.
-- **Event description** (collapsed) is the original invite text; it appears only when **Include event description** is on.
+- **Meeting details** has the **Join** link, and the date links to the daily note. A cancelled meeting shows a red **Meeting cancelled** box instead.
+- **Agenda** starts with the lines of the event description (when **Include event description** is on).
 - **Agenda**, **Notes**, **Decisions**, and **Action items** are yours to fill in. Action items are checkboxes, so Obsidian's task search and the Tasks plugin can collect them across meetings.
+
+### Custom templates
+
+Set **Template file** to a note in your vault, and new meeting notes are created from it. Use any of these placeholders:
+
+| Placeholder | Value |
+|---|---|
+| `{{title}}` | Meeting title |
+| `{{date}}` / `{{date_long}}` | `2026-01-15` / `Thursday, January 15, 2026` |
+| `{{start_time}}` / `{{end_time}}` / `{{time}}` | `10:00 AM` / `11:00 AM` / `10:00 AM – 11:00 AM` |
+| `{{start}}` / `{{end}}` | `2026-01-15T10:00` / `2026-01-15T11:00` |
+| `{{duration}}` | `1h` |
+| `{{location}}` | Location |
+| `{{calendar}}` | Calendar name |
+| `{{organizer}}` | Organizer |
+| `{{attendees}}` | Attendees, comma-separated |
+| `{{attendee_list}}` | Attendees as a bulleted list with RSVP status |
+| `{{join_link}}` | `[Join Zoom](https://…)` |
+| `{{meeting_url}}` / `{{platform}}` | The join URL / `Zoom` |
+| `{{agenda}}` | Event description as bullets (ends with an empty bullet) |
+| `{{description}}` | Event description as plain text |
+| `{{description_callout}}` | Event description in a collapsed callout |
+| `{{details}}` | The **Meeting details** box (kept up to date) |
+| `{{daily_note}}` | Link to the day's daily note |
+| `{{event_id}}` | Calendar event ID |
+
+- A line containing only placeholders that come out empty (for example `{{join_link}}` for an in-person meeting) is left out.
+- The plugin always adds its calendar properties to the note's frontmatter, so updates keep working with any template. Your template's own frontmatter is kept; placeholders inside it should be quoted, for example `project: "{{calendar}}"`.
+- Only the properties and the `{{details}}` box are updated later. Everything else is filled in once, when the note is created.
+- Anything that isn't a placeholder — including Templater `<% %>` commands — is copied as-is. To run Templater commands, turn on Templater's **Trigger Templater on new file creation** for your meeting-notes folder.
+
+The built-in template is:
+
+```markdown
+---
+type: meeting
+tags:
+  - meeting
+---
+
+# {{title}}
+
+{{details}}
+
+## Agenda
+
+{{agenda}}
+
+## Notes
+
+- 
+
+## Decisions
+
+- 
+
+## Action items
+
+- [ ] 
+```
+
+### Daily notes
+
+With **Link to daily note** on, each meeting note gets a `daily_note` property linking to that day's daily note, named and placed according to Obsidian's **Daily notes** settings. Open a daily note and its **Backlinks** pane lists that day's meetings. To show them inside the daily note, add this to your daily-note template (requires the Dataview plugin):
+
+````markdown
+```dataview
+TABLE start, location FROM [[]] AND #meeting SORT start
+```
+````
+
+The plugin never edits daily notes, and the link moves with the meeting if it is rescheduled.
 
 ### Keeping notes up to date
 
-Every poll, Refresh, and Rebuild updates the notes of meetings in the time window. The plugin only rewrites the calendar properties listed above (title, date, start, end, calendar, organizer, attendees, location, meeting link, status, and event ID) and the **Meeting details** box. Everything else in the note — your writing, extra properties, and tags you add — is never changed.
+Every poll, Refresh, and Rebuild updates the notes of meetings in the time window. The plugin only rewrites the calendar properties listed above (title, date, daily note, start, end, calendar, organizer, attendees, location, meeting link, status, and event ID) and the **Meeting details** box. Everything else in the note — your writing, extra properties, and tags you add — is never changed.
 
 If a meeting moves to another day, its note is renamed to the new date (a title you edited in the filename is kept). Notes created by versions before 6.7 get their properties updated but keep their original layout.
 

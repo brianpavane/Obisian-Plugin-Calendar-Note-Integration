@@ -232,3 +232,92 @@ test("updateNoteContent refreshes calendar details and keeps the user's writing"
     cancelled: true,
   }), { linkAttendees: false }), updated);
 });
+
+test("createNoteContent puts the event description in the Agenda section", () => {
+  const content = createNoteContent(
+    buildEvent({ description: "Review Q1 goals\n\nStaffing update" }),
+    { includeEventNotes: true, linkAttendees: false }
+  );
+
+  assert.match(content, /## Agenda\n\n- Review Q1 goals\n- Staffing update\n- \n\n## Notes/);
+  assert.doesNotMatch(content, /Event description/);
+});
+
+test("createNoteContent fills a user template and still adds the calendar properties", () => {
+  const template = [
+    "---",
+    "project: \"{{calendar}}\"",
+    "tags:",
+    "  - work",
+    "---",
+    "# {{title}} ({{start_time}})",
+    "",
+    "Join: {{join_link}}",
+    "With: {{attendees}}",
+    "Day: {{daily_note}}",
+    "",
+    "{{description_callout}}",
+    "",
+    "<% tp.date.now() %> {{unknown}}",
+    "",
+  ].join("\n");
+
+  const content = createNoteContent(
+    buildEvent({
+      summary: "Design Review",
+      calendarName: "Work",
+      start: { dateTime: "2026-01-15T10:00:00-05:00" },
+      end: { dateTime: "2026-01-15T11:00:00-05:00" },
+      attendees: [{ email: "bob@example.com", displayName: "Bob Jones", responseStatus: "accepted" }],
+      conferenceData: {
+        conferenceSolution: { name: "Zoom" },
+        entryPoints: [{ entryPointType: "video", uri: "https://zoom.us/j/1234567" }],
+      },
+    }),
+    {
+      includeEventNotes: false,
+      linkAttendees: true,
+      dailyNote: { format: "YYYY-MM-DD", folder: "Daily" },
+      template,
+    }
+  );
+
+  assert.match(content, /^project: "Work"$/m);
+  assert.match(content, /^calendar_event_id: "event-1"\ntags:\n {2}- work\n---$/m);
+  assert.match(content, /^daily_note: "\[\[Daily\/2026-01-15\|2026-01-15\]\]"$/m);
+  assert.match(content, /^# Design Review \(10:00 AM\)$/m);
+  assert.match(content, /^Join: \[Join Zoom\]\(https:\/\/zoom\.us\/j\/1234567\)$/m);
+  assert.match(content, /^With: \[\[Bob Jones\]\]$/m);
+  assert.match(content, /^Day: \[\[Daily\/2026-01-15\|2026-01-15\]\]$/m);
+  assert.match(content, /^<% tp\.date\.now\(\) %> \{\{unknown\}\}$/m);
+  assert.doesNotMatch(content, /Event description/);
+  assert.doesNotMatch(content, /\n\n\n/);
+});
+
+test("createNoteContent adds frontmatter to a template that has none", () => {
+  const content = createNoteContent(buildEvent(), {
+    includeEventNotes: false,
+    linkAttendees: false,
+    template: "# {{title}}\n",
+  });
+
+  assert.match(content, /^---\ntitle: "Late Night Sync"\ndate: 2026-04-03\n/);
+  assert.match(content, /^calendar_event_id: "event-1"\n---\n\n# Late Night Sync\n$/m);
+});
+
+test("daily-note links follow the date when a meeting moves", () => {
+  const options = { includeEventNotes: false, linkAttendees: false, dailyNote: { format: "YYYY-MM-DD", folder: "" } };
+  const original = createNoteContent(
+    buildEvent({ start: { dateTime: "2026-01-15T10:00:00-05:00" }, end: { dateTime: "2026-01-15T11:00:00-05:00" } }),
+    options
+  );
+  assert.match(original, /^> \*\*When:\*\* \[\[2026-01-15\|Thursday, January 15, 2026\]\] · /m);
+
+  const updated = updateNoteContent(
+    original,
+    buildEvent({ start: { dateTime: "2026-01-16T10:00:00-05:00" }, end: { dateTime: "2026-01-16T11:00:00-05:00" } }),
+    options
+  );
+  assert.match(updated, /^daily_note: "\[\[2026-01-16\]\]"$/m);
+  assert.match(updated, /^> \*\*When:\*\* \[\[2026-01-16\|Friday, January 16, 2026\]\] · /m);
+});
