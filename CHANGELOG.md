@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+**Version is bumped only when releasing**
+Routine commits no longer bump the plugin version. Changes are recorded under `[Unreleased]` in this changelog, and `node version-bump.mjs <level>` stamps that section with the new version and date when a release is cut. The pre-commit check no longer requires a version bump, and `RELEASE_PROCESS.md` now covers the bump, release commit, tag, and GitHub release in one sequence.
+
+---
+
 ## [6.6.1] – 2026-10-06
 
 ### Changed

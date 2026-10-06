@@ -42,13 +42,14 @@ fi
 
 if printf '%s\n' "$staged" | grep -qE '^(src/|styles\.css$)'; then
   printf '%s\n' "$staged" | grep -qx 'CHANGELOG.md' \
-    || fail "source files are staged but CHANGELOG.md is not. Add an entry (see CLAUDE.md step 3)."
-  git diff --cached -- manifest.json | grep -qE '^\+\s*"version"' \
-    || fail "source files are staged but manifest.json has no version bump. Run: node version-bump.mjs patch (or minor/major)."
+    || fail "source files are staged but CHANGELOG.md is not. Add an entry under ## [Unreleased] (see CLAUDE.md)."
+fi
+
+if git diff --cached -- manifest.json | grep -qE '^\+\s*"version"'; then
   version=$(node -p "require('./manifest.json').version")
-  top=$(grep -m1 -oE '^## \[[^]]+\]' CHANGELOG.md | tr -d '#[] ')
+  top=$(grep -m1 -oE '^## \[[0-9][^]]*\]' CHANGELOG.md | tr -d '#[] ')
   [ "$version" = "$top" ] \
-    || fail "manifest.json version ($version) does not match the top CHANGELOG.md entry ($top)."
+    || fail "manifest.json version ($version) does not match the newest released CHANGELOG.md entry ($top)."
 fi
 
 exit 0

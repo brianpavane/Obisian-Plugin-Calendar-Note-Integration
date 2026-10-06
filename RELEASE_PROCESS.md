@@ -2,130 +2,123 @@
 
 **Repository: `brianpavane/Obisian-Plugin-Calendar-Note-Integration`**
 
-> The version is bumped as part of the normal commit workflow (see `CLAUDE.md`),
-> so by release time `manifest.json` already holds the version to ship. All
-> commands below read it into a single `VERSION` variable — this file never
-> needs editing per release.
+> Routine commits do **not** change the version — they add entries under
+> `## [Unreleased]` in `CHANGELOG.md`. Cutting a release is what bumps the version.
 >
 > Users install and update through **BRAT**, which pulls `main.js`, `manifest.json`,
-> and `styles.css` from the latest GitHub release. A version pushed to `main` without
-> a matching release never reaches them, so release every version you push.
+> and `styles.css` from the latest GitHub release. Changes on `main` reach users
+> only once they are released.
 
 ---
 
-## Step 1 — Read the version
-
-```bash
-VERSION=$(node -p "require('./manifest.json').version")
-echo $VERSION
-```
-
-Run this in your terminal first. Every subsequent block uses `$VERSION`.
-
----
-
-## Step 2 — Pull latest main
+## Step 1 — Pull latest main and check what is unreleased
 
 ```bash
 git checkout main
 git pull origin main
+git status                                   # must be clean
+awk '/^## \[Unreleased\]/{f=1; next} f && /^---/{exit} f' CHANGELOG.md
 ```
+
+The last command prints the `[Unreleased]` changelog section. If it is empty, there is nothing to release.
 
 ---
 
-## Step 3 — Verify versions are consistent
+## Step 2 — Bump the version
+
+Choose the level from the unreleased changes (see the guide in `CLAUDE.md`):
 
 ```bash
-grep '"version"' manifest.json package.json
-cat versions.json
+node version-bump.mjs patch    # or minor / major
+VERSION=$(node -p "require('./manifest.json').version")
+echo $VERSION
 ```
 
-All three must show `$VERSION`. If any are out of sync, update them before continuing:
-
-| File | Field | Expected value |
-|---|---|---|
-| `manifest.json` | `"version"` | `$VERSION` |
-| `package.json` | `"version"` | `$VERSION` |
-| `versions.json` | new entry | `"$VERSION": "<minAppVersion from manifest.json>"` |
+This updates `manifest.json`, `package.json`, and `versions.json`, and renames
+`## [Unreleased]` in `CHANGELOG.md` to `## [$VERSION] – <today>`.
 
 ---
 
-## Step 4 — Build
+## Step 3 — Test and build
 
 ```bash
+npm test
 npm run build
 ```
 
-Must complete with no errors. The build date is injected automatically into `main.js`.
+Both must succeed. The build date is injected automatically into `main.js`.
 
 ---
 
-## Step 5 — Push main
-
-The version bump and changelog entry are already committed by the commit workflow.
+## Step 4 — Commit and push the release
 
 ```bash
-git status          # must be clean
+git add manifest.json package.json versions.json CHANGELOG.md
+git commit -m "chore: release $VERSION"
 git push origin main
 ```
 
 ---
 
-## Step 6 — Create and push the annotated tag
+## Step 5 — Create and push the annotated tag
 
 ```bash
 git tag -a $VERSION -m "Release $VERSION"
 git push origin $VERSION
-```
-
-Verify the tag is on the remote:
-
-```bash
-git ls-remote --tags origin | grep $VERSION
+git ls-remote --tags origin | grep $VERSION   # verify
 ```
 
 ---
 
-## Step 7 — Create the GitHub release
+## Step 6 — Create the GitHub release
 
 ```bash
 gh release create $VERSION \
   main.js manifest.json styles.css \
   --repo brianpavane/Obisian-Plugin-Calendar-Note-Integration \
+  --verify-tag \
   --title "$VERSION" \
   --notes "$(awk "/^## \[$VERSION\]/{found=1; next} found && /^---/{exit} found{print}" CHANGELOG.md)" \
   --latest
 ```
 
-> `gh` extracts the matching section from `CHANGELOG.md` automatically.
+> The notes are the `CHANGELOG.md` section for this version.
 
 ---
 
-## Step 8 — Confirm the release
+## Step 7 — Confirm the release
 
 ```bash
 gh release view $VERSION --repo brianpavane/Obisian-Plugin-Calendar-Note-Integration
 ```
 
+BRAT users get the update the next time Obsidian starts, or immediately via
+**BRAT: Check for updates to all beta plugins and UPDATE**.
+
 ---
 
-## Full sequence — copy entire block, set VERSION, paste
+## Full sequence — set LEVEL, paste
 
 ```bash
-# ── READ VERSION ─────────────────────────────────────────────────────────────
-VERSION=$(node -p "require('./manifest.json').version")
+# ── SET LEVEL ────────────────────────────────────────────────────────────────
+LEVEL=patch   # patch | minor | major
 
-# ── PULL & BUILD ─────────────────────────────────────────────────────────────
+# ── PULL ─────────────────────────────────────────────────────────────────────
 git checkout main
 git pull origin main
+git status
+
+# ── BUMP ─────────────────────────────────────────────────────────────────────
+node version-bump.mjs $LEVEL
+VERSION=$(node -p "require('./manifest.json').version")
+
+# ── TEST & BUILD ─────────────────────────────────────────────────────────────
+npm test
 npm run build
 
-# ── VERIFY VERSIONS ──────────────────────────────────────────────────────────
-grep '"version"' manifest.json package.json
-cat versions.json
-
-# ── PUSH ─────────────────────────────────────────────────────────────────────
-git status
+# ── COMMIT & PUSH ────────────────────────────────────────────────────────────
+git add manifest.json package.json versions.json CHANGELOG.md
+git commit -m "chore: release $VERSION"
 git push origin main
 
 # ── TAG ──────────────────────────────────────────────────────────────────────
@@ -136,6 +129,7 @@ git push origin $VERSION
 gh release create $VERSION \
   main.js manifest.json styles.css \
   --repo brianpavane/Obisian-Plugin-Calendar-Note-Integration \
+  --verify-tag \
   --title "$VERSION" \
   --notes "$(awk "/^## \[$VERSION\]/{found=1; next} found && /^---/{exit} found{print}" CHANGELOG.md)" \
   --latest
@@ -196,12 +190,12 @@ gh release upload $VERSION styles.css \
 | New feature, backwards-compatible | **minor** (Y) | 6.5.3 → 6.6.0 |
 | Breaking change, major rework | **major** (X) | 6.6.0 → 7.0.0 |
 
-Files updated on every bump (`node version-bump.mjs <level>` handles the first three):
+Files updated on every release bump (`node version-bump.mjs <level>` handles all four):
 
 1. `manifest.json` — `"version"`
 2. `package.json` — `"version"`
 3. `versions.json` — adds `"X.Y.Z": "<minAppVersion>"` entry
-4. `CHANGELOG.md` — add `## [X.Y.Z] – YYYY-MM-DD` section at top (manual)
+4. `CHANGELOG.md` — renames `## [Unreleased]` to `## [X.Y.Z] – YYYY-MM-DD`
 
 ---
 

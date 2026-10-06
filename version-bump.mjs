@@ -2,7 +2,9 @@
  * version-bump.mjs
  *
  * Bumps the plugin version across manifest.json, package.json, and
- * versions.json. The npm `version:*` scripts also stage those files.
+ * versions.json, and turns the `## [Unreleased]` heading in CHANGELOG.md into
+ * `## [X.Y.Z] – YYYY-MM-DD`. Run it only when cutting a release (see
+ * RELEASE_PROCESS.md). The npm `version:*` scripts also stage the JSON files.
  *
  * Usage:
  *   node version-bump.mjs patch   →  1.0.0 → 1.0.1
@@ -68,5 +70,19 @@ versions[newVersion] = minAppVersion;
 writeJson("manifest.json", manifest);
 writeJson("package.json",  pkg);
 writeJson("versions.json", versions);
+
+const changelog = readFileSync("CHANGELOG.md", "utf8");
+if (changelog.includes("## [Unreleased]")) {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const today = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  writeFileSync(
+    "CHANGELOG.md",
+    changelog.replace("## [Unreleased]", `## [${newVersion}] – ${today}`),
+    "utf8"
+  );
+} else {
+  console.warn("CHANGELOG.md has no ## [Unreleased] section — add the release entry by hand.");
+}
 
 console.log(`Bumped ${oldVersion} → ${newVersion}`);

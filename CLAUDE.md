@@ -11,7 +11,7 @@ Obsidian plugin that creates structured notes from calendar events. Written in T
 - `main.js` — compiled output (gitignored; uploaded as a GitHub release asset, not committed)
 - `manifest.json` — plugin metadata including version
 - `versions.json` — maps plugin version → minimum Obsidian app version
-- `version-bump.mjs` — bumps version across manifest.json, package.json, versions.json
+- `version-bump.mjs` — release-time bump of manifest.json, package.json, versions.json; stamps the `[Unreleased]` CHANGELOG heading
 - `CHANGELOG.md` — Keep a Changelog format, newest entry at top
 - `tests/` — test files consumed by `scripts/run-tests.mjs`
 
@@ -29,43 +29,37 @@ npm test
 
 All tests must pass. If any test fails, fix the failure before proceeding. Do not commit broken code.
 
-### 2. Bump the Patch Version
+### 2. Update CHANGELOG.md under `[Unreleased]`
 
-```bash
-node version-bump.mjs patch
-git add manifest.json versions.json package.json
-```
+Do **not** bump the version on routine commits — the version changes only when cutting a release (see `RELEASE_PROCESS.md`).
 
-This updates the version in `manifest.json`, `package.json`, and `versions.json`. Always use `patch` for routine commits. Use `minor` for new features, `major` for breaking changes. The pre-commit hook verifies the bump but never bumps the version itself.
-
-### 3. Update CHANGELOG.md
-
-Add a new entry at the top of `CHANGELOG.md` (below the header, above the previous release). Follow the existing format exactly:
+Add the change to the `## [Unreleased]` section at the top of `CHANGELOG.md` (below the header, above the newest release). If there is no `[Unreleased]` section, create one there. Follow the existing format:
 
 ```markdown
-## [X.Y.Z] – YYYY-MM-DD
+## [Unreleased]
 
 ### Fixed / Added / Changed / Removed
 
 **Short title for the change**
 One or two sentences describing what changed and why it matters to users.
+
+---
 ```
 
 Rules:
-- Use today's date.
-- Use the new version from step 2.
-- Group changes under the correct heading(s): `Fixed`, `Added`, `Changed`, `Removed`.
+- Merge into existing `###` groups in `[Unreleased]` rather than repeating headings.
+- Group changes under the correct heading(s): `Fixed`, `Added`, `Changed`, `Deprecated`, `Removed`.
 - Write each item as a **bolded title** followed by a plain-English description.
 - Be specific — describe behaviour change, not implementation detail.
 
-### 4. Update README.md (when behaviour changes)
+### 3. Update README.md (when behaviour changes)
 
 If the commit changes user-facing behaviour, settings, commands, or UI:
 - Update the relevant section(s) in `README.md`.
 - Keep the existing structure and formatting.
 - Do not add placeholder sections or TODOs.
 
-### 5. Stage and Commit
+### 4. Stage and Commit
 
 ```bash
 git add -p   # or add specific files
@@ -76,7 +70,9 @@ Commit message format: `type: summary` where type is `fix`, `feat`, `refactor`, 
 
 ---
 
-## Version Bump Level Guide
+## Version Bump Level Guide (at release time)
+
+Pick the level from everything in `[Unreleased]`: the highest-impact change wins.
 
 | Change type | Level | Example |
 |---|---|---|
