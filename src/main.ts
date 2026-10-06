@@ -17,6 +17,8 @@
  */
 
 import { normalizePath, Notice, Plugin, TFile } from "obsidian";
+import { DASHBOARD_CONTENT, DASHBOARD_FILENAME } from "./dashboard";
+import { currentOrNextMeeting, meetingToJoin, statusText } from "./meetingStatus";
 import {
   GoogleCalendarSettings,
   DEFAULT_SETTINGS,
@@ -29,6 +31,8 @@ import { EventSuggestModal } from "./eventModal";
 import {
   createNoteFile,
   findNotesByEventId,
+  joinUrl,
+  markNoteRemoved,
   resolveNoteFilePath,
   syncNoteFile,
   DailyNoteConfig,
@@ -41,6 +45,32 @@ import {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+/** Events read for one sync, plus what is needed to spot meetings that disappeared. */
+interface FetchResult {
+  /** Events to sync notes for: in the window, timed, not declined. */
+  events: CalendarEvent[];
+  /** Same filtering, but including meetings already in progress (for the status bar). */
+  live: CalendarEvent[];
+  /** IDs of every event the calendar returned across its whole date range, before any filtering. */
+  seenIds: Set<string>;
+  /** Calendars the fetch covered; undefined when the source can't tell. */
+  queriedCalendars?: string[];
+  timeMin: Date;
+  timeMax: Date;
+}
+
+/** How far back to look for meetings that are still in progress. */
+const IN_PROGRESS_LOOKBACK_MS = 12 * 60 * 60 * 1_000;
+/** "Join meeting" acts on a meeting starting within this long. */
+const JOIN_WINDOW_MS = 30 * 60 * 1_000;
+
+function frontmatterDate(value: unknown): Date | undefined {
+  if (value instanceof Date) return value;
+  if (typeof value !== "string") return undefined;
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? undefined : d;
 }
 
 function safeErrorMessage(err: unknown): string {
@@ -56,6 +86,10 @@ export default class GoogleCalendarPlugin extends Plugin {
   settings!: GoogleCalendarSettings;
 
   private startupTimeoutId: number | undefined;
+  private pollIntervalId: number | undefined;
+  private statusBarEl: HTMLElement | undefined;
+  private liveEvents: CalendarEvent[] = [];
+  private lastFetchFailed = false;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -84,16 +118,100 @@ export default class GoogleCalendarPlugin extends Plugin {
       callback: () => this.autoCreateUpcomingNotes(true),
     });
 
+    this.addCommand({
+      id: "join-meeting",
+      name: "Join current or next meeting",
+      callback: () => this.joinMeeting(),
+    });
+
+    this.addCommand({
+      id: "open-meetings-dashboard",
+      name: "Open meetings dashboard",
+      callback: () => this.openDashboard(),
+    });
+
     this.addSettingTab(new GoogleCalendarSettingTab(this.app, this));
 
-    this.startupTimeoutId = window.setTimeout(() => this.runStartupSweep(), 5_000);
+    this.statusBarEl = this.addStatusBarItem();
+    this.statusBarEl.addClass("cal-notes-status");
+    this.statusBarEl.setAttribute("aria-label", "Open the meeting note and join");
+    this.statusBarEl.onClickEvent(() => this.joinMeeting());
+    this.registerInterval(window.setInterval(() => this.updateStatusBar(), 30_000));
+    this.updateStatusBar();
 
-    this.registerInterval(
-      window.setInterval(
-        () => this.autoCreateUpcomingNotes(false),
-        this.settings.pollIntervalMinutes * 60 * 1_000
-      )
+    this.startupTimeoutId = window.setTimeout(() => this.runStartupSweep(), 5_000);
+    this.restartPolling();
+  }
+
+  /** Current time; a method so tests can pin it. */
+  now(): Date {
+    return new Date();
+  }
+
+  /** (Re)start the background poll with the current interval setting. */
+  restartPolling(): void {
+    if (this.pollIntervalId !== undefined) window.clearInterval(this.pollIntervalId);
+    this.pollIntervalId = window.setInterval(
+      () => this.autoCreateUpcomingNotes(false),
+      this.settings.pollIntervalMinutes * 60 * 1_000
     );
+    this.registerInterval(this.pollIntervalId);
+  }
+
+  /** Show the meeting in progress or coming up next in the status bar. */
+  updateStatusBar(): void {
+    if (!this.statusBarEl) return;
+    const meeting = this.settings.showStatusBar
+      ? currentOrNextMeeting(this.liveEvents, this.now())
+      : undefined;
+    if (!meeting) {
+      this.statusBarEl.setText("");
+      this.statusBarEl.hide();
+      return;
+    }
+    this.statusBarEl.setText(statusText(meeting, this.now()));
+    this.statusBarEl.show();
+  }
+
+  /**
+   * Open the note for the meeting in progress (or starting within 30 minutes),
+   * creating it if needed, and open its join link.
+   */
+  async joinMeeting(): Promise<void> {
+    if (!this.isConfigured()) {
+      new Notice("Calendar Notes: Please configure your calendar in the plugin settings.");
+      return;
+    }
+    const fetched = await this.fetchAndFilterEvents(true);
+    if (!fetched) return;
+
+    const meeting = meetingToJoin(fetched.live, this.now(), JOIN_WINDOW_MS);
+    if (!meeting) {
+      new Notice("Calendar Notes: No meeting in progress or starting in the next 30 minutes.");
+      return;
+    }
+
+    await this.createAndOpenNote(meeting.event);
+    const url = joinUrl(meeting.event);
+    if (url) {
+      window.open(url);
+    } else {
+      new Notice(`Calendar Notes: "${meeting.event.summary ?? "This meeting"}" has no join link.`);
+    }
+  }
+
+  /** Open the meetings dashboard (a Bases file), creating it on first use. */
+  async openDashboard(): Promise<void> {
+    const folder = this.settings.noteFolder.trim() ? normalizePath(this.settings.noteFolder.trim()) : "";
+    const path = normalizePath(folder ? `${folder}/${DASHBOARD_FILENAME}` : DASHBOARD_FILENAME);
+    let file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) {
+      if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
+        await this.app.vault.createFolder(folder);
+      }
+      file = await this.app.vault.create(path, DASHBOARD_CONTENT);
+    }
+    await this.app.workspace.getLeaf(false).openFile(file as TFile);
   }
 
   /**
@@ -116,6 +234,9 @@ export default class GoogleCalendarPlugin extends Plugin {
   onunload(): void {
     if (this.startupTimeoutId !== undefined) {
       window.clearTimeout(this.startupTimeoutId);
+    }
+    if (this.pollIntervalId !== undefined) {
+      window.clearInterval(this.pollIntervalId);
     }
   }
 
@@ -154,6 +275,9 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
     if (typeof merged.linkAttendees !== "boolean") {
       merged.linkAttendees = DEFAULT_SETTINGS.linkAttendees;
+    }
+    if (typeof merged.showStatusBar !== "boolean") {
+      merged.showStatusBar = DEFAULT_SETTINGS.showStatusBar;
     }
     if (typeof merged.dailyNoteLink !== "boolean") {
       merged.dailyNoteLink = DEFAULT_SETTINGS.dailyNoteLink;
@@ -237,12 +361,11 @@ export default class GoogleCalendarPlugin extends Plugin {
         .map((s) => s.trim())
         .filter(Boolean);
       // daysBack = 0 when past events disabled → JXA windowStart = today.
-      const daysBack  = this.settings.includePastEvents ? this.settings.daysBack : 0;
-      const daysAhead = this.settings.daysAhead;
-      const timeoutMs    = (this.settings.appleTimeoutSeconds ?? DEFAULT_SETTINGS.appleTimeoutSeconds) * 1000;
-      const skipTier3    = this.settings.appleSkipTier3 ?? false;
-      const maxTier3Scan = this.settings.appleMaxTier3Scan ?? DEFAULT_SETTINGS.appleMaxTier3Scan;
-      return CalendarService.fromApple(calendarFilter, daysBack, daysAhead, timeoutMs, skipTier3, maxTier3Scan);
+      // At least yesterday, so meetings still in progress are included.
+      const daysBack  = this.settings.includePastEvents ? this.settings.daysBack : 1;
+      // Cover both the event picker's range and the auto-create window.
+      const daysAhead = Math.max(this.settings.daysAhead, Math.ceil(this.settings.hoursInAdvance / 24) + 1);
+      return CalendarService.fromApple(calendarFilter, daysBack, daysAhead);
     }
     return CalendarService.fromIcal(decrypt(this.settings.icalUrl));
   }
@@ -340,33 +463,83 @@ export default class GoogleCalendarPlugin extends Plugin {
   private static readonly TRIM_PROCESSED_IDS = 4_000;
 
   /**
-   * Fetch and filter events for the configured time window.
-   * Returns null if not configured or if the fetch fails.
+   * Fetch and filter events for the configured time window, and refresh the
+   * status bar. Returns null if not configured or if the fetch fails. A
+   * failed background fetch shows one notice until a fetch succeeds again.
    */
-  private async fetchAndFilterEvents(verbose: boolean): Promise<CalendarEvent[] | null> {
+  private async fetchAndFilterEvents(verbose: boolean): Promise<FetchResult | null> {
     if (!this.isConfigured()) return null;
 
-    const now = new Date();
+    const now = this.now();
     const timeMin = this.settings.includePastEvents
       ? new Date(now.getTime() - this.settings.daysBack * 24 * 60 * 60 * 1_000)
       : now;
     const timeMax = new Date(
       now.getTime() + this.settings.hoursInAdvance * 60 * 60 * 1_000
     );
+    const fetchMin = new Date(Math.min(timeMin.getTime(), now.getTime() - IN_PROGRESS_LOOKBACK_MS));
 
-    let events: CalendarEvent[];
+    let raw: CalendarEvent[];
+    let queriedCalendars: string[] | undefined;
+    let fetchedIds: Set<string> | undefined;
     try {
       const svc = await this.getCalendarService();
-      events = await svc.listEventsInTimeWindow(timeMin, timeMax);
+      raw = await svc.listEventsInTimeWindow(fetchMin, timeMax);
+      queriedCalendars = svc.queriedCalendars();
+      fetchedIds = svc.fetchedEventIds();
     } catch (err) {
-      if (verbose) new Notice(`Calendar Notes: ${safeErrorMessage(err)}`);
+      if (verbose) {
+        new Notice(`Calendar Notes: ${safeErrorMessage(err)}`);
+      } else if (!this.lastFetchFailed) {
+        new Notice(`Calendar Notes: couldn't read your calendar — ${safeErrorMessage(err)}`, 10_000);
+      }
+      this.lastFetchFailed = true;
       return null;
     }
+    this.lastFetchFailed = false;
 
-    events = this.filterOutAllDay(events);
-    events = this.filterDeclinedEvents(events);
-    events = this.markSelfAttendee(events);
-    return events;
+    let filtered = this.filterOutAllDay(raw);
+    filtered = this.filterDeclinedEvents(filtered);
+    filtered = this.markSelfAttendee(filtered);
+
+    const live = filtered.filter((e) => !e.cancelled);
+    this.liveEvents = live;
+    this.updateStatusBar();
+
+    return {
+      events: filtered.filter((e) => new Date(e.start.dateTime ?? "") >= timeMin),
+      live,
+      seenIds: fetchedIds ?? new Set(raw.map((e) => e.id)),
+      queriedCalendars,
+      timeMin,
+      timeMax,
+    };
+  }
+
+  /**
+   * Mark notes whose meeting has disappeared from the calendar. Only notes
+   * that start inside the window just fetched and belong to a calendar that
+   * was read are considered, so a deselected or renamed calendar never marks
+   * its notes removed.
+   */
+  private async markRemovedMeetings(fetched: FetchResult, notesById: Map<string, TFile>): Promise<number> {
+    if (!fetched.queriedCalendars) return 0;
+    const calendars = new Set(fetched.queriedCalendars);
+    let removed = 0;
+    for (const [id, file] of notesById) {
+      if (fetched.seenIds.has(id)) continue;
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      if (!fm || fm.status === "removed" || fm.status === "cancelled") continue;
+      if (typeof fm.calendar !== "string" || !calendars.has(fm.calendar)) continue;
+      const start = frontmatterDate(fm.start);
+      if (!start || start < fetched.timeMin || start > fetched.timeMax) continue;
+      try {
+        if (await markNoteRemoved(this.app, file)) removed++;
+      } catch (err) {
+        console.warn("[CalendarNoteIntegration] Failed to mark note removed:", err);
+      }
+    }
+    return removed;
   }
 
   /** Trim processedEventIds if it exceeds the cap, then persist. */
@@ -393,8 +566,9 @@ export default class GoogleCalendarPlugin extends Plugin {
    * Returns false if the calendar could not be read.
    */
   private async syncNotes(verbose: boolean, recreateDeleted: boolean): Promise<boolean> {
-    const events = await this.fetchAndFilterEvents(verbose);
-    if (!events) return false;
+    const fetched = await this.fetchAndFilterEvents(verbose);
+    if (!fetched) return false;
+    const events = fetched.events;
 
     const processedSet = new Set(this.settings.processedEventIds);
     const markProcessed = (id: string) => {
@@ -429,12 +603,15 @@ export default class GoogleCalendarPlugin extends Plugin {
       }
     }
 
+    const removed = await this.markRemovedMeetings(fetched, notesById);
+
     await this.trimAndSaveProcessedIds();
 
     const plural = (n: number, word: string) => `${n} ${word}${n !== 1 ? "s" : ""}`;
     const parts = [
       ...(created > 0 ? [`created ${plural(created, "note")}`] : []),
       ...(updated > 0 ? [`updated ${plural(updated, "note")}`] : []),
+      ...(removed > 0 ? [`marked ${plural(removed, "note")} removed from calendar`] : []),
     ];
     if (parts.length > 0) {
       const message = parts.join(", ");

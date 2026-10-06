@@ -60,3 +60,11 @@
   color: var(--interactive-accent);
   font-weight: 600;
 }
+
+/* ----------------------------------------------------------
+   Status bar
+   ---------------------------------------------------------- */
+
+.cal-notes-status {
+  cursor: pointer;
+}

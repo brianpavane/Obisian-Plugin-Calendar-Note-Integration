@@ -19,6 +19,8 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 - **Recurring meetings** — every occurrence gets its own note
 - **Your own template** — point the plugin at a template note with placeholders, or use the built-in format
 - **Daily-note links** — each meeting links to that day's daily note, so the day's meetings appear in its backlinks
+- **Next meeting in the status bar** — click it, or run **Join current or next meeting**, to open the note and join
+- **Meetings dashboard** — a ready-made Bases view of upcoming and recent meetings
 - **Declined event filtering** — events you have declined are skipped, when the calendar identifies you as an attendee or your email address is set
 - **All-day event filtering** — all-day events (holidays, OOO blocks) are skipped
 - **Configurable time window** — look ahead 1–48 hours; optionally include past events
@@ -58,36 +60,19 @@ Open **Settings → Calendar Note Integration - Apple-iCal-Google**. **Calendar 
 
 ### Apple Calendar (macOS) — recommended
 
-Reads events directly from **Calendar.app** using Apple's **EventKit** framework — no API keys, no OAuth, no Google Cloud project required. All accounts synced to Calendar.app are available: Google CalDAV, iCloud, Exchange/Office 365, and local calendars.
+Reads events from the calendars on your Mac using Apple's **EventKit** framework — no API keys, no OAuth, no Google Cloud project required. Every account synced to Calendar.app is available: iCloud, Google, Exchange/Office 365, and local calendars. EventKit reads the Mac's local calendar store, so each check takes well under a second and makes no network requests.
 
 **Required permission:**
-1. The first time the plugin runs, macOS will prompt:
+1. The first time the plugin reads your calendars, macOS asks:
    *"Obsidian would like to access your Calendar data"*
-2. Click **OK**. If you missed it, go to **System Settings → Privacy & Security → Calendars** and set Obsidian to **Full Calendar Access**.
+2. Click **OK**. If you missed it, go to **System Settings → Privacy & Security → Calendars** and set Obsidian to **Full Calendar Access** (not **Add Only**), then restart Obsidian.
 
-**How event fetching works:**
-
-The plugin uses a tiered strategy, always trying the fastest approach first:
-
-| Tier | Method | Notes |
-|------|--------|-------|
-| **EventKit global** *(primary)* | `EKEventStore` via ObjC — single call, all calendars | Reads local SQLite cache, no network. < 100 ms. |
-| Tier 1 | `app.eventsFrom()` — Calendar.app scripting bridge | Fast for some configurations |
-| Tier 2 | `cal.eventsFrom()` with NSDate — per calendar | CalDAV/Exchange date-range query |
-| Tier 2.5 | `whose`-predicate filter | Exchange fallback |
-| Tier 2.75 | Bulk `events.startDate()` fetch | Large Exchange calendars |
-| Tier 3 | Lazy indexed `events[j]` scan | Last resort |
-
-For most users, **EventKit global** handles everything in a single call and the remaining tiers are never reached.
-
-**Apple Calendar Settings:**
+**Apple Calendar settings:**
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Calendars to include | *(all)* | Toggle the specific calendars to create notes from; turning all on (or all off) includes every calendar |
-| Timeout per calendar | 30 s | Seconds to wait per calendar in fallback tiers (15–300 s) |
-| Max events for last-resort scan | 250 | Upper bound for Tier 3 fallback (50–2000) |
-| Skip full scan | Off | Disable Tier 3 entirely for very large Exchange calendars |
+| Run diagnostics | — | Checks calendar access, lists your calendars, and reads the next 7 days of events |
 
 ### Google Calendar — iCal URL (deprecated)
 
@@ -128,13 +113,14 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 |---------|---------|-------------|
 | Note folder | Meeting Notes | Vault-relative folder for created notes |
 | Hours in advance | 12 | Create notes for events starting within this many hours (1–48) |
-| Poll interval | 30 min | How often to check for new upcoming events (5–120); takes effect after restart |
+| Poll interval | 30 min | How often to check for new upcoming events (5–120) |
 | Include past events | Off | Also create notes for events that have already started |
 | Days back | 1 | How many days back to look when past events are enabled (1–30) |
 | Include event description | On | Add the event's description to the Agenda section of new notes |
 | Link attendees | Off | Write the organizer and attendees as `[[Name]]` links instead of plain names and emails |
 | Template file | *(built-in)* | A note to use as the template for new meeting notes — see [Custom templates](#custom-templates) |
 | Link to daily note | On | Link each meeting note to that day's daily note, using your Daily Notes format and folder |
+| Show next meeting in status bar | On | Show the meeting in progress or coming up next at the bottom of the window; click it to join |
 | Date position in filename | Before | `2026-01-15 - Meeting Name.md` or `Meeting Name - 2026-01-15.md` |
 
 ### Calendar View (event picker)
@@ -286,7 +272,9 @@ The plugin never edits daily notes, and the link moves with the meeting if it is
 
 Every poll, Refresh, and Rebuild updates the notes of meetings in the time window. The plugin only rewrites the calendar properties listed above (title, date, daily note, start, end, calendar, organizer, attendees, location, meeting link, status, and event ID) and the **Meeting details** box. Everything else in the note — your writing, extra properties, and tags you add — is never changed.
 
-If a meeting moves to another day, its note is renamed to the new date (a title you edited in the filename is kept). Notes created by versions before 6.7 get their properties updated but keep their original layout.
+If a meeting moves to another day, its note is renamed to the new date (a title you edited in the filename is kept).
+
+If a meeting disappears from Apple Calendar (deleted rather than cancelled), its note is marked `status: removed` with a red **Meeting removed from calendar** box. This only happens for meetings in the time window and from calendars the plugin read, so turning a calendar off never marks its notes. If the meeting comes back — for example it was moved more than a week out and is now back in range — the next sync restores the note. Notes created by versions before 6.7 get their properties updated but keep their original layout.
 
 ---
 
@@ -297,8 +285,18 @@ If a meeting moves to another day, its note is renamed to the new date (a title 
 | **Create note from calendar event** | Opens a fuzzy-search modal to pick any upcoming event |
 | **Create note for next upcoming event** | Immediately creates and opens a note for the next upcoming event |
 | **Auto-create notes for events in the next N hours** | Runs the same sweep as the background poll right away (N = **Hours in advance**) |
+| **Join current or next meeting** | Opens the note for the meeting in progress (or starting within 30 minutes), creating it if needed, and opens its join link |
+| **Open meetings dashboard** | Opens `Meetings.base` in your meeting-notes folder (created on first use) |
 
 The ribbon icon (calendar icon, left sidebar) opens the same event picker as **Create note from calendar event**.
+
+### Status bar
+
+The status bar at the bottom of the window shows the meeting in progress (*Now: Standup · ends in 10 min*) or the next one (*Next: Design Review in 25 min*, *at 3:00 PM*, or *tomorrow at 9:00 AM*). Click it to open the meeting's note and join link. Turn it off with **Show next meeting in status bar**.
+
+### Meetings dashboard
+
+**Open meetings dashboard** creates a [Bases](https://obsidian.md/help/bases) file (Obsidian 1.9 or later) listing every meeting note, with **Next 7 days**, **Last 7 days**, and **All meetings** views grouped by day. It is an ordinary `.base` file — edit its columns, filters, and views like any other base.
 
 ---
 
@@ -307,15 +305,10 @@ The ribbon icon (calendar icon, left sidebar) opens the same event picker as **C
 ### Apple Calendar — no events found
 
 1. Run **Settings → Apple Calendar → Run Diagnostics** to identify the issue
-2. Verify Obsidian has **Full Calendar Access** in **System Settings → Privacy & Security → Calendars**
-3. Make sure Calendar.app is open and the relevant calendars are synced and enabled
+2. Verify Obsidian has **Full Calendar Access** in **System Settings → Privacy & Security → Calendars**, then restart Obsidian
+3. Open Calendar.app and check the meeting appears there — the plugin sees exactly what Calendar.app has synced
 
-### Apple Calendar — timeout or slow
-
-The **EventKit global** path (primary) reads the local cache and is not expected to time out. If it falls through to the Calendar.app scripting bridge:
-- Open Calendar.app and wait for it to finish syncing, then retry
-- Increase **Timeout** in Settings → Apple Calendar → Advanced
-- For very large Exchange calendars, enable **Skip full scan**
+If the plugin can't read your calendar during a background check, it shows one notice and keeps retrying; the notice appears again only after a later failure that follows a success.
 
 ### Notes not being created
 

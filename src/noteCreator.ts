@@ -412,7 +412,7 @@ function managedFrontmatter(
   ];
 }
 
-const DETAILS_CALLOUT_RE = /^> \[!(info|danger)\] Meeting (details|cancelled)\s*$/;
+const DETAILS_CALLOUT_RE = /^> \[!(info|danger)\] Meeting (details|cancelled|removed from calendar)\s*$/;
 
 function renderDetailsCallout(event: CalendarEvent, options: SyncOptions): string[] {
   const timing = getEventTiming(event);
@@ -629,6 +629,34 @@ export function updateNoteContent(
   }
 
   return newFrontmatter + bodyLines.join("\n");
+}
+
+/** HTTPS join URL for the event's video meeting, if it has one. */
+export function joinUrl(event: CalendarEvent): string | undefined {
+  return meetingLink(event)?.url;
+}
+
+/**
+ * Mark a note whose meeting is no longer in the calendar: `status: removed`
+ * and a "Meeting removed from calendar" box. The next sync that sees the
+ * meeting again restores both. Returns true if the note changed.
+ */
+export async function markNoteRemoved(app: App, file: TFile): Promise<boolean> {
+  const mark = (content: string): string => {
+    const parsed = parseFrontmatter(content);
+    if (!parsed) return content;
+    applyManagedFrontmatter(parsed.blocks, [["status", ["status: removed"]]]);
+    const body = parsed.rest
+      .split("\n")
+      .map((line) => (DETAILS_CALLOUT_RE.test(line.replace(/\r$/, "")) ? "> [!danger] Meeting removed from calendar" : line))
+      .join("\n");
+    return `---\n${parsed.blocks.flatMap((b) => b.lines).join("\n")}\n---${parsed.end}${body}`;
+  };
+
+  const current = await app.vault.read(file);
+  if (mark(current) === current) return false;
+  await app.vault.process(file, mark);
+  return true;
 }
 
 /** Calendar date (YYYY-MM-DD) used for the event's filename and `date` property. */

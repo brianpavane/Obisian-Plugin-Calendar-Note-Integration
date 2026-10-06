@@ -264,20 +264,26 @@ export class CalendarService {
     );
   }
 
-  static fromApple(
-    calendarFilter: string[] = [],
-    daysBack = 0,
-    daysAhead = 30,
-    timeoutMs?: number,
-    skipTier3?: boolean,
-    maxTier3Scan?: number
-  ): CalendarService {
+  static fromApple(calendarFilter: string[] = [], daysBack = 0, daysAhead = 30): CalendarService {
     return new CalendarService(
       undefined,
       undefined,
-      new AppleCalendarApi(calendarFilter, daysBack, daysAhead, timeoutMs, skipTier3, maxTier3Scan),
+      new AppleCalendarApi(calendarFilter, daysBack, daysAhead),
       ""
     );
+  }
+
+  /**
+   * Calendars covered by the last fetch, when the source can tell (Apple
+   * Calendar only). Undefined means the source cannot say which calendars it read.
+   */
+  queriedCalendars(): string[] | undefined {
+    return this.appleApi?.queriedCalendars;
+  }
+
+  /** IDs of every event the last fetch returned across its whole date range (Apple Calendar only). */
+  fetchedEventIds(): Set<string> | undefined {
+    return this.appleApi?.fetchedIds;
   }
 
   async fetchAllEvents(): Promise<CalendarEvent[]> {

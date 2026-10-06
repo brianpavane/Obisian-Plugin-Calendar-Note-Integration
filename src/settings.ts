@@ -4,7 +4,7 @@
  * tab UI for Calendar Note Integration - Apple-iCal-Google.
  *
  * Supports three authentication modes:
- *   - "apple" — Apple Calendar on macOS via EventKit/JXA (primary, no auth required)
+ *   - "apple" — Apple Calendar on macOS via EventKit (primary, no auth required)
  *   - "ical"  — iCal secret URL (deprecated)
  *   - "oauth" — Google OAuth 2.0 via REST API (deprecated)
  */
@@ -49,14 +49,12 @@ export interface GoogleCalendarSettings {
   includeEventNotes: boolean;
   linkAttendees: boolean;
   dailyNoteLink: boolean;
+  showStatusBar: boolean;
   /** Vault path of a template note; empty = built-in template. */
   templatePath: string;
   datePosition: "before" | "after";
   daysAhead: number;
   maxEvents: number;
-  appleTimeoutSeconds: number;
-  appleSkipTier3: boolean;
-  appleMaxTier3Scan: number;
   /** IDs of events that have already been processed (note created or skipped). */
   processedEventIds: string[];
   /** Plugin version of the last completed startup sweep; a change triggers a rebuild. */
@@ -82,13 +80,11 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   includeEventNotes: true,
   linkAttendees: false,
   dailyNoteLink: true,
+  showStatusBar: true,
   templatePath: "",
   datePosition: "before",
   daysAhead: 7,
   maxEvents: 20,
-  appleTimeoutSeconds: 30,
-  appleSkipTier3: false,
-  appleMaxTier3Scan: 250,
   processedEventIds: [],
   lastRunVersion: "",
 };
@@ -426,14 +422,14 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
       containerEl.createEl("h3", { text: "Apple Calendar" });
 
       containerEl.createEl("p", {
-        text: "Events are read directly from Calendar.app on this Mac. " +
-          "All accounts already synced in Calendar.app (Google, iCloud, Exchange) " +
-          "are available — no extra authentication needed.",
+        text: "Events are read from the calendars on this Mac (the ones Calendar.app shows). " +
+          "All accounts synced to Calendar.app (iCloud, Google, Exchange) are available — " +
+          "no extra sign-in needed.",
       });
       containerEl.createEl("p", {
         text: "Required permission: System Settings → Privacy & Security → Calendars → " +
-          "set Obsidian to Full Calendar Access (not Add Only). " +
-          "Add Only access cannot read events and will cause timeouts.",
+          "set Obsidian to Full Calendar Access (not Add Only). macOS asks the first time " +
+          "the plugin reads your calendars.",
       });
 
       containerEl.createEl("h4", { text: "Calendar Selection" });
@@ -442,7 +438,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
       });
 
       const calContainer = containerEl.createDiv();
-      const loadingEl = calContainer.createEl("p", { text: "Loading calendars from Calendar.app…" });
+      const loadingEl = calContainer.createEl("p", { text: "Loading calendars…" });
       loadingEl.style.fontStyle = "italic";
 
       listAppleCalendars()
@@ -476,7 +472,9 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           };
 
           for (const cal of calendars) {
-            new Setting(calContainer).setName(cal.name).addToggle((toggle) => {
+            const row = new Setting(calContainer).setName(cal.name);
+            if (cal.account) row.setDesc(cal.account);
+            row.addToggle((toggle) => {
               toggleMap.set(cal.name, toggle);
               toggle
                 .setValue(allSelected || selectedSet.has(cal.name))
@@ -506,15 +504,18 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
       new Setting(containerEl)
         .setName("Run diagnostics")
         .setDesc(
-          "Three-step check: JXA execution → list calendars → short event fetch. " +
-          "Results are shown here and also logged in detail to the developer console " +
-          "(Ctrl+Shift+I → Console tab). Run this first if Test hangs."
+          "Three-step check: run a script → check calendar access and list calendars → " +
+          "read the next 7 days of events. Run this first if notes are not being created."
         )
         .addButton((button) =>
           button.setButtonText("Run Diagnostics").onClick(async () => {
             button.setButtonText("Running…").setDisabled(true);
             try {
-              const report = await runAppleCalendarDiagnostic();
+              const filter = this.plugin.settings.appleCalendars
+                .split(",")
+                .map((n) => n.trim())
+                .filter(Boolean);
+              const report = await runAppleCalendarDiagnostic(filter);
               new DiagnosticModal(this.app, report).open();
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
@@ -527,7 +528,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
 
       new Setting(containerEl)
         .setName("Test connection")
-        .setDesc("Fetch upcoming events from Calendar.app to verify access is working.")
+        .setDesc("Read upcoming events from the selected calendars to verify access is working.")
         .addButton((button) =>
           button.setButtonText("Test").setCta().onClick(async () => {
             button.setButtonText("Testing…").setDisabled(true);
@@ -535,7 +536,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
               const svc = await this.plugin.getCalendarService();
               const events = await svc.fetchAllEvents();
               new Notice(
-                `✓ Connected! Found ${events.length} upcoming event${events.length !== 1 ? "s" : ""} in Calendar.app.`,
+                `✓ Connected! Found ${events.length} upcoming event${events.length !== 1 ? "s" : ""}.`,
                 5000
               );
             } catch (err) {
@@ -545,72 +546,6 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
               button.setButtonText("Test").setDisabled(false);
             }
           })
-        );
-
-      containerEl.createEl("h4", { text: "Advanced" });
-
-      new Setting(containerEl)
-        .setName("Timeout per calendar (seconds)")
-        .setDesc(
-          "How long to wait for Calendar.app to respond per calendar before giving up. " +
-          "Google CalDAV calendars now use a fast date-range query (Tier 2 NSDate) that " +
-          "typically completes in under 10 s — increase this only if you still see timeouts. (15–300)"
-        )
-        .addText((text) => {
-          text.inputEl.type = "number";
-          text.inputEl.min = "15";
-          text.inputEl.max = "300";
-          text.inputEl.step = "15";
-          text.inputEl.style.width = "80px";
-          text
-            .setValue(String(this.plugin.settings.appleTimeoutSeconds))
-            .onChange(async (value) => {
-              const num = parseInt(value, 10);
-              if (!isNaN(num) && num >= 15 && num <= 300) {
-                this.plugin.settings.appleTimeoutSeconds = num;
-                await this.plugin.saveSettings();
-              }
-            });
-        });
-
-      new Setting(containerEl)
-        .setName("Max events for last-resort scan (Tier 3)")
-        .setDesc(
-          "If all faster strategies fail, the plugin scans the newest N events individually. " +
-          "Lower values reduce timeout risk; higher values increase the chance of finding events " +
-          "on very large calendars. Tier 2.75 (bulk date fetch) is tried first and is much faster. (50–2000)"
-        )
-        .addText((text) => {
-          text.inputEl.type = "number";
-          text.inputEl.min = "50";
-          text.inputEl.max = "2000";
-          text.inputEl.step = "50";
-          text.inputEl.style.width = "80px";
-          text
-            .setValue(String(this.plugin.settings.appleMaxTier3Scan))
-            .onChange(async (value) => {
-              const num = parseInt(value, 10);
-              if (!isNaN(num) && num >= 50 && num <= 2000) {
-                this.plugin.settings.appleMaxTier3Scan = num;
-                await this.plugin.saveSettings();
-              }
-            });
-        });
-
-      new Setting(containerEl)
-        .setName("Skip full-scan fallback (Tier 3)")
-        .setDesc(
-          "When enabled, calendars that fail the fast fetch strategies are skipped instead of " +
-          "running a slow full event scan. Prevents timeouts on large Exchange calendars if you " +
-          "do not need events from that specific calendar."
-        )
-        .addToggle((toggle) =>
-          toggle
-            .setValue(this.plugin.settings.appleSkipTier3)
-            .onChange(async (value) => {
-              this.plugin.settings.appleSkipTier3 = value;
-              await this.plugin.saveSettings();
-            })
         );
     }
 
@@ -672,7 +607,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Poll interval (minutes)")
-      .setDesc("How often the plugin checks for new events. Takes effect after restart. (5–120)")
+      .setDesc("How often the plugin checks for new events. (5–120)")
       .addText((text) => {
         text.inputEl.type = "number";
         text.inputEl.min = "5";
@@ -686,6 +621,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
             if (!isNaN(num) && num >= 5 && num <= 120) {
               this.plugin.settings.pollIntervalMinutes = num;
               await this.plugin.saveSettings();
+              this.plugin.restartPolling();
             }
           });
       });
@@ -757,6 +693,22 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.linkAttendees = value;
             await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Show next meeting in status bar")
+      .setDesc(
+        "Show the meeting in progress or coming up next at the bottom of the window. " +
+          "Click it to open the meeting's note and join link."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showStatusBar)
+          .onChange(async (value) => {
+            this.plugin.settings.showStatusBar = value;
+            await this.plugin.saveSettings();
+            this.plugin.updateStatusBar();
           })
       );
 

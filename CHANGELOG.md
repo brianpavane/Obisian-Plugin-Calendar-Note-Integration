@@ -7,6 +7,48 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+**Next meeting in the status bar**
+The status bar shows the meeting in progress ("Now: Standup · ends in 10 min") or the next one ("Next: Design Review in 25 min"). Click it to open the meeting's note and join link. Turn it off with **Show next meeting in status bar**.
+
+**Join current or next meeting command**
+Opens the note for the meeting in progress, or starting within 30 minutes, creating it if needed, and opens its join link in one step.
+
+**Meetings dashboard**
+The **Open meetings dashboard** command creates `Meetings.base` in your meeting-notes folder: a Bases view (Obsidian 1.9+) of every meeting note with Next 7 days, Last 7 days, and All meetings views grouped by day.
+
+**Notes of deleted meetings are marked**
+When a meeting disappears from Apple Calendar, its note gets `status: removed` and a red "Meeting removed from calendar" box. Only meetings in the time window from calendars the plugin read are affected, and the note is restored if the meeting reappears.
+
+### Changed
+
+**Poll interval applies immediately**
+Changing **Poll interval** no longer needs an Obsidian restart.
+
+**Background sync failures are shown**
+If a background check can't read your calendar, a notice explains why (for example missing calendar permission). It appears once, not on every poll, until a check succeeds again.
+
+**Apple Calendar reads through EventKit only**
+The Calendar.app scripting fallbacks (Tiers 1–3) are removed; EventKit reads every calendar from the Mac's local store in one fast call. If calendar access hasn't been decided yet, the plugin asks macOS for it; if access is denied or "Add Only", the error says how to fix it. **Run Diagnostics** now checks access, lists calendars with their accounts, and reads the next 7 days.
+
+**Meetings already in progress are included**
+Each sync also reads meetings that started earlier but haven't ended, for the status bar and the Join command.
+
+### Removed
+
+**Calendar.app fallback settings**
+"Timeout per calendar", "Max events for last-resort scan", and "Skip full-scan fallback" are removed along with the fallbacks they controlled.
+
+### Fixed
+
+**Meetings near the end of the time window were sometimes missed**
+With **Days ahead to fetch** set lower than **Hours in advance** covers, Apple Calendar was not read far enough ahead. It now always covers the whole auto-create window.
+
+---
+
 ## [6.8.0] – 2026-10-06
 
 ### Added
