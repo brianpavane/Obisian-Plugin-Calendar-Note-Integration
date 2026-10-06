@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.6.1] – 2026-10-06
+
+### Changed
+
+**Install with BRAT**
+The README now recommends installing the plugin with BRAT (by TfTHacker), which installs it from GitHub releases and keeps it updated automatically. Manual installation remains documented as an alternative.
+
+---
+
 ## [6.6.0] – 2026-10-06
 
 ### Changed

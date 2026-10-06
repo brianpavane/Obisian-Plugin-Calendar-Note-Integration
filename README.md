@@ -26,11 +26,25 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 
 ## Installation
 
-The plugin is not listed in the Obsidian Community Plugins directory. Install it manually:
+The plugin is not listed in the Obsidian Community Plugins directory. Install it with **BRAT**, which installs plugins straight from their GitHub releases and keeps them updated.
+
+### With BRAT (recommended)
+
+1. In Obsidian, open **Settings → Community plugins → Browse**, search for **BRAT** (by TfTHacker), then click **Install** and **Enable**
+2. Open the command palette (Cmd+P) and run **BRAT: Add a beta plugin for testing**
+3. Enter the repository URL: `https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration`
+4. Choose the latest version and click **Add Plugin**
+5. Enable **Calendar Note Integration - Apple-iCal-Google** under **Settings → Community plugins**
+
+BRAT checks for new releases when Obsidian starts. To update immediately, run **BRAT: Check for updates to all beta plugins and UPDATE** from the command palette.
+
+### Manual installation
 
 1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration/releases/latest)
 2. Copy all three files to `<vault>/.obsidian/plugins/calendar-note-integration/`
 3. Reload Obsidian and enable the plugin under **Settings → Community plugins**
+
+Manual installs do not update automatically.
 
 ---
 

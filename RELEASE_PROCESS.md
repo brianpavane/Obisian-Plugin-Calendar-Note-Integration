@@ -6,6 +6,10 @@
 > so by release time `manifest.json` already holds the version to ship. All
 > commands below read it into a single `VERSION` variable — this file never
 > needs editing per release.
+>
+> Users install and update through **BRAT**, which pulls `main.js`, `manifest.json`,
+> and `styles.css` from the latest GitHub release. A version pushed to `main` without
+> a matching release never reaches them, so release every version you push.
 
 ---
 
