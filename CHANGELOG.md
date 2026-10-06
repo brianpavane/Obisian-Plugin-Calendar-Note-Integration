@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+**Plugin description matches the plugin**
+The description shown in Obsidian's plugin list no longer mentions Google Calendar, iCal feeds, or the old Summary and Actions sections; it now describes Apple Calendar meeting notes with a join link and the current sections.
+
+---
+
 ## [6.9.0] – 2026-10-06
 
 ### Added
