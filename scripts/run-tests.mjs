@@ -63,6 +63,7 @@ const bundledTests = entryPoints.map((entryPoint) =>
 
 const result = spawnSync(process.execPath, ["--test", ...bundledTests], {
   cwd: repoRoot,
+  env: { ...process.env, TZ: "America/New_York" },
   stdio: "inherit",
 });
 

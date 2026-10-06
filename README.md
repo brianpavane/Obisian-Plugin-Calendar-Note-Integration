@@ -166,7 +166,7 @@ tags:
 # Weekly Sync
 
 > [!info] Meeting details
-> **When:** [[2026-01-15|Thursday, January 15, 2026]] · 10:00 AM – 11:00 AM (1h)
+> **When:** [[2026-01-15|Thursday, January 15, 2026]] · 10:00 AM – 11:00 AM EST (1h)
 > **Where:** Conference Room B
 > **Join:** [Join Google Meet](https://meet.google.com/abc-defg-hij)
 > **Organizer:** Alice Smith
@@ -204,7 +204,7 @@ Set **Template file** to a note in your vault, and new meeting notes are created
 |---|---|
 | `{{title}}` | Meeting title |
 | `{{date}}` / `{{date_long}}` | `2026-01-15` / `Thursday, January 15, 2026` |
-| `{{start_time}}` / `{{end_time}}` / `{{time}}` | `10:00 AM` / `11:00 AM` / `10:00 AM – 11:00 AM` |
+| `{{start_time}}` / `{{end_time}}` / `{{time}}` | `10:00 AM EST` / `11:00 AM EST` / `10:00 AM – 11:00 AM EST` |
 | `{{start}}` / `{{end}}` | `2026-01-15T10:00` / `2026-01-15T11:00` |
 | `{{duration}}` | `1h` |
 | `{{location}}` | Location |

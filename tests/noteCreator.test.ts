@@ -179,7 +179,7 @@ test("createNoteContent uses the meeting format with properties, details callout
   assert.match(content, /^calendar: "Work"$/m);
   assert.match(content, /^organizer: "\[\[Alice Smith\]\]"$/m);
   assert.match(content, /^ {2}- "\[\[Bob Jones\]\]"$/m);
-  assert.match(content, /^> \*\*When:\*\* Thursday, January 15, 2026 · 10:00 AM – 11:00 AM \(1h\)$/m);
+  assert.match(content, /^> \*\*When:\*\* Thursday, January 15, 2026 · 10:00 AM – 11:00 AM EST \(1h\)$/m);
   assert.match(content, /^> \*\*Where:\*\* Room B$/m);
   assert.match(content, /^> \*\*Join:\*\* \[Join Google Meet\]\(https:\/\/meet\.google\.com\/abc-defg-hij\)$/m);
   assert.match(content, /^> \*\*Attendees:\*\* 🟢 \[\[Alice Smith\]\] \*\(organizer\)\* · 🟡 \[\[Bob Jones\]\]$/m);
@@ -218,7 +218,7 @@ test("updateNoteContent refreshes calendar details and keeps the user's writing"
   assert.match(updated, /^status: cancelled$/m);
   assert.doesNotMatch(updated, /^location:/m);
   assert.match(updated, /^> \[!danger\] Meeting cancelled$/m);
-  assert.match(updated, /^> \*\*When:\*\* Friday, January 16, 2026 · 02:00 PM – 02:30 PM \(30m\)$/m);
+  assert.match(updated, /^> \*\*When:\*\* Friday, January 16, 2026 · 02:00 PM – 02:30 PM EST \(30m\)$/m);
   assert.match(updated, /^> \*\*Attendees:\*\* 🟢 Bob$/m);
   assert.doesNotMatch(updated, /Where:/);
   assert.match(updated, /^ {2}- project-x$/m);
@@ -285,7 +285,7 @@ test("createNoteContent fills a user template and still adds the calendar proper
   assert.match(content, /^project: "Work"$/m);
   assert.match(content, /^calendar_event_id: "event-1"\ntags:\n {2}- work\n---$/m);
   assert.match(content, /^daily_note: "\[\[Daily\/2026-01-15\|2026-01-15\]\]"$/m);
-  assert.match(content, /^# Design Review \(10:00 AM\)$/m);
+  assert.match(content, /^# Design Review \(10:00 AM EST\)$/m);
   assert.match(content, /^Join: \[Join Zoom\]\(https:\/\/zoom\.us\/j\/1234567\)$/m);
   assert.match(content, /^With: \[\[Bob Jones\]\]$/m);
   assert.match(content, /^Day: \[\[Daily\/2026-01-15\|2026-01-15\]\]$/m);
@@ -320,4 +320,24 @@ test("daily-note links follow the date when a meeting moves", () => {
   );
   assert.match(updated, /^daily_note: "\[\[2026-01-16\]\]"$/m);
   assert.match(updated, /^> \*\*When:\*\* \[\[2026-01-16\|Friday, January 16, 2026\]\] · /m);
+});
+
+test("createNoteContent labels times with the machine's time zone or the event's own offset", () => {
+  const utc = createNoteContent(
+    buildEvent({ start: { dateTime: "2026-07-01T14:00:00.000Z" }, end: { dateTime: "2026-07-01T15:30:00.000Z" } }),
+    { includeEventNotes: false, linkAttendees: false }
+  );
+  assert.match(utc, /^> \*\*When:\*\* Wednesday, July 1, 2026 · 10:00 AM – 11:30 AM EDT \(1h 30m\)$/m);
+
+  const india = createNoteContent(
+    buildEvent({ start: { dateTime: "2026-07-01T09:00:00+05:30" }, end: { dateTime: "2026-07-01T10:00:00+05:30" } }),
+    { includeEventNotes: false, linkAttendees: false, template: "{{start_time}} | {{end_time}} | {{time}}" }
+  );
+  assert.match(india, /^09:00 AM GMT\+5:30 \| 10:00 AM GMT\+5:30 \| 09:00 AM – 10:00 AM GMT\+5:30$/m);
+
+  const acrossDst = createNoteContent(
+    buildEvent({ start: { dateTime: "2026-11-01T05:30:00.000Z" }, end: { dateTime: "2026-11-01T06:30:00.000Z" } }),
+    { includeEventNotes: false, linkAttendees: false, template: "{{time}}" }
+  );
+  assert.match(acrossDst, /^01:30 AM EDT – 01:30 AM EST$/m);
 });

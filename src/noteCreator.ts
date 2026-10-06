@@ -211,6 +211,28 @@ function localParts(iso: string): LocalParts {
   };
 }
 
+/**
+ * Short time zone label for an ISO timestamp: this machine's zone name (e.g.
+ * "EST") when the timestamp is UTC or matches this machine's offset, otherwise
+ * the timestamp's own offset as "GMT-5" / "GMT+5:30".
+ */
+function zoneLabel(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const offset = iso.match(/([+-])(\d{2}):?(\d{2})$/);
+  if (offset) {
+    const minutes = (offset[1] === "-" ? -1 : 1) * (Number(offset[2]) * 60 + Number(offset[3]));
+    if (minutes !== -d.getTimezoneOffset()) {
+      const h = Math.floor(Math.abs(minutes) / 60);
+      const m = Math.abs(minutes) % 60;
+      return minutes === 0 ? "GMT" : `GMT${offset[1]}${h}${m ? `:${pad2(m)}` : ""}`;
+    }
+  }
+  return new Intl.DateTimeFormat("en-US", { timeZoneName: "short" })
+    .formatToParts(d)
+    .find((p) => p.type === "timeZoneName")?.value ?? "";
+}
+
 function formatDateLong(date: string): string {
   return new Date(`${date}T12:00:00`).toLocaleDateString("en-US", {
     weekday: "long",
@@ -242,6 +264,8 @@ interface EventTiming {
   start?: string;
   end?: string;
   dateLong: string;
+  startTime: string;
+  endTime: string;
   timeRange: string;
   duration: string;
 }
@@ -249,20 +273,37 @@ interface EventTiming {
 function getEventTiming(event: CalendarEvent): EventTiming {
   if (!event.start.dateTime) {
     const date = event.start.date ?? localParts(new Date().toISOString()).date;
-    return { allDay: true, date, dateLong: formatDateLong(date), timeRange: "All day", duration: "All day" };
+    return {
+      allDay: true,
+      date,
+      dateLong: formatDateLong(date),
+      startTime: "",
+      endTime: "",
+      timeRange: "All day",
+      duration: "All day",
+    };
   }
 
   const startDt = event.start.dateTime;
   const endDt = event.end.dateTime ?? startDt;
   const s = localParts(startDt);
   const e = localParts(endDt);
+  const startZone = zoneLabel(startDt);
+  const endZone = zoneLabel(endDt);
+  const withZone = (time: string, zone: string) => (zone ? `${time} ${zone}` : time);
+  const startTime = withZone(formatTime12h(s.time), startZone);
+  const endTime = withZone(formatTime12h(e.time), endZone);
   return {
     allDay: false,
     date: s.date,
     start: `${s.date}T${s.time}`,
     end: `${e.date}T${e.time}`,
     dateLong: formatDateLong(s.date),
-    timeRange: `${formatTime12h(s.time)} – ${formatTime12h(e.time)}`,
+    startTime,
+    endTime,
+    timeRange: startZone === endZone
+      ? `${formatTime12h(s.time)} – ${endTime}`
+      : `${startTime} – ${endTime}`,
     duration: formatDuration(new Date(endDt).getTime() - new Date(startDt).getTime()),
   };
 }
@@ -480,7 +521,6 @@ function templateValues(
   const description = options.includeEventNotes && event.description
     ? descriptionLines(event.description)
     : [];
-  const [startTime = "", endTime = ""] = timing.allDay ? [] : timing.timeRange.split(" – ");
 
   return {
     title: sanitizeInline(event.summary?.trim() || "Untitled Event"),
@@ -488,8 +528,8 @@ function templateValues(
     date_long: timing.dateLong,
     start: timing.start ?? "",
     end: timing.end ?? "",
-    start_time: startTime,
-    end_time: endTime,
+    start_time: timing.startTime,
+    end_time: timing.endTime,
     time: timing.timeRange,
     duration: timing.duration,
     location: event.location ? escapeInlineMd(event.location) : "",

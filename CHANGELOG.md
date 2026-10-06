@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+**Meeting times show the time zone**
+The **When** line in Meeting details and the `{{time}}`, `{{start_time}}`, and `{{end_time}}` template placeholders now include the time zone, e.g. `10:00 AM – 11:00 AM EST`. Times are in your Mac's time zone; an event with a different fixed offset shows it as `GMT+5:30`. Existing notes pick this up the next time they sync.
+
+---
+
 ## [6.9.1] – 2026-10-06
 
 ### Fixed
