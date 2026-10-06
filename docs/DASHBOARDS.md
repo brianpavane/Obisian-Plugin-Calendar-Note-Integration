@@ -11,9 +11,22 @@ Both are built only from the meeting notes the plugin created (notes in your **N
 
 ---
 
-## How to run a command (you need this for both)
+## The quickest way: the ribbon buttons
 
-Both dashboards are opened with a *command*. Obsidian runs commands from the **command palette**:
+The **ribbon** is the thin strip of icons down the far-left edge of the Obsidian window. The plugin adds a button there for each dashboard:
+
+| Button | Opens |
+|---|---|
+| **Checklist** icon (☑ with lines) | **Meeting action items** |
+| **Dashboard** icon (four squares) | **Meetings dashboard** |
+
+Hover over a button and its name appears. Click it to open the dashboard.
+
+**Don't see the buttons?** Make sure the plugin is updated to 6.11.0 or later. If the ribbon itself is hidden, turn it back on under **Settings → Appearance → Show ribbon**. If a button is missing, right-click the ribbon and tick it in the list.
+
+## The other way: the command palette
+
+You can also open both dashboards with a *command*. Obsidian runs commands from the **command palette**:
 
 1. Press **Cmd + P** (or click the **>_** "Open command palette" icon in the left ribbon).
 2. A search box appears. Start typing the command's name, for example `action items`.
@@ -43,15 +56,15 @@ Over weeks of meetings, those unchecked boxes end up spread across dozens of not
 
 ### How to open it
 
-1. Press **Cmd + P**.
-2. Type `action items`.
-3. Choose **Open meeting action items**.
+Click the **checklist** button in the left ribbon.
+
+Or: press **Cmd + P**, type `action items`, and choose **Open meeting action items**.
 
 A panel titled **Open action items** opens in the **right sidebar** (the column on the right edge of the Obsidian window).
 
 **Can't see the right sidebar?** Click the **sidebar icon** in the top-right corner of the window, or press **Cmd + P** and run **Toggle right sidebar**.
 
-**Opening it next time:** after the first time, the panel stays in the right sidebar as a small tab with a **checklist icon** (☑ with lines) at the top of the sidebar, next to tabs like Backlinks and Outline. Click that icon to come back. Running the command again also brings it to the front.
+**Opening it next time:** after the first time, the panel stays in the right sidebar as a small tab with a **checklist icon** (☑ with lines) at the top of the sidebar, next to tabs like Backlinks and Outline. Click that icon to come back. Clicking the ribbon button again also brings it to the front.
 
 ### What you see
 
@@ -107,9 +120,9 @@ A table of all your meeting notes, with tabs for **Next 7 days**, **Last 7 days*
 
 ### How to open it
 
-1. Press **Cmd + P**.
-2. Type `meetings dashboard`.
-3. Choose **Open meetings dashboard**.
+Click the **dashboard** button (four squares) in the left ribbon.
+
+Or: press **Cmd + P**, type `meetings dashboard`, and choose **Open meetings dashboard**.
 
 The first time, the plugin creates `Meetings.base` in your meeting-notes folder and opens it. After that you can also open it by clicking **Meetings.base** in the file list on the left, like any note.
 
@@ -138,7 +151,7 @@ Each view is grouped by day. **Click a note name** to open that meeting's note. 
 - The line must be a checkbox with text: `- [ ] Do the thing`. A plain bullet (`- Do the thing`) isn't a to-do.
 
 **I can't find the panel after closing it.**
-Run **Open meeting action items** again from the command palette (**Cmd + P**).
+Click the **checklist** button in the left ribbon, or run **Open meeting action items** from the command palette (**Cmd + P**).
 
 **`Meetings.base` opens as text, or nothing displays.**
 Update Obsidian to 1.9 or later, and make sure **Settings → Core plugins → Bases** is turned on.

@@ -101,6 +101,8 @@ export default class GoogleCalendarPlugin extends Plugin {
       "Create note from calendar event",
       () => this.pickEventAndCreateNote()
     );
+    this.addRibbonIcon("list-checks", "Open meeting action items", () => this.openActionItems());
+    this.addRibbonIcon("layout-dashboard", "Open meetings dashboard", () => this.openDashboard());
 
     this.addCommand({
       id: "create-note-from-event",

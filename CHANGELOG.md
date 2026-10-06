@@ -11,6 +11,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+**Ribbon buttons for the dashboards**
+Two new buttons in the left ribbon open the **Meeting action items** panel (checklist icon) and the **Meetings dashboard** (dashboard icon), so you no longer need the command palette to find them.
+
 **Dashboards guide**
 A step-by-step guide, `docs/DASHBOARDS.md`, explains the Meeting action items panel and the Meetings dashboard: what each is, how to open it, and how to use it. The README links to it.
 
