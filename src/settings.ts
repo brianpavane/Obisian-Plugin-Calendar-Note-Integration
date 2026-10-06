@@ -4,9 +4,9 @@
  * tab UI for Calendar Note Integration - Apple-iCal-Google.
  *
  * Supports three authentication modes:
- *   - "ical"  — iCal secret URL, no account required (personal calendars)
- *   - "oauth" — Google OAuth 2.0 via REST API (organization/work calendars)
- *   - "apple" — Apple Calendar on macOS via JXA (no auth required)
+ *   - "apple" — Apple Calendar on macOS via EventKit/JXA (primary, no auth required)
+ *   - "ical"  — iCal secret URL (deprecated)
+ *   - "oauth" — Google OAuth 2.0 via REST API (deprecated)
  */
 
 import {
@@ -58,7 +58,7 @@ export interface GoogleCalendarSettings {
 }
 
 export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
-  authMode: "ical",
+  authMode: "apple",
   icalUrl: "",
   clientId: "",
   clientSecret: "",
@@ -143,16 +143,15 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
     containerEl.createEl("h3", { text: "Connection Method" });
 
     new Setting(containerEl)
-      .setName("Authentication mode")
+      .setName("Calendar source")
       .setDesc(
-        "iCal URL works for personal calendars with no setup. " +
-          "Google Account is required for organization/work calendars that block external iCal access. " +
-          "Apple Calendar reads directly from Calendar.app on macOS — no authentication required."
+        "Apple Calendar reads directly from Calendar.app on this Mac and is the supported source. " +
+          "iCal URL and Google Account still work but are deprecated and may be removed in a future release."
       )
       .addDropdown((drop) => {
-        drop.addOption("ical", "iCal URL (personal / public calendars)");
-        drop.addOption("oauth", "Google Account (organization / work calendars)");
-        drop.addOption("apple", "Apple Calendar — macOS only (no auth required)");
+        drop.addOption("apple", "Apple Calendar — this Mac (recommended)");
+        drop.addOption("ical", "iCal URL (deprecated)");
+        drop.addOption("oauth", "Google Account (deprecated)");
         drop.setValue(this.plugin.settings.authMode);
         drop.onChange(async (value: string) => {
           this.plugin.settings.authMode = value as "ical" | "oauth" | "apple";
@@ -160,6 +159,13 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           this.display();
         });
       });
+
+    if (this.plugin.settings.authMode !== "apple") {
+      const deprecatedEl = containerEl.createEl("p", {
+        text: "⚠ This calendar source is deprecated. Switch to Apple Calendar to keep receiving fixes.",
+      });
+      deprecatedEl.style.color = "var(--text-warning)";
+    }
 
     // ----- iCal Section -----------------------------------------------------
     if (this.plugin.settings.authMode === "ical") {

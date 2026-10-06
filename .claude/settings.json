@@ -1,4 +1,35 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(npm test)",
+      "Bash(npm run build)",
+      "Bash(npm run dev)",
+      "Bash(npm install)",
+      "Bash(npm ci)",
+      "Bash(npx tsc *)",
+      "Bash(node version-bump.mjs *)",
+      "Bash(node scripts/run-tests.mjs)",
+      "Bash(scripts/pre-commit-check.sh)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git restore --staged *)",
+      "Bash(git branch --show-current)",
+      "Edit(./src/**)",
+      "Edit(./tests/**)",
+      "Edit(./README.md)",
+      "Edit(./CHANGELOG.md)"
+    ],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(gh release *)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -7,7 +38,7 @@
             "type": "command",
             "timeout": 30,
             "statusMessage": "Refreshing codebase context...",
-            "command": "cd /Users/bpavane/Code/Obisian-Plugin-Calendar-Note-Integration && VERSION=$(node -p \"require('./manifest.json').version\" 2>/dev/null || echo 'unknown') && BRANCH=$(git branch --show-current 2>/dev/null || echo 'unknown') && RECENT=$(git log --oneline -8 2>/dev/null || echo 'no git log') && STATUS=$(git status --short 2>/dev/null || echo 'clean') && SRC_FILES=$(find src -name '*.ts' | sort 2>/dev/null | tr '\\n' ' ') && TEST_FILES=$(find tests -name '*.test.ts' | sort 2>/dev/null | tr '\\n' ' ') && CONTEXT=$(printf '## Live Codebase Snapshot\\n\\n**Version:** %s\\n**Branch:** %s\\n\\n**Recent commits:**\\n%s\\n\\n**Working tree status:**\\n%s\\n\\n**Source files (src/):**\\n%s\\n\\n**Test files (tests/):**\\n%s\\n\\n**Run tests:** npm test\\n**Build:** npm run build' \"$VERSION\" \"$BRANCH\" \"$RECENT\" \"$STATUS\" \"$SRC_FILES\" \"$TEST_FILES\") && jq -n --arg ctx \"$CONTEXT\" '{hookSpecificOutput:{hookEventName:\"SessionStart\",additionalContext:$ctx}}'"
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && VERSION=$(node -p \"require('./manifest.json').version\" 2>/dev/null || echo 'unknown') && BRANCH=$(git branch --show-current 2>/dev/null || echo 'unknown') && RECENT=$(git log --oneline -8 2>/dev/null || echo 'no git log') && STATUS=$(git status --short 2>/dev/null || echo 'clean') && SRC_FILES=$(find src -name '*.ts' | sort 2>/dev/null | tr '\\n' ' ') && TEST_FILES=$(find tests -name '*.test.ts' | sort 2>/dev/null | tr '\\n' ' ') && CONTEXT=$(printf '## Live Codebase Snapshot\\n\\n**Version:** %s\\n**Branch:** %s\\n\\n**Recent commits:**\\n%s\\n\\n**Working tree status:**\\n%s\\n\\n**Source files (src/):**\\n%s\\n\\n**Test files (tests/):**\\n%s\\n\\n**Run tests:** npm test\\n**Build:** npm run build' \"$VERSION\" \"$BRANCH\" \"$RECENT\" \"$STATUS\" \"$SRC_FILES\" \"$TEST_FILES\") && jq -n --arg ctx \"$CONTEXT\" '{hookSpecificOutput:{hookEventName:\"SessionStart\",additionalContext:$ctx}}'"
           }
         ]
       }
@@ -17,12 +48,10 @@
         "matcher": "Bash",
         "hooks": [
           {
-            "type": "agent",
-            "if": "Bash(git commit*)",
-            "model": "claude-sonnet-4-6",
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/pre-commit-check.sh",
             "timeout": 180,
-            "statusMessage": "Claude agent running pre-commit QA validation...",
-            "prompt": "You are a pre-commit QA agent for the Calendar Note Integration Obsidian plugin. A git commit is about to be made. You must run a full validation suite and either allow or block the commit.\n\nProject root: /Users/bpavane/Code/Obisian-Plugin-Calendar-Note-Integration\n\nRun ALL of the following checks in order using your Bash tool:\n\n## 1. Full Test Suite\nRun: npm test\nAll tests must pass (fail count must be 0). If any test fails, block the commit and report which tests failed.\n\n## 2. TypeScript Compile Check\nRun: npx tsc --noEmit --skipLibCheck 2>&1\nZero TypeScript errors required. If errors are found, block the commit and list them.\n\n## 3. Git Diff Audit\nRun: git diff --staged 2>&1\nReview the staged diff for:\n- Security issues: hardcoded secrets, credentials, API keys, or tokens\n- Obvious logic errors or undefined behavior\n- console.log or debug statements left in production paths\nReport any findings. Block the commit if secrets or critical bugs are found.\n\n## 4. CHANGELOG Validation\nRun: git diff --staged -- CHANGELOG.md\nIf the staged diff touches any .ts or .js source file, a CHANGELOG.md entry MUST also be staged. If CHANGELOG.md has no staged changes but source files do, block the commit with a clear message asking the user to add a changelog entry.\n\n## 5. Version Bump\nRun: node version-bump.mjs patch\nThen: git add manifest.json versions.json package.json\nDo this only if all previous checks passed. This stages the version files so they are included in the commit.\n\n## Decision\n- If ALL checks pass: allow the commit to proceed. Output a brief summary of what passed and the new version number.\n- If ANY check fails: block the commit. Use decision=block and provide a clear, actionable reason so the developer knows exactly what to fix."
+            "statusMessage": "Running pre-commit checks..."
           }
         ]
       }

@@ -209,9 +209,9 @@ export default class GoogleCalendarPlugin extends Plugin {
       // daysBack = 0 when past events disabled → JXA windowStart = today.
       const daysBack  = this.settings.includePastEvents ? this.settings.daysBack : 0;
       const daysAhead = this.settings.daysAhead;
-      const timeoutMs    = (this.settings.appleTimeoutSeconds ?? 30) * 1000;
+      const timeoutMs    = (this.settings.appleTimeoutSeconds ?? DEFAULT_SETTINGS.appleTimeoutSeconds) * 1000;
       const skipTier3    = this.settings.appleSkipTier3 ?? false;
-      const maxTier3Scan = this.settings.appleMaxTier3Scan ?? 500;
+      const maxTier3Scan = this.settings.appleMaxTier3Scan ?? DEFAULT_SETTINGS.appleMaxTier3Scan;
       return CalendarService.fromApple(calendarFilter, daysBack, daysAhead, timeoutMs, skipTier3, maxTier3Scan);
     }
     return CalendarService.fromIcal(decrypt(this.settings.icalUrl));
@@ -241,17 +241,15 @@ export default class GoogleCalendarPlugin extends Plugin {
 
   /**
    * Remove events the user has explicitly declined.
-   * Requires selfEmail to be set; if unset all events are kept.
-   * Only removes events where the user's own attendee entry is "declined" —
-   * events where the user is not listed as an attendee are kept as-is.
+   * The user's attendee entry is the one the calendar flags as `self`, or the
+   * one matching selfEmail. Events where the user is not listed are kept.
    */
   private filterDeclinedEvents(events: CalendarEvent[]): CalendarEvent[] {
     const selfEmail = this.settings.selfEmail.trim().toLowerCase();
-    if (!selfEmail) return events;
     return events.filter((event) => {
       if (!event.attendees || event.attendees.length === 0) return true;
       const self = event.attendees.find(
-        (a) => a.email.toLowerCase() === selfEmail
+        (a) => a.self === true || (!!selfEmail && a.email.toLowerCase() === selfEmail)
       );
       return !self || self.responseStatus !== "declined";
     });
@@ -366,7 +364,7 @@ export default class GoogleCalendarPlugin extends Plugin {
         this.settings.processedEventIds.push(event.id);
         processedSet.add(event.id);
       } catch (err) {
-        console.debug("[cal-notes] Failed to create note for event:", err);
+        console.warn("[CalendarNoteIntegration] Failed to create note for event:", err);
       }
     }
 
@@ -408,7 +406,7 @@ export default class GoogleCalendarPlugin extends Plugin {
           }
         }
       } catch (err) {
-        console.debug("[cal-notes] Failed to create note for event:", err);
+        console.warn("[CalendarNoteIntegration] Failed to create note for event:", err);
       }
     }
 

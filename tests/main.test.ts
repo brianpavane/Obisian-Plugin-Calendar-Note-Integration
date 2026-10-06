@@ -128,6 +128,38 @@ test("refreshNotes filters all-day and declined self events", async () => {
   assert.deepEqual(plugin.settings.processedEventIds, ["accepted"]);
 });
 
+test("refreshNotes filters events declined by the calendar's self attendee without selfEmail", async () => {
+  const app = createMemoryApp([{ path: "Meeting Notes", content: "" }]);
+  const plugin = createPlugin(app);
+  plugin.settings = {
+    ...DEFAULT_SETTINGS,
+    authMode: "apple",
+    selfEmail: "",
+    noteFolder: "Meeting Notes",
+    processedEventIds: [],
+  };
+
+  plugin.getCalendarService = async () =>
+    ({
+      listEventsInTimeWindow: async () => [
+        buildEvent({
+          id: "declined",
+          attendees: [{ email: "me@example.com", self: true, responseStatus: "declined" }],
+        }),
+        buildEvent({
+          id: "other-declined",
+          summary: "Someone Else Declined",
+          attendees: [{ email: "them@example.com", responseStatus: "declined" }],
+        }),
+      ],
+    } as never);
+
+  await plugin.refreshNotes(false);
+
+  assert.deepEqual(app.createdPaths, ["Meeting Notes/2026-04-03 - Someone Else Declined.md"]);
+  assert.deepEqual(plugin.settings.processedEventIds, ["other-declined"]);
+});
+
 test("rebuildNotes recreates deleted files even if the event was already processed", async () => {
   const app = createMemoryApp([{ path: "Meeting Notes", content: "" }]);
   const plugin = createPlugin(app);

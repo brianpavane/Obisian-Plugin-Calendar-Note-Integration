@@ -1,17 +1,19 @@
 # Release Process
 
-**Current released version: `6.5.5`**
 **Repository: `brianpavane/Obisian-Plugin-Calendar-Note-Integration`**
 
-> This file is updated on every release. All commands below use a single `VERSION`
-> variable — set it once at the top and paste the remaining blocks as-is.
+> The version is bumped as part of the normal commit workflow (see `CLAUDE.md`),
+> so by release time `manifest.json` already holds the version to ship. All
+> commands below read it into a single `VERSION` variable — this file never
+> needs editing per release.
 
 ---
 
-## Step 1 — Set the version (change this line only)
+## Step 1 — Read the version
 
 ```bash
-VERSION=6.5.5
+VERSION=$(node -p "require('./manifest.json').version")
+echo $VERSION
 ```
 
 Run this in your terminal first. Every subsequent block uses `$VERSION`.
@@ -38,9 +40,9 @@ All three must show `$VERSION`. If any are out of sync, update them before conti
 
 | File | Field | Expected value |
 |---|---|---|
-| `manifest.json` | `"version"` | `6.5.5` |
-| `package.json` | `"version"` | `6.5.5` |
-| `versions.json` | new entry | `"6.5.5": "0.15.0"` |
+| `manifest.json` | `"version"` | `$VERSION` |
+| `package.json` | `"version"` | `$VERSION` |
+| `versions.json` | new entry | `"$VERSION": "<minAppVersion from manifest.json>"` |
 
 ---
 
@@ -54,11 +56,12 @@ Must complete with no errors. The build date is injected automatically into `mai
 
 ---
 
-## Step 5 — Commit the version bump (if not already committed)
+## Step 5 — Push main
+
+The version bump and changelog entry are already committed by the commit workflow.
 
 ```bash
-git add manifest.json package.json versions.json CHANGELOG.md RELEASE_PROCESS.md
-git commit -m "chore: bump version to $VERSION"
+git status          # must be clean
 git push origin main
 ```
 
@@ -83,7 +86,7 @@ git ls-remote --tags origin | grep $VERSION
 
 ```bash
 gh release create $VERSION \
-  main.js manifest.json \
+  main.js manifest.json styles.css \
   --repo brianpavane/Obisian-Plugin-Calendar-Note-Integration \
   --title "$VERSION" \
   --notes "$(awk "/^## \[$VERSION\]/{found=1; next} found && /^---/{exit} found{print}" CHANGELOG.md)" \
@@ -91,15 +94,6 @@ gh release create $VERSION \
 ```
 
 > `gh` extracts the matching section from `CHANGELOG.md` automatically.
-> Attach `styles.css` too if it exists:
-> ```bash
-> gh release create $VERSION \
->   main.js manifest.json styles.css \
->   --repo brianpavane/Obisian-Plugin-Calendar-Note-Integration \
->   --title "$VERSION" \
->   --notes "$(awk "/^## \[$VERSION\]/{found=1; next} found && /^---/{exit} found{print}" CHANGELOG.md)" \
->   --latest
-> ```
 
 ---
 
@@ -114,8 +108,8 @@ gh release view $VERSION --repo brianpavane/Obisian-Plugin-Calendar-Note-Integra
 ## Full sequence — copy entire block, set VERSION, paste
 
 ```bash
-# ── SET VERSION ONCE ──────────────────────────────────────────────────────────
-VERSION=6.5.5
+# ── READ VERSION ─────────────────────────────────────────────────────────────
+VERSION=$(node -p "require('./manifest.json').version")
 
 # ── PULL & BUILD ─────────────────────────────────────────────────────────────
 git checkout main
@@ -126,9 +120,8 @@ npm run build
 grep '"version"' manifest.json package.json
 cat versions.json
 
-# ── COMMIT (if not already done) ─────────────────────────────────────────────
-git add manifest.json package.json versions.json CHANGELOG.md RELEASE_PROCESS.md
-git commit -m "chore: bump version to $VERSION"
+# ── PUSH ─────────────────────────────────────────────────────────────────────
+git status
 git push origin main
 
 # ── TAG ──────────────────────────────────────────────────────────────────────
@@ -137,7 +130,7 @@ git push origin $VERSION
 
 # ── GITHUB RELEASE ───────────────────────────────────────────────────────────
 gh release create $VERSION \
-  main.js manifest.json \
+  main.js manifest.json styles.css \
   --repo brianpavane/Obisian-Plugin-Calendar-Note-Integration \
   --title "$VERSION" \
   --notes "$(awk "/^## \[$VERSION\]/{found=1; next} found && /^---/{exit} found{print}" CHANGELOG.md)" \
@@ -157,7 +150,7 @@ Add `--prerelease` and use a version like `6.6.0-beta.1`:
 VERSION=6.6.0-beta.1
 
 gh release create $VERSION \
-  main.js manifest.json \
+  main.js manifest.json styles.css \
   --repo brianpavane/Obisian-Plugin-Calendar-Note-Integration \
   --title "$VERSION (beta)" \
   --notes "Beta release — not recommended for production use." \
@@ -199,13 +192,12 @@ gh release upload $VERSION styles.css \
 | New feature, backwards-compatible | **minor** (Y) | 6.5.3 → 6.6.0 |
 | Breaking change, major rework | **major** (X) | 6.6.0 → 7.0.0 |
 
-Files to update on every bump:
+Files updated on every bump (`node version-bump.mjs <level>` handles the first three):
 
 1. `manifest.json` — `"version"`
 2. `package.json` — `"version"`
-3. `versions.json` — add `"X.Y.Z": "0.15.0"` entry
-4. `CHANGELOG.md` — add `## [X.Y.Z] – YYYY-MM-DD` section at top
-5. `RELEASE_PROCESS.md` — update **Current released version** line at top and `VERSION=` in the full sequence block
+3. `versions.json` — adds `"X.Y.Z": "<minAppVersion>"` entry
+4. `CHANGELOG.md` — add `## [X.Y.Z] – YYYY-MM-DD` section at top (manual)
 
 ---
 
@@ -228,4 +220,4 @@ Files to update on every bump:
 |---|---|---|
 | `main.js` | Yes | Compiled plugin — produced by `npm run build` |
 | `manifest.json` | Yes | Plugin metadata (id, name, version, minAppVersion) |
-| `styles.css` | Yes | Include even if empty — required by community plugin validator |
+| `styles.css` | Yes | Event picker styling — attach to every release |

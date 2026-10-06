@@ -61,7 +61,7 @@ async function fetchIcalText(url: string, timeoutMs = FETCH_TIMEOUT_MS): Promise
     if (!trimmed.startsWith("BEGIN:VCALENDAR")) {
       const preview = trimmed.slice(0, 50).replace(/[\r\n]+/g, " ");
       console.error(
-        "[GoogleCalendarNotes] Unexpected iCal response. " +
+        "[CalendarNoteIntegration] Unexpected iCal response. " +
         `HTTP ${response.status}. First 50 chars: ${preview}`
       );
       throw new Error(
@@ -107,13 +107,13 @@ export class IcalCalendarApi {
     const url = withSingleEvents(this.icalUrl);
     const text = await fetchIcalText(url);
     const events = parseIcal(text);
-    console.log(
-      `[GoogleCalendarNotes] Fetched iCal feed: ${text.length} bytes, ` +
+    console.debug(
+      `[CalendarNoteIntegration] Fetched iCal feed: ${text.length} bytes, ` +
       `${text.split("BEGIN:VEVENT").length - 1} VEVENT blocks, ` +
       `${events.length} parsed events.`
     );
     if (events.length > 0) {
-      console.log("[GoogleCalendarNotes] First event:", events[0].summary, events[0].start);
+      console.debug("[CalendarNoteIntegration] First event:", events[0].summary, events[0].start);
     }
     return events;
   }

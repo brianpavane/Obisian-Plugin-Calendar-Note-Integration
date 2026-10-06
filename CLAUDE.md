@@ -2,7 +2,9 @@
 
 ## Project Overview
 
-Obsidian plugin that creates structured notes from Apple Calendar, Google Calendar (iCal/OAuth), or any iCal feed. Written in TypeScript, built with esbuild, tested with a Node-based test runner in `scripts/run-tests.mjs`.
+Obsidian plugin that creates structured notes from calendar events. Written in TypeScript, built with esbuild, tested with a Node-based test runner in `scripts/run-tests.mjs`.
+
+**Primary source: local Apple Calendar** (`authMode: "apple"`) — reads Calendar.app on the Mac via EventKit, optionally limited to specific calendars. This is the default and the only actively supported source. The iCal URL and Google OAuth sources are **deprecated**: keep them working, but don't add features to them.
 
 **Key files:**
 - `src/` — TypeScript source
@@ -34,7 +36,7 @@ node version-bump.mjs patch
 git add manifest.json versions.json package.json
 ```
 
-This updates the version in `manifest.json`, `package.json`, and `versions.json`. Always use `patch` for routine commits. Use `minor` for new features, `major` for breaking changes.
+This updates the version in `manifest.json`, `package.json`, and `versions.json`. Always use `patch` for routine commits. Use `minor` for new features, `major` for breaking changes. The pre-commit hook verifies the bump but never bumps the version itself.
 
 ### 3. Update CHANGELOG.md
 
@@ -88,7 +90,7 @@ Commit message format: `type: summary` where type is `fix`, `feat`, `refactor`, 
 
 - TypeScript strict mode — no implicit `any`.
 - No mocking of the filesystem in tests; use in-memory vault helpers already established in the test suite.
-- `npm run build` must succeed (TypeScript compile + esbuild) before committing `main.js`.
+- `npm run build` must succeed (TypeScript compile + esbuild) before committing. `main.js` itself is never committed; it is built and attached to GitHub releases (see `RELEASE_PROCESS.md`).
 - Do not add comments unless the logic is genuinely non-obvious.
 - Do not add error handling for cases that cannot happen.
 

@@ -2,18 +2,17 @@
  * version-bump.mjs
  *
  * Bumps the plugin version across manifest.json, package.json, and
- * versions.json, then stages those files for the commit.
+ * versions.json. The npm `version:*` scripts also stage those files.
  *
- * Usage (via npm scripts):
- *   npm run version:patch   →  1.0.0 → 1.0.1
- *   npm run version:minor   →  1.0.1 → 1.1.0
- *   npm run version:major   →  1.1.0 → 2.0.0
+ * Usage:
+ *   node version-bump.mjs patch   →  1.0.0 → 1.0.1
+ *   node version-bump.mjs minor   →  1.0.1 → 1.1.0
+ *   node version-bump.mjs major   →  1.1.0 → 2.0.0
+ *   node version-bump.mjs 1.2.0   →  literal version
  *
- * Called automatically by `npm version <level>` because package.json's
- * "version" script runs this file before git stages the version commit.
- *
- * The script also accepts a literal version as the first argument:
- *   node version-bump.mjs 1.2.0
+ * With no argument, manifest.json and versions.json are synced to the version
+ * already in package.json. `npm version <level>` relies on this: npm bumps
+ * package.json first, then its "version" lifecycle script runs this file.
  */
 
 import { readFileSync, writeFileSync } from "fs";
@@ -44,14 +43,14 @@ function bumpVersion(current, level) {
 // Main
 // ---------------------------------------------------------------------------
 
-const level = process.argv[2] ?? "patch";
+const level = process.argv[2];
 
 const manifest = readJson("manifest.json");
 const pkg      = readJson("package.json");
 const versions = readJson("versions.json");
 
 const oldVersion = manifest.version;
-const newVersion = bumpVersion(oldVersion, level);
+const newVersion = level ? bumpVersion(oldVersion, level) : pkg.version;
 
 if (newVersion === oldVersion) {
   console.log(`Version is already ${oldVersion}. Nothing to do.`);

@@ -171,8 +171,10 @@ const JXA_SERIALIZE_EK_EVENT = `
                 else if (ekPs === 1) ekAStat = "needsAction";
                 else                 ekAStat = "unknown";
               } catch (e) {}
+              var ekASelf = false;
+              try { ekASelf = ekAtt.isCurrentUser === true || Number(ekAtt.isCurrentUser) === 1; } catch (e) {}
               if (ekAAddr || ekAName) {
-                ekAttList.push({ displayName: ekAName, address: ekAAddr, status: ekAStat });
+                ekAttList.push({ displayName: ekAName, address: ekAAddr, status: ekAStat, self: ekASelf });
               }
             } catch (e) {}
           }
@@ -748,6 +750,7 @@ function parseJxaEvents(json: string, calendarFilter: string[]): CalendarEvent[]
           email: email || displayName,
           displayName: displayName || undefined,
           responseStatus: mapAppleStatus(safeStr(ar.status)),
+          ...(ar.self === true ? { self: true } : {}),
         });
       }
     }
@@ -790,7 +793,7 @@ export async function runAppleCalendarDiagnostic(): Promise<string> {
 
   const log = (line: string) => {
     lines.push(line);
-    console.log("[CalendarNoteIntegration] DIAG", line);
+    console.debug("[CalendarNoteIntegration] DIAG", line);
   };
 
   // Step 1 — basic JXA execution
@@ -970,7 +973,7 @@ export class AppleCalendarApi {
   async fetchAllEvents(): Promise<CalendarEvent[]> {
     const tag = "[CalendarNoteIntegration] Apple Calendar";
     const timeoutSec = Math.round(this.timeoutMs / 1000);
-    console.log(
+    console.debug(
       `${tag} fetchAllEvents() window: -${this.daysBack}d…+${this.daysAhead}d ` +
       `timeout:${timeoutSec}s skipTier3:${this.skipTier3}`
     );
@@ -990,12 +993,12 @@ export class AppleCalendarApi {
       const wrapper = JSON.parse(json) as { tier: string; events: unknown[] };
       if (wrapper && Array.isArray(wrapper.events)) {
         const events = parseJxaEvents(JSON.stringify(wrapper.events), this.calendarFilter);
-        console.log(`${tag} EventKit global ✓ — ${events.length} event(s) in ${Date.now() - t0}ms`);
+        console.debug(`${tag} EventKit global ✓ — ${events.length} event(s) in ${Date.now() - t0}ms`);
         return events;
       }
     } catch (ekErr) {
       const msg = ekErr instanceof Error ? ekErr.message : String(ekErr);
-      console.log(`${tag} EventKit global failed (${msg.slice(0, 120)}), falling back to Calendar.app bridge`);
+      console.debug(`${tag} EventKit global failed (${msg.slice(0, 120)}), falling back to Calendar.app bridge`);
     }
 
     // ── Step 1: Try Tier 1 (app.eventsFrom — Calendar.app scripting bridge) ────
@@ -1006,11 +1009,11 @@ export class AppleCalendarApi {
         this.timeoutMs
       );
       const events = parseJxaEvents(json, this.calendarFilter);
-      console.log(`${tag} Tier 1 ✓ — ${events.length} event(s) in ${Date.now() - t0}ms`);
+      console.debug(`${tag} Tier 1 ✓ — ${events.length} event(s) in ${Date.now() - t0}ms`);
       return events;
     } catch (tier1Err) {
       const msg = tier1Err instanceof Error ? tier1Err.message : String(tier1Err);
-      console.log(`${tag} Tier 1 failed (${msg}), switching to per-calendar mode`);
+      console.debug(`${tag} Tier 1 failed (${msg}), switching to per-calendar mode`);
     }
 
     // ── Step 2: Per-calendar fallback — one osascript call per calendar ───────
@@ -1070,11 +1073,11 @@ export class AppleCalendarApi {
             if ((wrapper.t3ms   ?? -1) >= 0) timingParts.push(`t3:${wrapper.t3ms}ms`);
             const timing = timingParts.length ? ` (${timingParts.join(" ")})` : "";
             if (wrapper.tier === -3) {
-              console.log(
+              console.debug(
                 `${tag} "${calName}" — EventKit + Tier 2/2.5/2.75 all failed, Tier 3 skipped (disabled in Settings)`
               );
             } else {
-              console.log(
+              console.debug(
                 `${tag} "${calName}" ✓ ${tLabel} — ${wrapper.events.length} event(s) ` +
                 `in ${Date.now() - t0}ms${timing}`
               );

@@ -42,7 +42,7 @@ export function encrypt(plaintext: string): string {
 
   if (!isEncryptionAvailable()) {
     console.warn(
-      "[gcal-notes] OS encryption unavailable — credential stored as plaintext."
+      "[CalendarNoteIntegration] OS encryption unavailable — credential stored as plaintext."
     );
     return plaintext;
   }
@@ -66,7 +66,7 @@ export function decrypt(stored: string): string {
     return safeStorage.decryptString(buf);
   } catch {
     console.error(
-      "[gcal-notes] Failed to decrypt credential. The vault may have been " +
+      "[CalendarNoteIntegration] Failed to decrypt credential. The vault may have been " +
         "moved to a different machine. Please re-authenticate."
     );
     return "";

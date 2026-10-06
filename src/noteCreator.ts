@@ -69,7 +69,7 @@ function sanitizeInline(value: string): string {
 function isSafeHttpsUrl(uri: string): boolean {
   try {
     const url = new URL(uri);
-    return url.protocol === "https:" || url.protocol === "http:";
+    return url.protocol === "https:";
   } catch {
     return false;
   }

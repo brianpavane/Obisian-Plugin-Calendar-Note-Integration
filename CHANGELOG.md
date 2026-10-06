@@ -7,6 +7,48 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.6.0] – 2026-10-06
+
+### Changed
+
+**Apple Calendar is now the default and recommended calendar source**
+New installs start on Apple Calendar, which reads Calendar.app on your Mac and lets you pick specific calendars. The setting is now called **Calendar source** and lists Apple Calendar first. Existing settings are not changed.
+
+**Minimum Obsidian version raised to 1.4.10**
+The note-folder suggester in settings uses an Obsidian API added in 1.4.10. Earlier versions are no longer advertised as supported.
+
+**Conference links must use HTTPS**
+Meeting links are only added to notes when they use `https://`. Plain `http://` links are now omitted.
+
+**Clearer console logging**
+All console messages now use the `[CalendarNoteIntegration]` prefix. Failed note creations are logged as warnings so they are visible by default, and routine Apple Calendar fetch progress moved to the Verbose log level.
+
+### Fixed
+
+**Declined events are skipped even without your email set**
+When the calendar marks which attendee is you (Google OAuth, and Apple Calendar via EventKit), events you declined are now skipped without needing **Your email address**.
+
+**README matches the plugin**
+Corrected setting defaults and ranges, button and command names, the sample note, install instructions (the plugin is installed manually and needs `styles.css`), and the console troubleshooting tip.
+
+**Version bump script and release process**
+`npm version minor`/`major` no longer leaves `manifest.json` out of sync with `package.json`, and npm-created tags no longer get a `v` prefix. `RELEASE_PROCESS.md` now reads the version from `manifest.json` and attaches `styles.css` to every release.
+
+**Claude Code hooks work from any checkout**
+The `.claude/settings.json` hooks use the project directory instead of a hard-coded path. The pre-commit AI agent is replaced by `scripts/pre-commit-check.sh`, which ignores non-commit commands and, on `git commit`, runs the tests and TypeScript check and verifies the changelog entry and version bump instead of performing the bump (replacing the behaviour described in 6.5.4). Routine build, test and git commands are pre-approved so sessions need fewer permission prompts; `git push` and `gh release` still ask.
+
+### Deprecated
+
+**iCal URL and Google OAuth calendar sources**
+Both still work but are deprecated and may be removed in a future release. Settings shows a notice when either is selected. To migrate, add the account to Calendar.app and switch to Apple Calendar.
+
+### Removed
+
+**Unused settings styles**
+Removed stylesheet rules for settings-tab classes that the plugin never used.
+
+---
+
 ## [6.5.5] – 2026-04-03
 
 ### Added

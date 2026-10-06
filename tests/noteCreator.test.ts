@@ -93,6 +93,24 @@ test("createNoteContent excludes unsafe conference links", () => {
   assert.doesNotMatch(content, /\[Join meeting\]\(/);
 });
 
+test("createNoteContent excludes plain http conference links", () => {
+  const content = createNoteContent(
+    {
+      ...buildEvent(),
+      conferenceData: {
+        conferenceSolution: { name: "Zoom" },
+        entryPoints: [{ entryPointType: "video", uri: "http://zoom.us/j/123456789" }],
+      },
+    },
+    {
+      includeEventNotes: false,
+      includeConferenceLinks: true,
+    }
+  );
+
+  assert.doesNotMatch(content, /\[Join meeting\]\(/);
+});
+
 test("createNoteFile creates folders and reuses existing files idempotently", async () => {
   const app = createMemoryApp();
   const event = buildEvent();
