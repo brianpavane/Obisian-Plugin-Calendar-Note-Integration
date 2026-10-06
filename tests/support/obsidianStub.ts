@@ -119,6 +119,9 @@ export class ItemView {
   constructor(public leaf: WorkspaceLeaf) {}
 
   registerEvent(): void {}
+  registerInterval(): void {}
+  getState(): Record<string, unknown> { return {}; }
+  async setState(): Promise<void> {}
 }
 
 export function debounce<T extends (...args: unknown[]) => unknown>(fn: T): T {

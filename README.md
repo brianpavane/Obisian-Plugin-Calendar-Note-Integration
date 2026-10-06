@@ -21,7 +21,8 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 - **Daily-note links** — each meeting links to that day's daily note, so the day's meetings appear in its backlinks
 - **Next meeting in the status bar** — click it, or run **Join current or next meeting**, to open the note and join
 - **Meetings dashboard** — a ready-made Bases view of upcoming and recent meetings ([guide](docs/DASHBOARDS.md))
-- **Action items view** — every open action item across your meetings in one sidebar, ticked off in place ([guide](docs/DASHBOARDS.md))
+- **Today's meetings** — a sidebar of today's meetings with one-click **Open note** and **Join** buttons ([guide](docs/DASHBOARDS.md))
+- **Action items view** — every open action item across your meetings in one sidebar, grouped by meeting, owner (`@Bob`), or due date (`📅 2026-10-10`), ticked off in place ([guide](docs/DASHBOARDS.md))
 - **Declined event filtering** — events you have declined are skipped, when the calendar identifies you as an attendee or your email address is set
 - **All-day event filtering** — all-day events (holidays, OOO blocks) are skipped
 - **Configurable time window** — look ahead 1–48 hours; optionally include past events
@@ -313,13 +314,15 @@ If a meeting disappears from Apple Calendar (deleted rather than cancelled), its
 | **Auto-create notes for events in the next N hours** | Runs the same sweep as the background poll right away (N = **Hours in advance**) |
 | **Join current or next meeting** | Opens the note for the meeting in progress (or starting within 30 minutes), creating it if needed, and opens its join link |
 | **Open meetings dashboard** | Opens `Meetings.base` in your meeting-notes folder (created on first use) |
+| **Open today's meetings** | Shows today's meetings in the right sidebar, with Open note and Join buttons |
 | **Open meeting action items** | Shows every open action item from your meeting notes in the right sidebar |
 
-The plugin adds three buttons to the ribbon (the icon strip on the far left of the window):
+The plugin adds four buttons to the ribbon (the icon strip on the far left of the window):
 
 | Icon | Opens |
 |---|---|
 | Calendar | The event picker — same as **Create note from calendar event** |
+| Calendar with clock | The **Today's meetings** panel |
 | Checklist | The **Meeting action items** panel |
 | Dashboard (four squares) | The **Meetings dashboard** |
 
@@ -335,6 +338,10 @@ The status bar at the bottom of the window shows the meeting in progress (*Now: 
 
 New to these? **[Dashboards — a step-by-step guide](docs/DASHBOARDS.md)** explains what each one is, where to find it, and how to use it.
 
+### Today's meetings
+
+Click the **calendar-with-clock** button in the left ribbon (or run **Open today's meetings**). A panel in the right sidebar lists today's meetings in order: finished ones faded, the current one marked **Now**. Each has an **Open note** (or **Create note**) button and, while the meeting is still to come or in progress, a **Join** button. It re-reads the calendar every 5 minutes, or straight away with **Refresh**.
+
 ### Meetings dashboard
 
 Click the **dashboard** button in the left ribbon (or run **Open meetings dashboard**). It creates a [Bases](https://obsidian.md/help/bases) file (Obsidian 1.9 or later) listing every meeting note, with **Next 7 days**, **Last 7 days**, and **All meetings** views grouped by day. It is an ordinary `.base` file — edit its columns, filters, and views like any other base.
@@ -342,6 +349,8 @@ Click the **dashboard** button in the left ribbon (or run **Open meetings dashbo
 ### Meeting action items
 
 Click the **checklist** button in the left ribbon (or press **Cmd + P** and run **Open meeting action items**). This opens a panel in the right sidebar listing every unchecked task (`- [ ] …`) in your meeting notes, grouped by meeting with the newest first. Click a meeting to open its note; tick an item to check it off in that note. The list updates as you edit notes, and needs no other plugins.
+
+Give an item an owner with `@Name` (or `@[[Full Name]]`) and a due date with `📅 2026-10-10` or `[due:: 2026-10-10]` (the Tasks plugin's formats). The menu at the top of the panel groups items **By meeting**, **By person**, or **By due date** (Overdue, Today, Next 7 days, Later, No due date); overdue dates show in red.
 
 ---
 

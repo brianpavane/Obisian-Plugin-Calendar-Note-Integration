@@ -19,6 +19,7 @@
 import { normalizePath, Notice, Plugin, TFile } from "obsidian";
 import { ActionItemsView, ACTION_ITEMS_VIEW } from "./actionItems";
 import { DASHBOARD_CONTENT, DASHBOARD_FILENAME } from "./dashboard";
+import { TodayView, TODAY_VIEW } from "./todayView";
 import { currentOrNextMeeting, meetingToJoin, statusText } from "./meetingStatus";
 import {
   GoogleCalendarSettings,
@@ -101,7 +102,8 @@ export default class GoogleCalendarPlugin extends Plugin {
       "Create note from calendar event",
       () => this.pickEventAndCreateNote()
     );
-    this.addRibbonIcon("list-checks", "Open meeting action items", () => this.openActionItems());
+    this.addRibbonIcon("calendar-clock", "Open today's meetings", () => this.openSidebarView(TODAY_VIEW));
+    this.addRibbonIcon("list-checks", "Open meeting action items", () => this.openSidebarView(ACTION_ITEMS_VIEW));
     this.addRibbonIcon("layout-dashboard", "Open meetings dashboard", () => this.openDashboard());
 
     this.addCommand({
@@ -135,11 +137,22 @@ export default class GoogleCalendarPlugin extends Plugin {
     });
 
     this.registerView(ACTION_ITEMS_VIEW, (leaf) => new ActionItemsView(leaf, () => this.settings.noteFolder));
+    this.registerView(TODAY_VIEW, (leaf) => new TodayView(leaf, {
+      loadToday: () => this.loadTodayEvents(),
+      notedEventIds: () => new Set(findNotesByEventId(this.app, this.settings.noteFolder).keys()),
+      openNote: (event) => this.openNoteForEvent(event),
+    }));
 
     this.addCommand({
       id: "open-action-items",
       name: "Open meeting action items",
-      callback: () => this.openActionItems(),
+      callback: () => this.openSidebarView(ACTION_ITEMS_VIEW),
+    });
+
+    this.addCommand({
+      id: "open-today",
+      name: "Open today's meetings",
+      callback: () => this.openSidebarView(TODAY_VIEW),
     });
 
     this.addSettingTab(new GoogleCalendarSettingTab(this.app, this));
@@ -226,13 +239,39 @@ export default class GoogleCalendarPlugin extends Plugin {
     await this.app.workspace.getLeaf(false).openFile(file as TFile);
   }
 
-  /** Show the open action items view in the right sidebar. */
-  async openActionItems(): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(ACTION_ITEMS_VIEW)[0];
+  /** Show one of the plugin's sidebar views, opening it in the right sidebar if needed. */
+  async openSidebarView(type: string): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(type)[0];
     const leaf = existing ?? this.app.workspace.getRightLeaf(false);
     if (!leaf) return;
-    if (!existing) await leaf.setViewState({ type: ACTION_ITEMS_VIEW, active: true });
+    if (!existing) await leaf.setViewState({ type, active: true });
     this.app.workspace.revealLeaf(leaf);
+  }
+
+  /** Today's meetings (midnight to midnight), filtered like the sync; null if the calendar can't be read. */
+  async loadTodayEvents(): Promise<CalendarEvent[] | null> {
+    if (!this.isConfigured()) return null;
+    const now = this.now();
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    try {
+      const svc = await this.getCalendarService();
+      const raw = await svc.listEventsInTimeWindow(dayStart, dayEnd);
+      return this.markSelfAttendee(this.filterDeclinedEvents(this.filterOutAllDay(raw)));
+    } catch (err) {
+      console.warn("[CalendarNoteIntegration] Couldn't read today's meetings:", err);
+      return null;
+    }
+  }
+
+  /** Open the event's note, creating it first if it has none. */
+  async openNoteForEvent(event: CalendarEvent): Promise<void> {
+    const existing = findNotesByEventId(this.app, this.settings.noteFolder).get(event.id);
+    if (existing) {
+      await this.app.workspace.getLeaf(false).openFile(existing);
+      return;
+    }
+    await this.createAndOpenNote(event);
   }
 
   /**

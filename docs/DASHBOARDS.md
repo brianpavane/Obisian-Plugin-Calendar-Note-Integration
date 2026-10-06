@@ -1,13 +1,14 @@
 # Dashboards — a step-by-step guide
 
-The plugin gives you two dashboards. A dashboard is a page that pulls information out of all your meeting notes and shows it in one place, so you don't have to open each note.
+The plugin gives you three dashboards. A dashboard is a page that pulls information together and shows it in one place, so you don't have to open each note or flip to Calendar.app.
 
 | Dashboard | What it answers | Where it appears |
 |---|---|---|
-| **Meeting action items** | "What did I promise to do, in any meeting?" | A panel in the **right sidebar** |
+| **Today's meetings** | "What's on today, and how do I get into the next one?" | A panel in the **right sidebar** |
+| **Meeting action items** | "What did I promise to do, in any meeting? What's overdue? What does Bob owe me?" | A panel in the **right sidebar** |
 | **Meetings dashboard** | "What meetings do I have coming up, and what did I have last week?" | A table that opens in the **main editor area**, like a note |
 
-Both are built only from the meeting notes the plugin created (notes in your **Note folder**, default `Meeting Notes`). They never change your calendar.
+**Today's meetings** reads your Apple Calendar. The other two are built from the meeting notes the plugin created (notes in your **Note folder**, default `Meeting Notes`). None of them ever change your calendar.
 
 ---
 
@@ -17,8 +18,11 @@ The **ribbon** is the thin strip of icons down the far-left edge of the Obsidian
 
 | Button | Opens |
 |---|---|
+| **Calendar-with-clock** icon | **Today's meetings** |
 | **Checklist** icon (☑ with lines) | **Meeting action items** |
 | **Dashboard** icon (four squares) | **Meetings dashboard** |
+
+(The plain **calendar** icon next to them is the older "create a note from an event" button.)
 
 Hover over a button and its name appears. Click it to open the dashboard.
 
@@ -26,7 +30,7 @@ Hover over a button and its name appears. Click it to open the dashboard.
 
 ## The other way: the command palette
 
-You can also open both dashboards with a *command*. Obsidian runs commands from the **command palette**:
+You can also open every dashboard with a *command*. Obsidian runs commands from the **command palette**:
 
 1. Press **Cmd + P** (or click the **>_** "Open command palette" icon in the left ribbon).
 2. A search box appears. Start typing the command's name, for example `action items`.
@@ -34,11 +38,55 @@ You can also open both dashboards with a *command*. Obsidian runs commands from 
 
 In the palette, every command from this plugin starts with **Calendar Note Integration - Apple-iCal-Google:**, so typing `calendar` lists them all.
 
-> **Tip — give it a shortcut.** Open **Settings → Hotkeys**, search for `action items` (or `meetings dashboard`), click the **+** next to the command, and press the keys you want, for example **Cmd + Shift + A**.
+> **Tip — give it a shortcut.** Open **Settings → Hotkeys**, search for `today's meetings`, `action items`, or `meetings dashboard`, click the **+** next to the command, and press the keys you want, for example **Cmd + Shift + A**.
 
 ---
 
-## 1. Meeting action items
+## 1. Today's meetings
+
+### What it is
+
+A list of every meeting on today's calendar, from first to last, with a button to open its note and a button to join. It's the "what's my day look like?" view, and the fastest way into your next call.
+
+### How to open it
+
+Click the **calendar-with-clock** button in the left ribbon.
+
+Or: press **Cmd + P**, type `today`, and choose **Open today's meetings**.
+
+It opens in the **right sidebar**. Like the action items panel, it stays there as a tab (with the calendar-with-clock icon) until you close it.
+
+### What you see
+
+```
+Tuesday, October 6                      [Refresh]
+
+9:00 AM – 9:15 AM                        ← faded: already over
+Standup
+[Open note]
+
+11:00 AM – 12:00 PM  [Now]               ← highlighted: happening now
+Design Review
+[Open note] [Join]
+
+3:00 PM – 4:00 PM
+Planning
+[Create note] [Join]
+```
+
+- **Faded** meetings are over. The meeting happening **now** has a coloured bar and a **Now** badge.
+- **Open note** opens the meeting's note. If the note doesn't exist yet, the button says **Create note** and makes it, using your template, with the link to the previous meeting and its open items.
+- **Join** opens the Zoom / Meet / Teams / Webex link. It appears only when the meeting has one, and disappears once the meeting is over.
+- Clicking a meeting's **title** does the same as Open note / Create note.
+- All-day events, cancelled meetings, and meetings you declined are left out, just as they are for note creation.
+
+### Keeping it current
+
+The list re-reads your calendar every 5 minutes, and the Now / faded markers update every minute. Click **Refresh** to re-read it straight away, for example after adding a meeting in Calendar.app.
+
+---
+
+## 2. Meeting action items
 
 ### What it is
 
@@ -108,9 +156,36 @@ When the plugin creates the next note in a recurring series (for example next we
 
 These reminders are plain bullets, not checkboxes, on purpose: each to-do stays in **one** place, the note where it was written. Tick it off in the panel (or in that earlier note) and it's done everywhere.
 
+### Who owns it, and when it's due
+
+You can add two optional tags to any action item:
+
+| To say… | Type… | Example |
+|---|---|---|
+| Who owns it | `@` and a name | `- [ ] Send the deck @Bob` |
+| Who owns it (name with spaces) | `@` and a link | `- [ ] Send the deck @[[Bob Jones]]` |
+| When it's due | `📅` and a date (year-month-day) | `- [ ] Send the deck @Bob 📅 2026-10-10` |
+| When it's due (easier to type) | `[due:: ` date `]` | `- [ ] Send the deck @Bob [due:: 2026-10-10]` |
+
+The 📅 and `[due:: ]` formats are the ones the **Tasks** community plugin uses, so if you use Tasks it understands these dates too. (To type 📅 on a Mac, press **Ctrl + Cmd + Space** and search for "calendar".)
+
+In the panel, a due date shows under the item, in **red** once the date has passed.
+
+### Grouping: by meeting, by person, or by due date
+
+At the top of the panel is a menu, set to **By meeting** at first. Change it to see the same items another way:
+
+| Choice | Groups | Good for |
+|---|---|---|
+| **By meeting** | One group per meeting, newest first | "What came out of yesterday's review?" |
+| **By person** | One group per `@owner`, A–Z; items without an owner go under **Unassigned** | "What does Bob owe me?" before a 1:1 |
+| **By due date** | **Overdue**, **Today**, **Next 7 days**, **Later**, **No due date** | "What's late?" at the start of the day |
+
+When grouped by person or due date, each item shows which meeting it came from. Click that name to open the meeting's note. The panel remembers your choice.
+
 ---
 
-## 2. Meetings dashboard
+## 3. Meetings dashboard
 
 ### What it is
 
@@ -150,8 +225,14 @@ Each view is grouped by day. **Click a note name** to open that meeting's note. 
 - The items must be in notes the plugin created: notes with a `calendar_event_id` property, inside your **Note folder** (Settings → Calendar Note Integration → **Note folder**).
 - The line must be a checkbox with text: `- [ ] Do the thing`. A plain bullet (`- Do the thing`) isn't a to-do.
 
-**I can't find the panel after closing it.**
-Click the **checklist** button in the left ribbon, or run **Open meeting action items** from the command palette (**Cmd + P**).
+**Today's meetings says "Couldn't read your calendar."**
+The plugin couldn't reach Apple Calendar. Open **Settings → Calendar Note Integration** and click **Test connection**; see the README's Troubleshooting section for the usual fixes (Calendar access permission).
+
+**An item has a date, but it isn't red / isn't under Overdue.**
+The date must be written year-month-day with two-digit month and day, e.g. `📅 2026-10-05`, not `📅 10/5`.
+
+**I can't find a panel after closing it.**
+Click its button in the left ribbon (calendar-with-clock for Today, checklist for action items), or run **Open today's meetings** / **Open meeting action items** from the command palette (**Cmd + P**).
 
 **`Meetings.base` opens as text, or nothing displays.**
 Update Obsidian to 1.9 or later, and make sure **Settings → Core plugins → Bases** is turned on.

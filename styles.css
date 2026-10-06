@@ -99,3 +99,70 @@
   gap: 0.4em;
   align-items: baseline;
 }
+
+.cal-notes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5em;
+}
+
+.cal-notes-item-meta {
+  display: flex;
+  gap: 0.6em;
+  font-size: 0.82em;
+  color: var(--text-muted);
+}
+
+.cal-notes-item-meta a {
+  cursor: pointer;
+}
+
+.cal-notes-due.is-overdue {
+  color: var(--text-error);
+  font-weight: 600;
+}
+
+/* ----------------------------------------------------------
+   Today's meetings view
+   ---------------------------------------------------------- */
+
+.cal-notes-today-item {
+  padding: 0.5em 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.cal-notes-today-item.is-done {
+  opacity: 0.55;
+}
+
+.cal-notes-today-item.is-now {
+  border-left: 3px solid var(--interactive-accent);
+  padding-left: 0.5em;
+}
+
+.cal-notes-today .cal-notes-meeting-title {
+  display: block;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cal-notes-today .cal-notes-meeting-date {
+  font-size: 0.82em;
+  color: var(--text-muted);
+}
+
+.cal-notes-badge {
+  margin-left: 0.5em;
+  padding: 0 0.4em;
+  border-radius: var(--radius-s);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 0.9em;
+}
+
+.cal-notes-actions {
+  display: flex;
+  gap: 0.4em;
+  margin-top: 0.3em;
+}

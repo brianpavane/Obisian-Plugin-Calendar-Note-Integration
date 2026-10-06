@@ -11,8 +11,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+**Today's meetings panel**
+A new right-sidebar panel lists today's meetings in order: finished ones faded, the current one marked **Now**. Each has an **Open note** / **Create note** button and a **Join** button. Open it from its ribbon button or **Open today's meetings**.
+
+**Owners and due dates on action items**
+Write `@Bob` (or `@[[Bob Jones]]`) and `📅 2026-10-10` (or `[due:: 2026-10-10]`) on an action item. The action items panel can now group items by meeting, by person, or by due date, and shows overdue dates in red.
+
 **Ribbon buttons for the dashboards**
-Two new buttons in the left ribbon open the **Meeting action items** panel (checklist icon) and the **Meetings dashboard** (dashboard icon), so you no longer need the command palette to find them.
+New buttons in the left ribbon open **Today's meetings** (calendar-with-clock icon), the **Meeting action items** panel (checklist icon), and the **Meetings dashboard** (dashboard icon), so you no longer need the command palette to find them.
 
 **Dashboards guide**
 A step-by-step guide, `docs/DASHBOARDS.md`, explains the Meeting action items panel and the Meetings dashboard: what each is, how to open it, and how to use it. The README links to it.
