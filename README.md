@@ -321,6 +321,10 @@ The ribbon icon (calendar icon, left sidebar) opens the same event picker as **C
 
 The status bar at the bottom of the window shows the meeting in progress (*Now: Standup · ends in 10 min*) or the next one (*Next: Design Review in 25 min*, *at 3:00 PM*, or *tomorrow at 9:00 AM*). Click it to open the meeting's note and join link. Turn it off with **Show next meeting in status bar**.
 
+---
+
+## Dashboards
+
 ### Meetings dashboard
 
 **Open meetings dashboard** creates a [Bases](https://obsidian.md/help/bases) file (Obsidian 1.9 or later) listing every meeting note, with **Next 7 days**, **Last 7 days**, and **All meetings** views grouped by day. It is an ordinary `.base` file — edit its columns, filters, and views like any other base.
