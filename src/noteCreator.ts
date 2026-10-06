@@ -506,6 +506,13 @@ tags:
 ## Action items
 
 - [ ] 
+
+## Meeting Summary
+
+
+
+## Transcript
+
 `;
 
 /** Placeholders available in templates, mapped to their value for this event. */

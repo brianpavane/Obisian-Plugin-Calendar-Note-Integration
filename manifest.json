@@ -3,7 +3,7 @@
 	"name": "Calendar Note Integration - Apple-iCal-Google",
 	"version": "6.9.1",
 	"minAppVersion": "1.4.10",
-	"description": "Create structured meeting notes from Apple Calendar on your Mac, with a one-click join link, attendees, and sections for Agenda, Notes, Decisions, and Action items.",
+	"description": "Create structured meeting notes from Apple Calendar on your Mac, with a one-click join link, attendees, and sections for Agenda, Notes, Decisions, Action items, Meeting Summary, and Transcript.",
 	"author": "Brian Pavane",
 	"authorUrl": "https://github.com/brianpavane",
 	"isDesktopOnly": true

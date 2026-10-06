@@ -12,7 +12,7 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 
 - **Automatic note creation** — notes appear before your meetings without any manual action
 - **Local Apple Calendar** — reads Calendar.app on your Mac; choose exactly which calendars to include
-- **Structured meeting notes** — searchable properties, a Meeting details box, and Agenda, Notes, Decisions, and Action items sections
+- **Structured meeting notes** — searchable properties, a Meeting details box, and Agenda, Notes, Decisions, Action items, Meeting Summary, and Transcript sections
 - **One-click join** — Zoom, Google Meet, Microsoft Teams, and Webex links are found in the event's URL, location, or description and shown as a **Join** link
 - **Attendees with RSVP status** — 🟢 accepted, 🔴 declined, 🟡 tentative, ⚪ awaiting; optionally as `[[Name]]` links to your people notes
 - **Notes stay in sync** — time, attendee, and location changes are applied to existing notes; moved meetings are renamed to their new date; cancelled meetings are marked cancelled
@@ -189,12 +189,20 @@ tags:
 ## Action items
 
 - [ ] 
+
+## Meeting Summary
+
+
+
+## Transcript
+
 ```
 
 - **Properties** hold the meeting's details so you can search, sort, and query meetings (for example with Bases or Dataview). `meeting_url` is clickable in the Properties panel.
 - **Meeting details** has the **Join** link, and the date links to the daily note. A cancelled meeting shows a red **Meeting cancelled** box instead.
 - **Agenda** starts with the lines of the event description (when **Include event description** is on).
 - **Agenda**, **Notes**, **Decisions**, and **Action items** are yours to fill in. Action items are checkboxes, so Obsidian's task search and the Tasks plugin can collect them across meetings.
+- **Meeting Summary** and **Transcript** are empty sections at the end of the note, for pasting a summary and transcript from your recording or AI note-taker.
 
 ### Custom templates
 
@@ -254,6 +262,13 @@ tags:
 ## Action items
 
 - [ ] 
+
+## Meeting Summary
+
+
+
+## Transcript
+
 ```
 
 ### Daily notes

@@ -9,6 +9,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+**Meeting Summary and Transcript sections**
+New meeting notes end with empty **Meeting Summary** and **Transcript** sections, ready for a pasted summary and transcript from a recording or AI note-taker. Existing notes and custom templates are unchanged.
+
 ### Changed
 
 **Meeting times show the time zone**

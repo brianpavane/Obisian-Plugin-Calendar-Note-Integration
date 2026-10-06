@@ -1,7 +1,7 @@
 {
 	"name": "calendar-note-integration",
 	"version": "6.9.1",
-	"description": "Create structured meeting notes from Apple Calendar on your Mac, with a one-click join link, attendees, and sections for Agenda, Notes, Decisions, and Action items.",
+	"description": "Create structured meeting notes from Apple Calendar on your Mac, with a one-click join link, attendees, and sections for Agenda, Notes, Decisions, Action items, Meeting Summary, and Transcript.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",

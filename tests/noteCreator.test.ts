@@ -183,7 +183,7 @@ test("createNoteContent uses the meeting format with properties, details callout
   assert.match(content, /^> \*\*Where:\*\* Room B$/m);
   assert.match(content, /^> \*\*Join:\*\* \[Join Google Meet\]\(https:\/\/meet\.google\.com\/abc-defg-hij\)$/m);
   assert.match(content, /^> \*\*Attendees:\*\* 🟢 \[\[Alice Smith\]\] \*\(organizer\)\* · 🟡 \[\[Bob Jones\]\]$/m);
-  assert.match(content, /## Agenda\n\n- \n\n## Notes\n\n- \n\n## Decisions\n\n- \n\n## Action items\n\n- \[ \] \n$/);
+  assert.match(content, /## Agenda\n\n- \n\n## Notes\n\n- \n\n## Decisions\n\n- \n\n## Action items\n\n- \[ \] \n\n## Meeting Summary\n\n\n\n## Transcript\n\n$/);
   assert.doesNotMatch(content, /Event description/);
 });
 
