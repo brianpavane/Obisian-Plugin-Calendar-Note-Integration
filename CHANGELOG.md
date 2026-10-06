@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+**Dashboards guide**
+A step-by-step guide, `docs/DASHBOARDS.md`, explains the Meeting action items panel and the Meetings dashboard: what each is, how to open it, and how to use it. The README links to it.
+
+---
+
 ## [6.10.0] – 2026-10-06
 
 ### Added

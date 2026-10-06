@@ -20,8 +20,8 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 - **Your own template** — point the plugin at a template note with placeholders, or use the built-in format
 - **Daily-note links** — each meeting links to that day's daily note, so the day's meetings appear in its backlinks
 - **Next meeting in the status bar** — click it, or run **Join current or next meeting**, to open the note and join
-- **Meetings dashboard** — a ready-made Bases view of upcoming and recent meetings
-- **Action items view** — every open action item across your meetings in one sidebar, ticked off in place
+- **Meetings dashboard** — a ready-made Bases view of upcoming and recent meetings ([guide](docs/DASHBOARDS.md))
+- **Action items view** — every open action item across your meetings in one sidebar, ticked off in place ([guide](docs/DASHBOARDS.md))
 - **Declined event filtering** — events you have declined are skipped, when the calendar identifies you as an attendee or your email address is set
 - **All-day event filtering** — all-day events (holidays, OOO blocks) are skipped
 - **Configurable time window** — look ahead 1–48 hours; optionally include past events
@@ -325,13 +325,15 @@ The status bar at the bottom of the window shows the meeting in progress (*Now: 
 
 ## Dashboards
 
+New to these? **[Dashboards — a step-by-step guide](docs/DASHBOARDS.md)** explains what each one is, where to find it, and how to use it.
+
 ### Meetings dashboard
 
 **Open meetings dashboard** creates a [Bases](https://obsidian.md/help/bases) file (Obsidian 1.9 or later) listing every meeting note, with **Next 7 days**, **Last 7 days**, and **All meetings** views grouped by day. It is an ordinary `.base` file — edit its columns, filters, and views like any other base.
 
 ### Meeting action items
 
-**Open meeting action items** opens a sidebar listing every unchecked task (`- [ ] …`) in your meeting notes, grouped by meeting with the newest first. Click a meeting to open its note; tick an item to check it off in that note. The list updates as you edit notes, and needs no other plugins.
+Press **Cmd + P**, type `action items`, and choose **Open meeting action items**. This opens a panel in the right sidebar listing every unchecked task (`- [ ] …`) in your meeting notes, grouped by meeting with the newest first. Click a meeting to open its note; tick an item to check it off in that note. The list updates as you edit notes, and needs no other plugins.
 
 ---
 
