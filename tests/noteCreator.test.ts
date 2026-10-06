@@ -5,6 +5,7 @@ import {
   createNoteFile,
   generateNoteFilename,
   resolveNoteFilePath,
+  updateNoteContent,
 } from "../src/noteCreator";
 import type { CalendarEvent } from "../src/calendarApi";
 import { createMemoryApp } from "./support/testHelpers";
@@ -36,7 +37,7 @@ test("resolveNoteFilePath preserves the event's local date in the final path", (
 test("createNoteContent writes the original event date into frontmatter", () => {
   const content = createNoteContent(buildEvent(), {
     includeEventNotes: false,
-    includeConferenceLinks: false,
+    linkAttendees: false,
   });
 
   assert.match(content, /^date: 2026-04-03$/m);
@@ -65,14 +66,16 @@ https://zoom.us/j/123456789
     },
     {
       includeEventNotes: true,
-      includeConferenceLinks: true,
+      linkAttendees: false,
     }
   );
 
   assert.match(content, /title: "Planning: \\"Q2\\""/);
-  assert.match(content, /\| 🟢 \| Alex \\| Smith \*\(organizer\)\* \| alex@example\.com \|/);
+  assert.match(content, /^> \*\*Attendees:\*\* 🟢 Alex \\\| Smith \*\(organizer\)\*$/m);
+  assert.doesNotMatch(content, /Me <me@example\.com>/);
   assert.doesNotMatch(content, /Join Zoom Meeting/);
-  assert.match(content, /\*\*Zoom:\*\* \[Join meeting\]\(https:\/\/zoom\.us\/j\/123456789\)/);
+  assert.match(content, /^> \*\*Join:\*\* \[Join Zoom\]\(https:\/\/zoom\.us\/j\/123456789\)$/m);
+  assert.match(content, /^meeting_url: "https:\/\/zoom\.us\/j\/123456789"$/m);
 });
 
 test("createNoteContent excludes unsafe conference links", () => {
@@ -86,11 +89,12 @@ test("createNoteContent excludes unsafe conference links", () => {
     },
     {
       includeEventNotes: false,
-      includeConferenceLinks: true,
+      linkAttendees: false,
     }
   );
 
-  assert.doesNotMatch(content, /\[Join meeting\]\(/);
+  assert.doesNotMatch(content, /\*\*Join:\*\*/);
+  assert.doesNotMatch(content, /^meeting_url:/m);
 });
 
 test("createNoteContent excludes plain http conference links", () => {
@@ -104,11 +108,12 @@ test("createNoteContent excludes plain http conference links", () => {
     },
     {
       includeEventNotes: false,
-      includeConferenceLinks: true,
+      linkAttendees: false,
     }
   );
 
-  assert.doesNotMatch(content, /\[Join meeting\]\(/);
+  assert.doesNotMatch(content, /\*\*Join:\*\*/);
+  assert.doesNotMatch(content, /^meeting_url:/m);
 });
 
 test("createNoteFile creates folders and reuses existing files idempotently", async () => {
@@ -118,17 +123,112 @@ test("createNoteFile creates folders and reuses existing files idempotently", as
   const first = await createNoteFile(app as never, event, {
     noteFolder: "Meeting Notes",
     includeEventNotes: true,
-    includeConferenceLinks: false,
+    linkAttendees: false,
     datePosition: "before",
   });
   const second = await createNoteFile(app as never, event, {
     noteFolder: "Meeting Notes",
     includeEventNotes: true,
-    includeConferenceLinks: false,
+    linkAttendees: false,
     datePosition: "before",
   });
 
   assert.equal(first.wasCreated, true);
   assert.equal(second.wasCreated, false);
   assert.equal(first.file.path, "Meeting Notes/2026-04-03 - Late Night Sync.md");
+});
+
+test("generateNoteFilename uses this machine's date for UTC timestamps", () => {
+  const start = "2026-04-04T02:30:00.000Z";
+  const d = new Date(start);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const localDate = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  const filename = generateNoteFilename(
+    buildEvent({ start: { dateTime: start }, end: { dateTime: "2026-04-04T03:30:00.000Z" } }),
+    "before"
+  );
+
+  assert.equal(filename, `${localDate} - Late Night Sync`);
+});
+
+test("createNoteContent uses the meeting format with properties, details callout and sections", () => {
+  const content = createNoteContent(
+    buildEvent({
+      summary: "Weekly Sync",
+      start: { dateTime: "2026-01-15T10:00:00-05:00" },
+      end: { dateTime: "2026-01-15T11:00:00-05:00" },
+      location: "Room B",
+      calendarName: "Work",
+      organizer: { email: "alice@example.com", displayName: "Alice Smith" },
+      attendees: [
+        { email: "alice@example.com", displayName: "Alice Smith", responseStatus: "accepted" },
+        { email: "bob@example.com", displayName: "Bob Jones", responseStatus: "tentative" },
+      ],
+      conferenceData: {
+        conferenceSolution: { name: "Google Meet" },
+        entryPoints: [{ entryPointType: "video", uri: "https://meet.google.com/abc-defg-hij" }],
+      },
+    }),
+    { includeEventNotes: false, linkAttendees: true }
+  );
+
+  assert.match(content, /^type: meeting$/m);
+  assert.match(content, /^start: 2026-01-15T10:00$/m);
+  assert.match(content, /^end: 2026-01-15T11:00$/m);
+  assert.match(content, /^calendar: "Work"$/m);
+  assert.match(content, /^organizer: "\[\[Alice Smith\]\]"$/m);
+  assert.match(content, /^ {2}- "\[\[Bob Jones\]\]"$/m);
+  assert.match(content, /^> \*\*When:\*\* Thursday, January 15, 2026 · 10:00 AM – 11:00 AM \(1h\)$/m);
+  assert.match(content, /^> \*\*Where:\*\* Room B$/m);
+  assert.match(content, /^> \*\*Join:\*\* \[Join Google Meet\]\(https:\/\/meet\.google\.com\/abc-defg-hij\)$/m);
+  assert.match(content, /^> \*\*Attendees:\*\* 🟢 \[\[Alice Smith\]\] \*\(organizer\)\* · 🟡 \[\[Bob Jones\]\]$/m);
+  assert.match(content, /## Agenda\n\n- \n\n## Notes\n\n- \n\n## Decisions\n\n- \n\n## Action items\n\n- \[ \] \n$/);
+  assert.doesNotMatch(content, /Event description/);
+});
+
+test("updateNoteContent refreshes calendar details and keeps the user's writing", () => {
+  const original = createNoteContent(
+    buildEvent({
+      summary: "Planning",
+      start: { dateTime: "2026-01-15T10:00:00-05:00" },
+      end: { dateTime: "2026-01-15T11:00:00-05:00" },
+      location: "Room B",
+      attendees: [{ email: "bob@example.com", displayName: "Bob", responseStatus: "needsAction" }],
+    }),
+    { includeEventNotes: false, linkAttendees: false }
+  )
+    .replace("tags:\n  - meeting", "tags:\n  - meeting\n  - project-x\nproject: Apollo")
+    .replace("## Notes\n\n- ", "## Notes\n\n- My own note");
+
+  const updated = updateNoteContent(
+    original,
+    buildEvent({
+      summary: "Planning",
+      start: { dateTime: "2026-01-16T14:00:00-05:00" },
+      end: { dateTime: "2026-01-16T14:30:00-05:00" },
+      attendees: [{ email: "bob@example.com", displayName: "Bob", responseStatus: "accepted" }],
+      cancelled: true,
+    }),
+    { linkAttendees: false }
+  );
+
+  assert.match(updated, /^date: 2026-01-16$/m);
+  assert.match(updated, /^start: 2026-01-16T14:00$/m);
+  assert.match(updated, /^status: cancelled$/m);
+  assert.doesNotMatch(updated, /^location:/m);
+  assert.match(updated, /^> \[!danger\] Meeting cancelled$/m);
+  assert.match(updated, /^> \*\*When:\*\* Friday, January 16, 2026 · 02:00 PM – 02:30 PM \(30m\)$/m);
+  assert.match(updated, /^> \*\*Attendees:\*\* 🟢 Bob$/m);
+  assert.doesNotMatch(updated, /Where:/);
+  assert.match(updated, /^ {2}- project-x$/m);
+  assert.match(updated, /^project: Apollo$/m);
+  assert.match(updated, /- My own note/);
+  assert.equal(updateNoteContent(updated, buildEvent({
+    summary: "Planning",
+    start: { dateTime: "2026-01-16T14:00:00-05:00" },
+    end: { dateTime: "2026-01-16T14:30:00-05:00" },
+    attendees: [{ email: "bob@example.com", displayName: "Bob", responseStatus: "accepted" }],
+    cancelled: true,
+  }), { linkAttendees: false }), updated);
 });

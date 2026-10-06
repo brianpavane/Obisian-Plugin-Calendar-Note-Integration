@@ -17,6 +17,7 @@ export function createMemoryApp(initialFiles: Array<{ path: string; content?: st
   files: Map<string, TFile | TFolder>;
   createdPaths: string[];
   openedFiles: string[];
+  renamed: Array<[string, string]>;
 } {
   const files = new Map<string, TFile | TFolder>();
   const createdPaths: string[] = [];
@@ -28,16 +29,29 @@ export function createMemoryApp(initialFiles: Array<{ path: string; content?: st
     files.set(entry.path, file);
   }
 
+  const renamed: Array<[string, string]> = [];
+
   const app: App & {
     files: Map<string, TFile | TFolder>;
     createdPaths: string[];
     openedFiles: string[];
+    renamed: Array<[string, string]>;
   } = {
     files,
     createdPaths,
     openedFiles,
+    renamed,
     vault: {
       getAllLoadedFiles: () => Array.from(files.values()),
+      getMarkdownFiles: () =>
+        Array.from(files.values()).filter(
+          (f): f is TFile => f instanceof TFile && f.path.endsWith(".md")
+        ),
+      read: async (file: TFile) => file.content ?? "",
+      process: async (file: TFile, fn: (content: string) => string) => {
+        file.content = fn(file.content ?? "");
+        return file.content;
+      },
       getAbstractFileByPath: (path: string) => files.get(path) ?? null,
       createFolder: async (path: string) => {
         files.set(path, new TFolder(path));
@@ -48,6 +62,27 @@ export function createMemoryApp(initialFiles: Array<{ path: string; content?: st
         files.set(path, file);
         createdPaths.push(path);
         return file;
+      },
+    },
+    metadataCache: {
+      getFileCache: (file: TFile) => {
+        const fm = (file.content ?? "").match(/^---\n([\s\S]*?)\n---/);
+        if (!fm) return null;
+        const frontmatter: Record<string, unknown> = {};
+        for (const line of fm[1].split("\n")) {
+          const m = line.match(/^([A-Za-z0-9_-]+):\s*"?(.*?)"?$/);
+          if (m) frontmatter[m[1]] = m[2];
+        }
+        return { frontmatter };
+      },
+    },
+    fileManager: {
+      renameFile: async (file: TFile, newPath: string) => {
+        files.delete(file.path);
+        renamed.push([file.path, newPath]);
+        file.path = newPath;
+        file.name = newPath.split("/").pop() ?? newPath;
+        files.set(newPath, file);
       },
     },
     workspace: {

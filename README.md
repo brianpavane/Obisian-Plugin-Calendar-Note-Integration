@@ -12,9 +12,11 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 
 - **Automatic note creation** — notes appear before your meetings without any manual action
 - **Local Apple Calendar** — reads Calendar.app on your Mac; choose exactly which calendars to include
-- **Structured note template** — Agenda (from event description), Notes, Summary, and Actions sections
-- **Attendee table** — shows every participant with their RSVP status (🟢 accepted, 🔴 declined, 🟡 tentative, ⚪ awaiting)
-- **Conference link extraction** — Zoom, Google Meet, and Microsoft Teams links can be added to the note header (off by default)
+- **Structured meeting notes** — searchable properties, a Meeting details box, and Agenda, Notes, Decisions, and Action items sections
+- **One-click join** — Zoom, Google Meet, Microsoft Teams, and Webex links are found in the event's URL, location, or description and shown as a **Join** link
+- **Attendees with RSVP status** — 🟢 accepted, 🔴 declined, 🟡 tentative, ⚪ awaiting; optionally as `[[Name]]` links to your people notes
+- **Notes stay in sync** — time, attendee, and location changes are applied to existing notes; moved meetings are renamed to their new date; cancelled meetings are marked cancelled
+- **Recurring meetings** — every occurrence gets its own note
 - **Declined event filtering** — events you have declined are skipped, when the calendar identifies you as an attendee or your email address is set
 - **All-day event filtering** — all-day events (holidays, OOO blocks) are skipped
 - **Configurable time window** — look ahead 1–48 hours; optionally include past events
@@ -127,8 +129,8 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 | Poll interval | 30 min | How often to check for new upcoming events (5–120); takes effect after restart |
 | Include past events | Off | Also create notes for events that have already started |
 | Days back | 1 | How many days back to look when past events are enabled (1–30) |
-| Include event notes | On | Include the event description as the Agenda section |
-| Include conference link | Off | Add a Join Meeting link to the note header |
+| Include event description | On | Add the event's original description to new notes in a collapsed callout |
+| Link attendees | Off | Write the organizer and attendees as `[[Name]]` links instead of plain names and emails |
 | Date position in filename | Before | `2026-01-15 - Meeting Name.md` or `Meeting Name - 2026-01-15.md` |
 
 ### Calendar View (event picker)
@@ -142,8 +144,8 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 
 | Button | Description |
 |--------|-------------|
-| **Refresh** | Immediately fetch events and create any missing notes |
-| **Rebuild** | Re-runs the full import and recreates notes for any events whose notes were deleted. Existing notes are not overwritten. |
+| **Refresh** | Immediately fetch events, create notes for new events, and update existing notes. Notes you deleted are not recreated. |
+| **Rebuild** | Same as Refresh, but also recreates notes you deleted. Runs automatically once after each install or upgrade. |
 
 ---
 
@@ -151,57 +153,65 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 
 ```markdown
 ---
+type: meeting
 title: "Weekly Sync"
 date: 2026-01-15
-calendar_event_id: "abc123..."
-location: "Conference Room B"
+start: 2026-01-15T10:00
+end: 2026-01-15T11:00
+calendar: "Work"
+organizer: "Alice Smith <alice@example.com>"
 attendees:
   - "Alice Smith <alice@example.com>"
   - "Bob Jones <bob@example.com>"
   - "Carol White <carol@example.com>"
-duration: "1h"
+location: "Conference Room B"
+meeting_url: "https://meet.google.com/abc-defg-hij"
 conference_platform: "Google Meet"
+calendar_event_id: "7F3A…::2026-01-15T15:00:00.000Z"
+tags:
+  - meeting
 ---
 
 # Weekly Sync
 
-**Date:** Thursday, January 15, 2026
-**Time:** 10:00 AM – 11:00 AM
-**Duration:** 1h
-**Location:** Conference Room B
-**Google Meet:** [Join meeting](https://meet.google.com/abc-defg-hij)
-**Organizer:** Alice Smith
+> [!info] Meeting details
+> **When:** Thursday, January 15, 2026 · 10:00 AM – 11:00 AM (1h)
+> **Where:** Conference Room B
+> **Join:** [Join Google Meet](https://meet.google.com/abc-defg-hij)
+> **Organizer:** Alice Smith
+> **Attendees:** 🟢 Alice Smith *(organizer)* · 🟢 Bob Jones · ⚪ Carol White
 
-**Attendees:**
-
-|   | Name | Email |
-|:-:|:-----|:------|
-| 🟢 | Alice Smith *(organizer)* | alice@example.com |
-| 🟢 | Bob Jones | bob@example.com |
-| ⚪ | Carol White | carol@example.com |
-
----
+> [!quote]- Event description
+> Review Q1 goals
+> Staffing update
 
 ## Agenda
 
-- Weekly status update
-- Q1 planning discussion
 - 
 
 ## Notes
 
 - 
 
-## Summary
+## Decisions
 
 - 
 
-## Actions
+## Action items
 
-- 
+- [ ] 
 ```
 
-The `conference_platform` line and the meeting link appear only when **Include conference link** is on. The Agenda section appears only when **Include event notes** is on.
+- **Properties** hold the meeting's details so you can search, sort, and query meetings (for example with Bases or Dataview). `meeting_url` is clickable in the Properties panel.
+- **Meeting details** has the **Join** link. A cancelled meeting shows a red **Meeting cancelled** box instead.
+- **Event description** (collapsed) is the original invite text; it appears only when **Include event description** is on.
+- **Agenda**, **Notes**, **Decisions**, and **Action items** are yours to fill in. Action items are checkboxes, so Obsidian's task search and the Tasks plugin can collect them across meetings.
+
+### Keeping notes up to date
+
+Every poll, Refresh, and Rebuild updates the notes of meetings in the time window. The plugin only rewrites the calendar properties listed above (title, date, start, end, calendar, organizer, attendees, location, meeting link, status, and event ID) and the **Meeting details** box. Everything else in the note — your writing, extra properties, and tags you add — is never changed.
+
+If a meeting moves to another day, its note is renamed to the new date (a title you edited in the filename is kept). Notes created by versions before 6.7 get their properties updated but keep their original layout.
 
 ---
 
@@ -237,6 +247,7 @@ The **EventKit global** path (primary) reads the local cache and is not expected
 - Check **Hours in advance** — events too far in the future are not in the window yet
 - Check **Your email address** — if set, declined events are filtered out
 - Use the **Rebuild** button (Settings → Manual Actions) to force a re-check
+- Cancelled meetings never get a new note
 - Check the Obsidian developer console (Cmd+Option+I → Console) for `[CalendarNoteIntegration]` warnings and errors. For step-by-step Apple Calendar fetch details, set the console's log level to include **Verbose**.
 
 ### Google Calendar — authentication errors

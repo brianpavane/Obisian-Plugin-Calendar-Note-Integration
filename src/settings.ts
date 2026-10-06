@@ -46,7 +46,7 @@ export interface GoogleCalendarSettings {
   includePastEvents: boolean;
   daysBack: number;
   includeEventNotes: boolean;
-  includeConferenceLinks: boolean;
+  linkAttendees: boolean;
   datePosition: "before" | "after";
   daysAhead: number;
   maxEvents: number;
@@ -55,6 +55,8 @@ export interface GoogleCalendarSettings {
   appleMaxTier3Scan: number;
   /** IDs of events that have already been processed (note created or skipped). */
   processedEventIds: string[];
+  /** Plugin version of the last completed startup sweep; a change triggers a rebuild. */
+  lastRunVersion: string;
 }
 
 export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
@@ -74,7 +76,7 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   includePastEvents: false,
   daysBack: 1,
   includeEventNotes: true,
-  includeConferenceLinks: false,
+  linkAttendees: false,
   datePosition: "before",
   daysAhead: 7,
   maxEvents: 20,
@@ -82,6 +84,7 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   appleSkipTier3: false,
   appleMaxTier3Scan: 250,
   processedEventIds: [],
+  lastRunVersion: "",
 };
 
 // ---------------------------------------------------------------------------
@@ -698,9 +701,9 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
     containerEl.createEl("h3", { text: "Note Contents" });
 
     new Setting(containerEl)
-      .setName("Include event notes / agenda")
+      .setName("Include event description")
       .setDesc(
-        "When enabled, the event's description is included as the Agenda section in the generated note."
+        "When enabled, the event's original description is added to new notes in a collapsed callout."
       )
       .addToggle((toggle) =>
         toggle
@@ -712,16 +715,16 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Include conference link")
+      .setName("Link attendees")
       .setDesc(
-        "When enabled, video conference links (Google Meet, Zoom, Microsoft Teams) are extracted " +
-          "and included in the note."
+        "Write the organizer and attendees as [[Name]] links so each person's note lists " +
+          "their meetings. When off, they are written as plain names and email addresses."
       )
       .addToggle((toggle) =>
         toggle
-          .setValue(this.plugin.settings.includeConferenceLinks)
+          .setValue(this.plugin.settings.linkAttendees)
           .onChange(async (value) => {
-            this.plugin.settings.includeConferenceLinks = value;
+            this.plugin.settings.linkAttendees = value;
             await this.plugin.saveSettings();
           })
       );
@@ -788,9 +791,9 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Refresh")
       .setDesc(
-        "Fetches calendar events and creates notes for any new events that have not been " +
-        "processed before. Events whose notes were previously deleted are not recreated — " +
-        "use Rebuild for that. Uses the time window configured in Note Settings above."
+        "Fetches calendar events, creates notes for new events, and updates the calendar " +
+        "details of existing notes. Notes you deleted are not recreated — use Rebuild for " +
+        "that. Uses the time window configured in Note Settings above."
       )
       .addButton((button) =>
         button.setButtonText("Refresh").setCta().onClick(async () => {
@@ -803,9 +806,9 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Rebuild")
       .setDesc(
-        "Fetches calendar events and recreates notes for any events whose note file is " +
-        "currently missing — including events whose notes were manually deleted. Existing " +
-        "notes are never overwritten. Uses the time window configured in Note Settings above."
+        "Same as Refresh, but also recreates notes you deleted. Runs automatically once " +
+        "after the plugin is installed or upgraded. Your own writing in existing notes is " +
+        "never changed. Uses the time window configured in Note Settings above."
       )
       .addButton((button) =>
         button.setButtonText("Rebuild").onClick(async () => {

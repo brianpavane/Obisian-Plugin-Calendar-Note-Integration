@@ -181,9 +181,18 @@ export class FuzzySuggestModal<T> extends Modal {
 export interface App {
   vault: {
     getAllLoadedFiles?: () => Array<TFile | TFolder>;
+    getMarkdownFiles: () => TFile[];
     getAbstractFileByPath: (path: string) => unknown;
     createFolder: (path: string) => Promise<void>;
     create: (path: string, content: string) => Promise<TFile>;
+    process: (file: TFile, fn: (content: string) => string) => Promise<string>;
+    read: (file: TFile) => Promise<string>;
+  };
+  metadataCache: {
+    getFileCache: (file: TFile) => { frontmatter?: Record<string, unknown> } | null;
+  };
+  fileManager: {
+    renameFile: (file: TFile, newPath: string) => Promise<void>;
   };
   workspace: {
     getLeaf: (newLeaf?: boolean) => { openFile: (file: TFile) => Promise<void> };

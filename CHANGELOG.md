@@ -9,10 +9,38 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+**Notes stay in sync with the calendar**
+When a meeting's time, attendees, location, or join link changes, its existing note is updated on the next poll, Refresh, or Rebuild. A meeting moved to another day has its note renamed to the new date, and a cancelled meeting is marked cancelled. Only the calendar properties and the Meeting details box are rewritten — your own writing, extra properties, and tags are never touched.
+
+**One-click Join link**
+Every note now shows a clickable **Join** link for Zoom, Google Meet, Microsoft Teams, or Webex meetings, also saved as the `meeting_url` property. For Apple Calendar the link is found in the event's URL field, location, or notes. The "Include conference link" setting is removed because the link is always included.
+
+**Link attendees setting**
+Optionally write the organizer and attendees as `[[Name]]` links so each person's note lists their meetings.
+
+**Rebuild after upgrade**
+The first sweep after the plugin is installed or upgraded runs a Rebuild, so meetings in the time window get notes with the new version's format and fixes.
+
 ### Changed
+
+**New meeting note format**
+New notes have typed properties (`type`, `date`, `start`, `end`, `calendar`, `organizer`, `attendees`, `location`, `meeting_url`, `tags`) for searching and querying, a Meeting details box with the time, place, Join link, and attendees with RSVP status, the original invite in a collapsed callout, and Agenda, Notes, Decisions, and Action items (checkbox) sections. Existing notes keep their layout.
 
 **Version is bumped only when releasing**
 Routine commits no longer bump the plugin version. Changes are recorded under `[Unreleased]` in this changelog, and `node version-bump.mjs <level>` stamps that section with the new version and date when a release is cut. The pre-commit check no longer requires a version bump, and `RELEASE_PROCESS.md` now covers the bump, release commit, tag, and GitHub release in one sequence.
+
+### Fixed
+
+**Recurring Apple Calendar meetings get a note for every occurrence**
+All occurrences of a recurring meeting shared one ID, so only the first occurrence ever got a note. Each occurrence is now tracked separately, and a single occurrence that is moved keeps its note.
+
+**Late-evening Apple Calendar meetings no longer get the next day's date**
+Note filenames and the `date` property used the UTC date for Apple Calendar events, so a meeting after about 7–8 pm (US Eastern) was filed under the following day. They now use your Mac's local date.
+
+**Zoom links without a subdomain are detected**
+Links like `https://zoom.us/j/…` were missed; only `https://company.zoom.us/…` links were found.
 
 ---
 

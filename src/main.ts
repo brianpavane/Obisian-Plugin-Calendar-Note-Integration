@@ -26,7 +26,13 @@ import { CalendarService, CalendarEvent } from "./calendarApi";
 import { GoogleAuth } from "./googleAuth";
 import { encrypt, decrypt } from "./secureStorage";
 import { EventSuggestModal } from "./eventModal";
-import { createNoteFile, resolveNoteFilePath, NoteOptions } from "./noteCreator";
+import {
+  createNoteFile,
+  findNotesByEventId,
+  resolveNoteFilePath,
+  syncNoteFile,
+  NoteOptions,
+} from "./noteCreator";
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -79,10 +85,7 @@ export default class GoogleCalendarPlugin extends Plugin {
 
     this.addSettingTab(new GoogleCalendarSettingTab(this.app, this));
 
-    this.startupTimeoutId = window.setTimeout(
-      () => this.autoCreateUpcomingNotes(false),
-      5_000
-    );
+    this.startupTimeoutId = window.setTimeout(() => this.runStartupSweep(), 5_000);
 
     this.registerInterval(
       window.setInterval(
@@ -90,6 +93,23 @@ export default class GoogleCalendarPlugin extends Plugin {
         this.settings.pollIntervalMinutes * 60 * 1_000
       )
     );
+  }
+
+  /**
+   * First sweep after Obsidian starts. After the plugin is installed or
+   * upgraded it runs a rebuild, so notes in the window pick up the new
+   * version's format and fixes; otherwise it is a normal refresh.
+   */
+  async runStartupSweep(): Promise<void> {
+    const version = this.manifest.version;
+    if (this.settings.lastRunVersion === version) {
+      await this.refreshNotes(false);
+      return;
+    }
+    if (await this.rebuildNotes(false)) {
+      this.settings.lastRunVersion = version;
+      await this.saveSettings();
+    }
   }
 
   onunload(): void {
@@ -131,8 +151,11 @@ export default class GoogleCalendarPlugin extends Plugin {
     if (typeof merged.includeEventNotes !== "boolean") {
       merged.includeEventNotes = DEFAULT_SETTINGS.includeEventNotes;
     }
-    if (typeof merged.includeConferenceLinks !== "boolean") {
-      merged.includeConferenceLinks = DEFAULT_SETTINGS.includeConferenceLinks;
+    if (typeof merged.linkAttendees !== "boolean") {
+      merged.linkAttendees = DEFAULT_SETTINGS.linkAttendees;
+    }
+    if (typeof merged.lastRunVersion !== "string") {
+      merged.lastRunVersion = DEFAULT_SETTINGS.lastRunVersion;
     }
 
     // Sanitize enum field
@@ -225,7 +248,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     return {
       noteFolder: this.settings.noteFolder,
       includeEventNotes: this.settings.includeEventNotes,
-      includeConferenceLinks: this.settings.includeConferenceLinks,
+      linkAttendees: this.settings.linkAttendees,
       datePosition: this.settings.datePosition,
     };
   }
@@ -321,104 +344,86 @@ export default class GoogleCalendarPlugin extends Plugin {
   }
 
   /**
-   * Refresh: create notes only for events that have never been processed before.
-   * Events whose notes were manually deleted are NOT recreated — use rebuildNotes for that.
-   * Called by the background poller, startup sweep, and the Refresh button.
+   * Bring notes in line with the calendar for every event in the window.
    *
-   * Two-layer guard:
-   *  1. processedEventIds — skip events already seen in a previous run.
-   *  2. File existence check — if a note file already exists for an untracked event,
-   *     mark it as processed without touching the file (migration bootstrap, handles
-   *     notes created before processedEventIds tracking was introduced).
-   * A note is only ever created when BOTH guards confirm the event is genuinely new.
+   *  - A note whose `calendar_event_id` matches the event has its calendar
+   *    details (managed properties and the "Meeting details" callout) updated,
+   *    and is renamed if the meeting moved to another day.
+   *  - Otherwise a note is created, unless the event was already processed
+   *    (its note was deliberately deleted) and `recreateDeleted` is false, or
+   *    the event is cancelled.
+   *  - A note file already at the event's path (created before IDs were stored
+   *    in notes) is adopted without being modified.
+   *
+   * Returns false if the calendar could not be read.
    */
-  async refreshNotes(verbose: boolean): Promise<void> {
+  private async syncNotes(verbose: boolean, recreateDeleted: boolean): Promise<boolean> {
     const events = await this.fetchAndFilterEvents(verbose);
-    if (!events) return;
+    if (!events) return false;
 
     const processedSet = new Set(this.settings.processedEventIds);
+    const markProcessed = (id: string) => {
+      if (processedSet.has(id)) return;
+      processedSet.add(id);
+      this.settings.processedEventIds.push(id);
+    };
     const options = this.getNoteOptions();
-    let bootstrapped = false;
-
-    // Layer 2 bootstrap: for any untracked event whose note file already exists,
-    // mark it as processed without creating or modifying the file. This prevents
-    // recreating notes that pre-date processedEventIds tracking.
-    for (const event of events) {
-      if (processedSet.has(event.id)) continue;
-      const filePath = resolveNoteFilePath(event, options);
-      if (this.app.vault.getAbstractFileByPath(filePath) instanceof TFile) {
-        this.settings.processedEventIds.push(event.id);
-        processedSet.add(event.id);
-        bootstrapped = true;
-      }
-    }
-    if (bootstrapped) await this.saveSettings();
-
-    // Layer 1 + 2: only create notes for events that are genuinely new.
+    const notesById = findNotesByEventId(this.app, options.noteFolder);
     let created = 0;
+    let updated = 0;
+
     for (const event of events) {
-      if (processedSet.has(event.id)) continue;
       try {
+        const existing = notesById.get(event.id);
+        if (existing) {
+          if (await syncNoteFile(this.app, existing, event, options)) updated++;
+          markProcessed(event.id);
+          continue;
+        }
+        if (event.cancelled) continue;
+        if (processedSet.has(event.id) && !recreateDeleted) continue;
+        if (this.app.vault.getAbstractFileByPath(resolveNoteFilePath(event, options)) instanceof TFile) {
+          markProcessed(event.id);
+          continue;
+        }
         const result = await createNoteFile(this.app, event, options);
         if (result.wasCreated) created++;
-        this.settings.processedEventIds.push(event.id);
-        processedSet.add(event.id);
+        markProcessed(event.id);
       } catch (err) {
-        console.warn("[CalendarNoteIntegration] Failed to create note for event:", err);
+        console.warn("[CalendarNoteIntegration] Failed to sync note for event:", err);
       }
     }
 
     await this.trimAndSaveProcessedIds();
 
-    if (verbose) {
-      new Notice(
-        created > 0
-          ? `Calendar Notes: Created ${created} new note${created !== 1 ? "s" : ""}.`
-          : `Calendar Notes: No new notes needed — all events already have notes.`
-      );
-    } else if (created > 0) {
-      new Notice(
-        `Calendar Notes: Auto-created ${created} meeting note${created !== 1 ? "s" : ""}.`,
-        4_000
-      );
+    const plural = (n: number, word: string) => `${n} ${word}${n !== 1 ? "s" : ""}`;
+    const parts = [
+      ...(created > 0 ? [`created ${plural(created, "note")}`] : []),
+      ...(updated > 0 ? [`updated ${plural(updated, "note")}`] : []),
+    ];
+    if (parts.length > 0) {
+      const message = parts.join(", ");
+      new Notice(`Calendar Notes: ${message.charAt(0).toUpperCase()}${message.slice(1)}.`, verbose ? undefined : 4_000);
+    } else if (verbose) {
+      new Notice("Calendar Notes: All notes are up to date.");
     }
+    return true;
   }
 
   /**
-   * Rebuild: create notes for every event in the window whose note file is currently missing.
-   * Ignores processedEventIds — this is the "recreate deleted notes" action.
-   * Called by the Rebuild button.
+   * Refresh: create notes for new events and update existing notes. Notes the
+   * user deleted are not recreated. Used by the poller and the Refresh button.
    */
-  async rebuildNotes(verbose: boolean): Promise<void> {
-    const events = await this.fetchAndFilterEvents(verbose);
-    if (!events) return;
+  async refreshNotes(verbose: boolean): Promise<boolean> {
+    return this.syncNotes(verbose, false);
+  }
 
-    const options = this.getNoteOptions();
-    let created = 0;
-
-    for (const event of events) {
-      try {
-        const result = await createNoteFile(this.app, event, options);
-        if (result.wasCreated) {
-          created++;
-          if (!this.settings.processedEventIds.includes(event.id)) {
-            this.settings.processedEventIds.push(event.id);
-          }
-        }
-      } catch (err) {
-        console.warn("[CalendarNoteIntegration] Failed to create note for event:", err);
-      }
-    }
-
-    await this.trimAndSaveProcessedIds();
-
-    if (verbose) {
-      new Notice(
-        created > 0
-          ? `Calendar Notes: Rebuilt ${created} note${created !== 1 ? "s" : ""}.`
-          : `Calendar Notes: No missing notes found — nothing to rebuild.`
-      );
-    }
+  /**
+   * Rebuild: like refresh, but also recreates notes that were deleted.
+   * Used by the Rebuild button and after an upgrade.
+   */
+  async rebuildNotes(verbose: boolean): Promise<boolean> {
+    return this.syncNotes(verbose, true);
   }
 
   /** Delegates to refreshNotes — background poller and startup sweep entry point. */
@@ -448,7 +453,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       );
       loadingNotice.hide();
 
-      events = this.filterOutAllDay(events);
+      events = this.filterOutAllDay(events).filter((e) => !e.cancelled);
       events = this.filterDeclinedEvents(events);
 
       if (events.length === 0) {
@@ -487,7 +492,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       );
       loadingNotice.hide();
 
-      events = this.filterOutAllDay(events);
+      events = this.filterOutAllDay(events).filter((e) => !e.cancelled);
       events = this.filterDeclinedEvents(events);
 
       if (events.length === 0) {

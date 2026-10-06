@@ -38,7 +38,7 @@ test("loadSettings clamps numeric values and sanitizes invalid fields", async ()
     daysBack: -5,
     includePastEvents: "yes",
     includeEventNotes: "no",
-    includeConferenceLinks: null,
+    linkAttendees: null,
     datePosition: "sideways",
     processedEventIds: "not-an-array",
   });
@@ -52,7 +52,7 @@ test("loadSettings clamps numeric values and sanitizes invalid fields", async ()
   assert.equal(plugin.settings.daysBack, 1);
   assert.equal(plugin.settings.includePastEvents, false);
   assert.equal(plugin.settings.includeEventNotes, true);
-  assert.equal(plugin.settings.includeConferenceLinks, false);
+  assert.equal(plugin.settings.linkAttendees, false);
   assert.equal(plugin.settings.datePosition, "before");
   assert.deepEqual(plugin.settings.processedEventIds, []);
 });
@@ -92,7 +92,7 @@ test("refreshNotes bootstraps existing files and only creates genuinely new note
 
   assert.deepEqual(plugin.settings.processedEventIds.sort(), ["existing-id", "new-id"]);
   assert.deepEqual(app.createdPaths, ["Meeting Notes/2026-04-03 - New Event.md"]);
-  assert.match(getNotices().at(-1)?.message ?? "", /Created 1 new note/);
+  assert.match(getNotices().at(-1)?.message ?? "", /Created 1 note/);
 });
 
 test("refreshNotes filters all-day and declined self events", async () => {
@@ -179,7 +179,7 @@ test("rebuildNotes recreates deleted files even if the event was already process
 
   assert.deepEqual(app.createdPaths, ["Meeting Notes/2026-04-03 - Team Sync.md"]);
   assert.deepEqual(plugin.settings.processedEventIds, ["event-1"]);
-  assert.match(getNotices().at(-1)?.message ?? "", /Rebuilt 1 note/);
+  assert.match(getNotices().at(-1)?.message ?? "", /Created 1 note/);
 });
 
 test("createNoteForNextEvent opens the next filtered event file", async () => {
@@ -211,4 +211,120 @@ test("createNoteForNextEvent opens the next filtered event file", async () => {
 
   assert.deepEqual(app.openedFiles, ["Meeting Notes/2026-04-03 - Next Event.md"]);
   assert.match(getNotices().at(-1)?.message ?? "", /Note ready:/);
+});
+
+function appleSettings(overrides: Partial<typeof DEFAULT_SETTINGS> = {}) {
+  return {
+    ...DEFAULT_SETTINGS,
+    authMode: "apple" as const,
+    noteFolder: "Meeting Notes",
+    processedEventIds: [],
+    ...overrides,
+  };
+}
+
+test("refreshNotes updates an existing note and renames it when the meeting moves day", async () => {
+  const app = createMemoryApp([{ path: "Meeting Notes", content: "" }]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+
+  const original = buildEvent({ id: "moving", summary: "Planning", location: "Room B" });
+  plugin.getCalendarService = async () =>
+    ({ listEventsInTimeWindow: async () => [original] } as never);
+  await plugin.refreshNotes(false);
+
+  const file = app.files.get("Meeting Notes/2026-04-03 - Planning.md") as TFile;
+  file.content = (file.content ?? "").replace("## Notes\n\n- ", "## Notes\n\n- Prep slides");
+
+  const moved = buildEvent({
+    id: "moving",
+    summary: "Planning",
+    start: { dateTime: "2026-04-06T09:00:00-04:00" },
+    end: { dateTime: "2026-04-06T09:30:00-04:00" },
+  });
+  plugin.getCalendarService = async () =>
+    ({ listEventsInTimeWindow: async () => [moved] } as never);
+  await plugin.refreshNotes(true);
+
+  assert.deepEqual(app.renamed, [
+    ["Meeting Notes/2026-04-03 - Planning.md", "Meeting Notes/2026-04-06 - Planning.md"],
+  ]);
+  const content = (app.files.get("Meeting Notes/2026-04-06 - Planning.md") as TFile).content ?? "";
+  assert.match(content, /^start: 2026-04-06T09:00$/m);
+  assert.doesNotMatch(content, /^location:/m);
+  assert.match(content, /- Prep slides/);
+  assert.equal(app.createdPaths.length, 1);
+  assert.match(getNotices().at(-1)?.message ?? "", /Updated 1 note/);
+});
+
+test("refreshNotes marks an existing note cancelled but never creates notes for cancelled events", async () => {
+  const app = createMemoryApp([{ path: "Meeting Notes", content: "" }]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+
+  plugin.getCalendarService = async () =>
+    ({ listEventsInTimeWindow: async () => [buildEvent({ id: "a", summary: "Kept" })] } as never);
+  await plugin.refreshNotes(false);
+
+  plugin.getCalendarService = async () =>
+    ({
+      listEventsInTimeWindow: async () => [
+        buildEvent({ id: "a", summary: "Kept", cancelled: true }),
+        buildEvent({ id: "b", summary: "Never", cancelled: true }),
+      ],
+    } as never);
+  await plugin.refreshNotes(false);
+
+  assert.deepEqual(app.createdPaths, ["Meeting Notes/2026-04-03 - Kept.md"]);
+  const content = (app.files.get("Meeting Notes/2026-04-03 - Kept.md") as TFile).content ?? "";
+  assert.match(content, /^status: cancelled$/m);
+  assert.match(content, /^> \[!danger\] Meeting cancelled$/m);
+});
+
+test("runStartupSweep rebuilds once after an upgrade, then refreshes", async () => {
+  const app = createMemoryApp([{ path: "Meeting Notes", content: "" }]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ processedEventIds: ["deleted"], lastRunVersion: "6.6.1" });
+  plugin.getCalendarService = async () =>
+    ({ listEventsInTimeWindow: async () => [buildEvent({ id: "deleted", summary: "Back" })] } as never);
+
+  await plugin.runStartupSweep();
+  assert.deepEqual(app.createdPaths, ["Meeting Notes/2026-04-03 - Back.md"]);
+  assert.equal(plugin.settings.lastRunVersion, "test");
+
+  app.files.delete("Meeting Notes/2026-04-03 - Back.md");
+  await plugin.runStartupSweep();
+  assert.deepEqual(app.createdPaths, ["Meeting Notes/2026-04-03 - Back.md"]);
+});
+
+test("runStartupSweep retries the upgrade rebuild if the calendar can't be read", async () => {
+  const plugin = createPlugin();
+  plugin.settings = appleSettings({ lastRunVersion: "6.6.1" });
+  plugin.getCalendarService = async () => {
+    throw new Error("Calendar unavailable");
+  };
+
+  await plugin.runStartupSweep();
+
+  assert.equal(plugin.settings.lastRunVersion, "6.6.1");
+});
+
+test("refreshNotes leaves unchanged notes untouched", async () => {
+  const app = createMemoryApp([{ path: "Meeting Notes", content: "" }]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+  plugin.getCalendarService = async () =>
+    ({ listEventsInTimeWindow: async () => [buildEvent({ id: "same", summary: "Same" })] } as never);
+  await plugin.refreshNotes(false);
+
+  let writes = 0;
+  const process = app.vault.process;
+  app.vault.process = async (file, fn) => {
+    writes++;
+    return process(file, fn);
+  };
+  await plugin.refreshNotes(true);
+
+  assert.equal(writes, 0);
+  assert.match(getNotices().at(-1)?.message ?? "", /All notes are up to date/);
 });

@@ -42,9 +42,11 @@ const LOOKAHEAD_DAYS = 365;
 
 const CONFERENCE_PATTERNS: Array<{ regex: RegExp; name: string }> = [
   { regex: /https:\/\/meet\.google\.com\/[a-z0-9-]+/i, name: "Google Meet" },
-  { regex: /https:\/\/[\w.-]+\.zoom\.us\/[^\s<>"]{5,100}/i, name: "Zoom" },
+  { regex: /https:\/\/(?:[\w-]+\.)*zoom\.us\/[^\s<>"]{5,100}/i, name: "Zoom" },
   { regex: /https:\/\/teams\.microsoft\.com\/l\/meetup-join\/[^\s<>"]{5,200}/i, name: "Microsoft Teams" },
+  { regex: /https:\/\/teams\.microsoft\.com\/meet\/[^\s<>"]{5,200}/i, name: "Microsoft Teams" },
   { regex: /https:\/\/teams\.live\.com\/meet\/[^\s<>"]{5,100}/i, name: "Microsoft Teams" },
+  { regex: /https:\/\/(?:[\w-]+\.)*webex\.com\/[^\s<>"]{5,200}/i, name: "Webex" },
 ];
 
 function extractConferenceFromText(text: string): CalendarEvent["conferenceData"] | undefined {
@@ -88,6 +90,9 @@ const JXA_BUILD_ITEM = `
       try { item.allDayEvent = p.allDayEvent === true;                    } catch (e) {}
       try { item.description = String(p.description || "");              } catch (e) {}
       try { item.location    = String(p.location    || "");              } catch (e) {}
+      try { item.url         = String(p.url         || "");              } catch (e) {}
+      try { item.recurring   = !!p.recurrence;                            } catch (e) {}
+      try { item.status      = String(p.status      || "");              } catch (e) {}
       try {
         var atts = evt.attendees();
         if (atts && atts.length > 0) {
@@ -146,6 +151,18 @@ const JXA_SERIALIZE_EK_EVENT = `
       try { item.allDayEvent = ev.isAllDay ? true : false; } catch (e) {}
       try { item.description = ev.notes    ? ev.notes.js    : ""; } catch (e) {}
       try { item.location    = ev.location ? ev.location.js : ""; } catch (e) {}
+      try {
+        var ekUrl = ev.URL;
+        if (ekUrl && ekUrl.absoluteString) item.url = ekUrl.absoluteString.js;
+      } catch (e) {}
+      try { item.status    = Number(ev.status); } catch (e) {}
+      try { item.recurring = (ev.hasRecurrenceRules ? true : false) || (ev.isDetached ? true : false); } catch (e) {}
+      try {
+        if (ev.occurrenceDate) {
+          var ekOs = parseFloat(String(ev.occurrenceDate.timeIntervalSince1970));
+          item.occurrenceDate = new Date(ekOs * 1000).toISOString();
+        }
+      } catch (e) {}
       try {
         var ekAtts = ev.attendees;
         if (ekAtts && ekAtts.count > 0) {
@@ -686,7 +703,7 @@ function mapAppleStatus(status: string): ResponseStatus {
   }
 }
 
-function parseJxaEvents(json: string, calendarFilter: string[]): CalendarEvent[] {
+export function parseJxaEvents(json: string, calendarFilter: string[]): CalendarEvent[] {
   let raw: unknown;
   try {
     raw = JSON.parse(json);
@@ -755,19 +772,32 @@ function parseJxaEvents(json: string, calendarFilter: string[]): CalendarEvent[]
       }
     }
 
-    const uid = safeStr(r.uid, 500) || `apple-${startMs}-${crypto.randomUUID()}`;
+    const summary     = safeStr(r.summary,  500)   || undefined;
     const description = safeStr(r.description, 50_000) || undefined;
+    const location    = safeStr(r.location, 1_000) || undefined;
+    const url         = safeStr(r.url, 2_000);
+
+    // Every occurrence of a recurring event shares one identifier, so the
+    // occurrence's original start date distinguishes them. occurrenceDate stays
+    // fixed when a single occurrence is moved, keeping its note matched.
+    const uid = safeStr(r.uid, 500) || `apple-${startMs}-${summary ?? ""}`;
+    const occurrence = safeStr(r.occurrenceDate) || new Date(startMs).toISOString();
+    const id = r.recurring === true ? `${uid}::${occurrence}` : uid;
+
+    const status = r.status;
+    const cancelled = status === 3 || (typeof status === "string" && status.toLowerCase() === "cancelled");
 
     events.push({
-      id: uid,
-      summary:     safeStr(r.summary,  500)   || undefined,
+      id,
+      summary,
       description,
-      location:    safeStr(r.location, 1_000) || undefined,
+      location,
       start,
       end,
       attendees: attendees.length > 0 ? attendees : undefined,
-      // Detect conference links from the event description
-      conferenceData: description ? extractConferenceFromText(description) : undefined,
+      conferenceData: extractConferenceFromText([url, location ?? "", description ?? ""].join("\n")),
+      calendarName: calName || undefined,
+      ...(cancelled ? { cancelled: true } : {}),
     });
   }
 

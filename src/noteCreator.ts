@@ -7,10 +7,9 @@
  *   - YAML injection: All values written to frontmatter are escaped with
  *     {@link escapeYaml} so that newlines and special characters cannot inject
  *     additional YAML keys.
- *   - Markdown table injection: Pipe characters and newlines in attendee
- *     name/email fields are escaped with {@link escapeMdCell}.
- *   - Markdown body injection: Newlines in inline fields are stripped with
- *     {@link sanitizeInline}.
+ *   - Markdown body injection: Inline fields are flattened and their Markdown
+ *     syntax escaped with {@link escapeInlineMd}; link targets are stripped of
+ *     wikilink syntax with {@link linkTarget}.
  *   - URL injection: Conference entry-point URIs are validated with
  *     {@link isSafeHttpsUrl} before being embedded in a Markdown link.
  */
@@ -26,16 +25,10 @@ import { CalendarEvent, ResponseStatus } from "./calendarApi";
 export interface NoteOptions {
   /** Vault-relative folder path. Empty = vault root. */
   noteFolder: string;
-  /**
-   * When true, include the event's description as the Agenda section.
-   * When false, the Agenda section is omitted.
-   */
+  /** When true, include the event's original description in a collapsed callout. */
   includeEventNotes: boolean;
-  /**
-   * When true, include conference links (Zoom, Teams, Google Meet) in the note.
-   * When false, conference links are omitted from the note body and frontmatter.
-   */
-  includeConferenceLinks: boolean;
+  /** When true, attendees and organizer are written as `[[Name]]` links. */
+  linkAttendees: boolean;
   /**
    * "before" → "2026-03-30 - Meeting Title.md"
    * "after"  → "Meeting Title - 2026-03-30.md"
@@ -54,12 +47,6 @@ function escapeYaml(value: string): string {
     .replace(/\r/g, "\\r")
     .replace(/\n/g, "\\n")
     .replace(/\t/g, "\\t");
-}
-
-function escapeMdCell(value: string): string {
-  return value
-    .replace(/\r?\n/g, " ")
-    .replace(/\|/g, "\\|");
 }
 
 function sanitizeInline(value: string): string {
@@ -174,21 +161,48 @@ function stripConferenceBoilerplate(text: string): string {
   return cleaned.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function parseAgendaItems(description: string): string[] {
-  const text = stripConferenceBoilerplate(stripHtml(description));
-  return text
+function descriptionLines(description: string): string[] {
+  const lines = stripConferenceBoilerplate(stripHtml(description))
     .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+    .map((line) => line.replace(/\s+$/, ""));
+  while (lines.length > 0 && lines[0].trim() === "") lines.shift();
+  while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
+  return lines;
 }
 
 // ---------------------------------------------------------------------------
-// Date / time formatting helpers
+// Date / time helpers
 // ---------------------------------------------------------------------------
 
-function formatDateLong(isoDate: string): string {
-  const date = new Date(isoDate);
-  return date.toLocaleDateString("en-US", {
+interface LocalParts {
+  date: string;
+  time: string;
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * Calendar date and wall-clock time of an ISO timestamp. A timestamp with an
+ * explicit UTC offset keeps the event's own local date and time; a UTC ("Z")
+ * timestamp is converted to this machine's time zone.
+ */
+function localParts(iso: string): LocalParts {
+  const dateOnly = iso.match(/^(\d{4}-\d{2}-\d{2})$/);
+  if (dateOnly) return { date: dateOnly[1], time: "00:00" };
+
+  const withOffset = iso.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?[+-]\d{2}:?\d{2}$/);
+  if (withOffset) return { date: withOffset[1], time: withOffset[2] };
+
+  const d = new Date(iso);
+  const valid = isNaN(d.getTime()) ? new Date() : d;
+  return {
+    date: `${valid.getFullYear()}-${pad2(valid.getMonth() + 1)}-${pad2(valid.getDate())}`,
+    time: `${pad2(valid.getHours())}:${pad2(valid.getMinutes())}`,
+  };
+}
+
+function formatDateLong(date: string): string {
+  return new Date(`${date}T12:00:00`).toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
     month: "long",
@@ -196,30 +210,10 @@ function formatDateLong(isoDate: string): string {
   });
 }
 
-function formatTime(isoDateTime: string): string {
-  const date = new Date(isoDateTime);
-  return date.toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
-}
-
-function formatIsoDate(isoDateOrDateTime: string): string {
-  const directMatch = isoDateOrDateTime.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (directMatch) {
-    return directMatch[1];
-  }
-
-  const d = new Date(isoDateOrDateTime);
-  if (isNaN(d.getTime())) {
-    return new Date().toISOString().slice(0, 10);
-  }
-
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+function formatTime12h(time: string): string {
+  const [h, m] = time.split(":").map(Number);
+  const suffix = h >= 12 ? "PM" : "AM";
+  return `${pad2(h % 12 === 0 ? 12 : h % 12)}:${pad2(m)} ${suffix}`;
 }
 
 function formatDuration(ms: number): string {
@@ -233,30 +227,33 @@ function formatDuration(ms: number): string {
 }
 
 interface EventTiming {
+  allDay: boolean;
+  date: string;
+  start?: string;
+  end?: string;
   dateLong: string;
   timeRange: string;
-  dateIso: string;
   duration: string;
 }
 
 function getEventTiming(event: CalendarEvent): EventTiming {
-  if (event.start.date) {
-    return {
-      dateLong: formatDateLong(event.start.date + "T12:00:00"),
-      timeRange: "All day",
-      dateIso: event.start.date,
-      duration: "All day",
-    };
+  if (!event.start.dateTime) {
+    const date = event.start.date ?? localParts(new Date().toISOString()).date;
+    return { allDay: true, date, dateLong: formatDateLong(date), timeRange: "All day", duration: "All day" };
   }
 
-  const startDt = event.start.dateTime ?? new Date().toISOString();
+  const startDt = event.start.dateTime;
   const endDt = event.end.dateTime ?? startDt;
-  const durationMs = new Date(endDt).getTime() - new Date(startDt).getTime();
+  const s = localParts(startDt);
+  const e = localParts(endDt);
   return {
-    dateLong: formatDateLong(startDt),
-    timeRange: `${formatTime(startDt)} – ${formatTime(endDt)}`,
-    dateIso: formatIsoDate(startDt),
-    duration: formatDuration(durationMs),
+    allDay: false,
+    date: s.date,
+    start: `${s.date}T${s.time}`,
+    end: `${e.date}T${e.time}`,
+    dateLong: formatDateLong(s.date),
+    timeRange: `${formatTime12h(s.time)} – ${formatTime12h(e.time)}`,
+    duration: formatDuration(new Date(endDt).getTime() - new Date(startDt).getTime()),
   };
 }
 
@@ -275,168 +272,230 @@ function responseIcon(status: string | undefined): string {
   return RESPONSE_ICON[(status ?? "needsAction") as ResponseStatus] ?? "⚪";
 }
 
-interface AttendeeRow {
-  icon: string;
+function escapeInlineMd(value: string): string {
+  return sanitizeInline(value).replace(/([\\`*_[\]<>|#])/g, "\\$1");
+}
+
+function linkTarget(name: string): string {
+  return sanitizeInline(name).replace(/[[\]|#^\\]/g, "").trim();
+}
+
+interface Person {
   name: string;
   email: string;
+  hasName: boolean;
+  icon: string;
+  organizer: boolean;
 }
 
-function buildAttendeeRows(event: CalendarEvent): AttendeeRow[] {
-  const rows: AttendeeRow[] = [];
-
-  if (event.organizer) {
-    const alreadyListed = (event.attendees ?? []).some(
-      (a) => a.email === event.organizer!.email
-    );
-    if (!alreadyListed) {
-      const rawName = event.organizer.displayName?.trim() || event.organizer.email;
-      rows.push({
-        icon: "🔷",
-        name: escapeMdCell(rawName) + " *(organizer)*",
-        email: escapeMdCell(event.organizer.email),
-      });
-    }
-  }
-
-  for (const a of event.attendees ?? []) {
-    if (a.self) continue;
-    const icon = responseIcon(a.responseStatus);
-    const rawName = a.displayName?.trim() || a.email;
-    const nameSuffix = a.organizer ? " *(organizer)*" : "";
-    rows.push({
-      icon,
-      name: escapeMdCell(rawName) + nameSuffix,
-      email: escapeMdCell(a.email),
+function buildPeople(event: CalendarEvent): Person[] {
+  const people: Person[] = [];
+  if (event.organizer && !(event.attendees ?? []).some((a) => a.email === event.organizer!.email)) {
+    const name = event.organizer.displayName?.trim();
+    people.push({
+      name: name || event.organizer.email,
+      email: event.organizer.email,
+      hasName: !!name,
+      icon: "🔷",
+      organizer: true,
     });
   }
-
-  return rows;
-}
-
-function renderAttendeesTable(rows: AttendeeRow[]): string {
-  if (rows.length === 0) return "";
-  const lines = ["|   | Name | Email |", "|:-:|:-----|:------|"];
-  for (const row of rows) {
-    lines.push(`| ${row.icon} | ${row.name} | ${row.email} |`);
+  for (const a of event.attendees ?? []) {
+    if (a.self) continue;
+    const name = a.displayName?.trim();
+    people.push({
+      name: name || a.email,
+      email: a.email,
+      hasName: !!name,
+      icon: responseIcon(a.responseStatus),
+      organizer: !!a.organizer || a.email === event.organizer?.email,
+    });
   }
-  return lines.join("\n");
+  return people;
+}
+
+function personProperty(p: Person, linkAttendees: boolean): string {
+  if (linkAttendees && p.hasName && linkTarget(p.name)) return `[[${linkTarget(p.name)}]]`;
+  return p.hasName && p.email !== p.name ? `${sanitizeInline(p.name)} <${sanitizeInline(p.email)}>` : sanitizeInline(p.email);
+}
+
+function personInline(p: Person, linkAttendees: boolean): string {
+  const label = linkAttendees && p.hasName && linkTarget(p.name)
+    ? `[[${linkTarget(p.name)}]]`
+    : escapeInlineMd(p.name);
+  return p.organizer ? `${label} *(organizer)*` : label;
 }
 
 // ---------------------------------------------------------------------------
-// Note content builder
+// Note content
 // ---------------------------------------------------------------------------
+
+interface MeetingLink {
+  url: string;
+  platform: string;
+}
+
+function meetingLink(event: CalendarEvent): MeetingLink | undefined {
+  const entry = event.conferenceData?.entryPoints?.find((ep) => ep.entryPointType === "video");
+  if (!entry || !isSafeHttpsUrl(entry.uri)) return undefined;
+  return {
+    url: new URL(entry.uri).href.replace(/\(/g, "%28").replace(/\)/g, "%29"),
+    platform: sanitizeInline(event.conferenceData?.conferenceSolution?.name ?? "") || "Video call",
+  };
+}
+
+function organizerName(event: CalendarEvent): string | undefined {
+  if (!event.organizer) return undefined;
+  return sanitizeInline(event.organizer.displayName?.trim() || event.organizer.email) || undefined;
+}
+
+/** Frontmatter keys the plugin keeps in sync with the calendar. `null` = remove. */
+function managedFrontmatter(
+  event: CalendarEvent,
+  options: Pick<NoteOptions, "linkAttendees">
+): Array<[string, string[] | null]> {
+  const timing = getEventTiming(event);
+  const people = buildPeople(event).filter((p) => !p.organizer || (event.attendees ?? []).some((a) => a.email === p.email));
+  const organizer = organizerName(event);
+  const organizerPerson = buildPeople(event).find((p) => p.organizer);
+  const link = meetingLink(event);
+  const quoted = (key: string, value: string | undefined): [string, string[] | null] =>
+    [key, value ? [`${key}: "${escapeYaml(value)}"`] : null];
+
+  return [
+    quoted("title", sanitizeInline(event.summary?.trim() || "Untitled Event")),
+    ["date", [`date: ${timing.date}`]],
+    ["start", timing.start ? [`start: ${timing.start}`] : null],
+    ["end", timing.end ? [`end: ${timing.end}`] : null],
+    quoted("calendar", event.calendarName ? sanitizeInline(event.calendarName) : undefined),
+    quoted("organizer", organizerPerson ? personProperty(organizerPerson, options.linkAttendees) : organizer),
+    ["attendees", people.length > 0
+      ? ["attendees:", ...people.map((p) => `  - "${escapeYaml(personProperty(p, options.linkAttendees))}"`)]
+      : null],
+    quoted("location", event.location ? sanitizeInline(event.location) : undefined),
+    quoted("meeting_url", link?.url),
+    quoted("conference_platform", link ? link.platform : undefined),
+    ["status", event.cancelled ? ["status: cancelled"] : null],
+    quoted("calendar_event_id", event.id),
+  ];
+}
+
+const DETAILS_CALLOUT_RE = /^> \[!(info|danger)\] Meeting (details|cancelled)\s*$/;
+
+function renderDetailsCallout(
+  event: CalendarEvent,
+  options: Pick<NoteOptions, "linkAttendees">
+): string[] {
+  const timing = getEventTiming(event);
+  const link = meetingLink(event);
+  const lines = [event.cancelled ? "> [!danger] Meeting cancelled" : "> [!info] Meeting details"];
+
+  lines.push(
+    timing.allDay
+      ? `> **When:** ${timing.dateLong} · All day`
+      : `> **When:** ${timing.dateLong} · ${timing.timeRange} (${timing.duration})`
+  );
+  if (event.location) lines.push(`> **Where:** ${escapeInlineMd(event.location)}`);
+  if (link) lines.push(`> **Join:** [Join ${escapeInlineMd(link.platform)}](${link.url})`);
+
+  const organizer = organizerName(event);
+  if (organizer) lines.push(`> **Organizer:** ${escapeInlineMd(organizer)}`);
+
+  const people = buildPeople(event);
+  if (people.length > 0) {
+    lines.push(`> **Attendees:** ${people.map((p) => `${p.icon} ${personInline(p, options.linkAttendees)}`).join(" · ")}`);
+  }
+  return lines;
+}
 
 /**
- * Build the full Markdown content for a meeting note.
+ * Build the full Markdown content for a new meeting note.
  *
  * @param event   Calendar event.
  * @param options Controls which sections are included.
+ * @returns       Complete Markdown string ready to write to a `.md` file.
  */
 export function createNoteContent(
   event: CalendarEvent,
-  options: Pick<NoteOptions, "includeEventNotes" | "includeConferenceLinks">
+  options: Pick<NoteOptions, "includeEventNotes" | "linkAttendees">
 ): string {
-  const timing = getEventTiming(event);
   const title = sanitizeInline(event.summary?.trim() || "Untitled Event");
-  const location = event.location ? sanitizeInline(event.location) : undefined;
-  const organizer = event.organizer
-    ? sanitizeInline(event.organizer.displayName?.trim() || event.organizer.email)
-    : undefined;
 
-  const attendeeRows = buildAttendeeRows(event);
-
-  // Conference link — only included when option is enabled and URI is safe.
-  const videoEntry =
-    options.includeConferenceLinks
-      ? event.conferenceData?.entryPoints?.find((ep) => ep.entryPointType === "video")
-      : undefined;
-  const safeVideoUri =
-    videoEntry && isSafeHttpsUrl(videoEntry.uri) ? videoEntry.uri : undefined;
-  const platform = sanitizeInline(
-    event.conferenceData?.conferenceSolution?.name ?? "Video call"
-  );
-
-  const agendaItems = event.description ? parseAgendaItems(event.description) : [];
-
-  // -------------------------------------------------------------------------
-  // YAML Frontmatter
-  // -------------------------------------------------------------------------
-  const frontmatterLines: string[] = [
-    "---",
-    `title: "${escapeYaml(title)}"`,
-    `date: ${timing.dateIso}`,
-    `calendar_event_id: "${escapeYaml(event.id)}"`,
-  ];
-
-  if (location) {
-    frontmatterLines.push(`location: "${escapeYaml(location)}"`);
+  const frontmatter = ["---", "type: meeting"];
+  for (const [, lines] of managedFrontmatter(event, options)) {
+    if (lines) frontmatter.push(...lines);
   }
-  if (attendeeRows.length > 0) {
-    frontmatterLines.push("attendees:");
-    attendeeRows.forEach((a) => {
-      const plainName = a.name.replace(/\s*\*\(organizer\)\*/g, "").trim();
-      frontmatterLines.push(`  - "${escapeYaml(plainName)} <${escapeYaml(a.email)}>"`);
-    });
-  }
-  if (!event.start.date) {
-    frontmatterLines.push(`duration: "${escapeYaml(timing.duration)}"`);
-  }
-  if (options.includeConferenceLinks && event.conferenceData?.conferenceSolution?.name) {
-    frontmatterLines.push(`conference_platform: "${escapeYaml(platform)}"`);
-  }
-  frontmatterLines.push("---");
+  frontmatter.push("tags:", "  - meeting", "---");
 
-  // -------------------------------------------------------------------------
-  // Header + metadata block
-  // -------------------------------------------------------------------------
-  const lines: string[] = [
-    frontmatterLines.join("\n"),
-    "",
-    `# ${title}`,
-    "",
-    `**Date:** ${timing.dateLong}`,
-    `**Time:** ${timing.timeRange}`,
-    ...(event.start.date ? [] : [`**Duration:** ${timing.duration}`]),
-  ];
+  const lines = [...frontmatter, "", `# ${title}`, "", ...renderDetailsCallout(event, options), ""];
 
-  if (location) {
-    lines.push(`**Location:** ${location}`);
-  }
-  if (safeVideoUri) {
-    lines.push(`**${platform}:** [Join meeting](${safeVideoUri})`);
-  }
-  if (organizer) {
-    lines.push(`**Organizer:** ${organizer}`);
-  }
-
-  if (attendeeRows.length > 0) {
-    lines.push("", "**Attendees:**", "", renderAttendeesTable(attendeeRows));
-  }
-
-  lines.push("", "---", "");
-
-  // -------------------------------------------------------------------------
-  // ## Agenda  (optional — controlled by includeEventNotes)
-  // -------------------------------------------------------------------------
-  if (options.includeEventNotes) {
-    lines.push("## Agenda", "");
-    if (agendaItems.length > 0) {
-      agendaItems.forEach((item) => lines.push(`- ${item}`));
-      lines.push("- ");
-    } else {
-      lines.push("- ");
-    }
+  const description = options.includeEventNotes && event.description
+    ? descriptionLines(event.description)
+    : [];
+  if (description.length > 0) {
+    lines.push("> [!quote]- Event description");
+    for (const line of description) lines.push(line.trim() ? `> ${line}` : ">");
     lines.push("");
   }
 
-  // -------------------------------------------------------------------------
-  // ## Notes / Summary / Actions
-  // -------------------------------------------------------------------------
+  lines.push("## Agenda", "", "- ", "");
   lines.push("## Notes", "", "- ", "");
-  lines.push("## Summary", "", "- ", "");
-  lines.push("## Actions", "", "- ", "");
+  lines.push("## Decisions", "", "- ", "");
+  lines.push("## Action items", "", "- [ ] ", "");
 
   return lines.join("\n");
+}
+
+/**
+ * Bring an existing note's calendar details up to date with the event.
+ *
+ * Only the managed frontmatter keys and the "Meeting details" callout are
+ * rewritten; everything else in the note is returned unchanged. Notes without
+ * a frontmatter block are returned as-is.
+ */
+export function updateNoteContent(
+  content: string,
+  event: CalendarEvent,
+  options: Pick<NoteOptions, "linkAttendees">
+): string {
+  const fm = content.match(/^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/);
+  if (!fm) return content;
+
+  type Block = { key: string | null; lines: string[] };
+  const blocks: Block[] = [];
+  for (const line of fm[1].split(/\r?\n/)) {
+    const key = line.match(/^([A-Za-z0-9_-]+):/)?.[1] ?? null;
+    if (key || blocks.length === 0) blocks.push({ key, lines: [line] });
+    else blocks[blocks.length - 1].lines.push(line);
+  }
+
+  for (const [key, lines] of managedFrontmatter(event, options)) {
+    const index = blocks.findIndex((b) => b.key === key);
+    if (lines === null) {
+      if (index !== -1) blocks.splice(index, 1);
+    } else if (index !== -1) {
+      blocks[index] = { key, lines };
+    } else {
+      blocks.push({ key, lines });
+    }
+  }
+
+  const newFrontmatter = `---\n${blocks.flatMap((b) => b.lines).join("\n")}\n---${fm[2]}`;
+  const bodyLines = content.slice(fm[0].length).split("\n");
+
+  const start = bodyLines.findIndex((line) => DETAILS_CALLOUT_RE.test(line.replace(/\r$/, "")));
+  if (start !== -1) {
+    let end = start + 1;
+    while (end < bodyLines.length && bodyLines[end].startsWith(">")) end++;
+    bodyLines.splice(start, end - start, ...renderDetailsCallout(event, options));
+  }
+
+  return newFrontmatter + bodyLines.join("\n");
+}
+
+/** Calendar date (YYYY-MM-DD) used for the event's filename and `date` property. */
+export function eventDate(event: CalendarEvent): string {
+  return getEventTiming(event).date;
 }
 
 // ---------------------------------------------------------------------------
@@ -466,9 +525,7 @@ export function generateNoteFilename(
     .trim()
     .replace(/^\.+/, "") || "Untitled Event";
 
-  const dateIso = event.start.dateTime
-    ? formatIsoDate(event.start.dateTime)
-    : event.start.date ?? new Date().toISOString().slice(0, 10);
+  const dateIso = eventDate(event);
 
   return datePosition === "after" ? `${safe} - ${dateIso}` : `${dateIso} - ${safe}`;
 }
@@ -529,4 +586,52 @@ export async function createNoteFile(
 
   const file = await app.vault.create(filePath, content);
   return { file, wasCreated: true };
+}
+
+/**
+ * Index the notes under `noteFolder` (recursively; whole vault when empty) by
+ * their `calendar_event_id` property.
+ */
+export function findNotesByEventId(app: App, noteFolder: string): Map<string, TFile> {
+  const folder = noteFolder.trim() ? normalizePath(noteFolder.trim()) + "/" : "";
+  const byId = new Map<string, TFile>();
+  for (const file of app.vault.getMarkdownFiles()) {
+    if (folder && !file.path.startsWith(folder)) continue;
+    const id = app.metadataCache.getFileCache(file)?.frontmatter?.calendar_event_id;
+    if (typeof id === "string" && id && !byId.has(id)) byId.set(id, file);
+  }
+  return byId;
+}
+
+/**
+ * Update an existing note's calendar details from the event, and rename it if
+ * the meeting moved to another day (only the date part of the filename changes,
+ * so a title the user edited is kept). Returns true if anything changed.
+ */
+export async function syncNoteFile(
+  app: App,
+  file: TFile,
+  event: CalendarEvent,
+  options: Pick<NoteOptions, "linkAttendees">
+): Promise<boolean> {
+  let changed = false;
+  const current = await app.vault.read(file);
+  const oldDate = current.match(/^date:\s*"?(\d{4}-\d{2}-\d{2})/m)?.[1];
+  if (updateNoteContent(current, event, options) !== current) {
+    await app.vault.process(file, (content) => updateNoteContent(content, event, options));
+    changed = true;
+  }
+
+  const newDate = eventDate(event);
+  const slash = file.path.lastIndexOf("/");
+  const dir = slash === -1 ? "" : file.path.slice(0, slash + 1);
+  const basename = file.path.slice(slash + 1).replace(/\.md$/, "");
+  if (oldDate && oldDate !== newDate && basename.includes(oldDate)) {
+    const newPath = `${dir}${basename.replace(oldDate, newDate)}.md`;
+    if (!app.vault.getAbstractFileByPath(newPath)) {
+      await app.fileManager.renameFile(file, newPath);
+      changed = true;
+    }
+  }
+  return changed;
 }

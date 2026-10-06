@@ -37,6 +37,8 @@ export interface CalendarEvent {
     entryPoints?: Array<{ entryPointType: string; uri: string }>;
     conferenceSolution?: { name?: string };
   };
+  calendarName?: string;
+  cancelled?: boolean;
 }
 
 // ---------------------------------------------------------------------------
