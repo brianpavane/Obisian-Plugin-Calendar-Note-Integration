@@ -11,6 +11,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+**Recurring meetings link to the previous meeting**
+Each note of a recurring meeting shows a **Previous** link (and a `previous_meeting` property) to the last occurrence, and a new note's Agenda lists that meeting's open action items. Existing notes get the link on their next sync. Templates can use `{{previous_meeting}}`.
+
+**Meeting action items view**
+The **Open meeting action items** command opens a sidebar listing every open action item across your meeting notes, grouped by meeting. Tick an item to check it off in its note.
+
 **Meeting Summary and Transcript sections**
 New meeting notes end with empty **Meeting Summary** and **Transcript** sections, ready for a pasted summary and transcript from a recording or AI note-taker. Existing notes and custom templates are unchanged.
 

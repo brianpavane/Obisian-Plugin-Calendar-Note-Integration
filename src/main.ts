@@ -17,6 +17,7 @@
  */
 
 import { normalizePath, Notice, Plugin, TFile } from "obsidian";
+import { ActionItemsView, ACTION_ITEMS_VIEW } from "./actionItems";
 import { DASHBOARD_CONTENT, DASHBOARD_FILENAME } from "./dashboard";
 import { currentOrNextMeeting, meetingToJoin, statusText } from "./meetingStatus";
 import {
@@ -34,6 +35,7 @@ import {
   joinUrl,
   markNoteRemoved,
   resolveNoteFilePath,
+  seriesOptions,
   syncNoteFile,
   DailyNoteConfig,
   NoteOptions,
@@ -130,6 +132,14 @@ export default class GoogleCalendarPlugin extends Plugin {
       callback: () => this.openDashboard(),
     });
 
+    this.registerView(ACTION_ITEMS_VIEW, (leaf) => new ActionItemsView(leaf, () => this.settings.noteFolder));
+
+    this.addCommand({
+      id: "open-action-items",
+      name: "Open meeting action items",
+      callback: () => this.openActionItems(),
+    });
+
     this.addSettingTab(new GoogleCalendarSettingTab(this.app, this));
 
     this.statusBarEl = this.addStatusBarItem();
@@ -212,6 +222,15 @@ export default class GoogleCalendarPlugin extends Plugin {
       file = await this.app.vault.create(path, DASHBOARD_CONTENT);
     }
     await this.app.workspace.getLeaf(false).openFile(file as TFile);
+  }
+
+  /** Show the open action items view in the right sidebar. */
+  async openActionItems(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(ACTION_ITEMS_VIEW)[0];
+    const leaf = existing ?? this.app.workspace.getRightLeaf(false);
+    if (!leaf) return;
+    if (!existing) await leaf.setViewState({ type: ACTION_ITEMS_VIEW, active: true });
+    this.app.workspace.revealLeaf(leaf);
   }
 
   /**
@@ -585,7 +604,8 @@ export default class GoogleCalendarPlugin extends Plugin {
       try {
         const existing = notesById.get(event.id);
         if (existing) {
-          if (await syncNoteFile(this.app, existing, event, options)) updated++;
+          const series = await seriesOptions(this.app, notesById, event, false);
+          if (await syncNoteFile(this.app, existing, event, { ...options, ...series })) updated++;
           markProcessed(event.id);
           continue;
         }
@@ -595,7 +615,9 @@ export default class GoogleCalendarPlugin extends Plugin {
           markProcessed(event.id);
           continue;
         }
-        const result = await createNoteFile(this.app, event, options);
+        const series = await seriesOptions(this.app, notesById, event, true);
+        const result = await createNoteFile(this.app, event, { ...options, ...series });
+        notesById.set(event.id, result.file);
         if (result.wasCreated) created++;
         markProcessed(event.id);
       } catch (err) {
@@ -726,7 +748,9 @@ export default class GoogleCalendarPlugin extends Plugin {
 
   private async createAndOpenNote(event: CalendarEvent): Promise<void> {
     try {
-      const { file } = await createNoteFile(this.app, event, await this.getNoteOptions(true));
+      const options = await this.getNoteOptions(true);
+      const series = await seriesOptions(this.app, findNotesByEventId(this.app, options.noteFolder), event, true);
+      const { file } = await createNoteFile(this.app, event, { ...options, ...series });
       await this.app.workspace.getLeaf(false).openFile(file as TFile);
       new Notice(`Note ready: ${file.name}`);
     } catch (err) {

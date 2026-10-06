@@ -48,6 +48,7 @@ export function createMemoryApp(initialFiles: Array<{ path: string; content?: st
           (f): f is TFile => f instanceof TFile && f.path.endsWith(".md")
         ),
       read: async (file: TFile) => file.content ?? "",
+      cachedRead: async (file: TFile) => file.content ?? "",
       process: async (file: TFile, fn: (content: string) => string) => {
         file.content = fn(file.content ?? "");
         return file.content;

@@ -7,6 +7,10 @@ export class TFile {
     this.path = path;
     this.name = path.split("/").pop() ?? path;
   }
+
+  get basename(): string {
+    return this.name.replace(/\.md$/, "");
+  }
 }
 
 export class TFolder {
@@ -95,6 +99,7 @@ export class Plugin {
   addCommand(): void {}
   addSettingTab(): void {}
   registerInterval(): void {}
+  registerView(): void {}
 
   async loadData(): Promise<unknown> {
     return this.storedData;
@@ -103,6 +108,21 @@ export class Plugin {
   async saveData(data: unknown): Promise<void> {
     this.storedData = data;
   }
+}
+
+export class WorkspaceLeaf {}
+
+export class ItemView {
+  app = {} as App;
+  contentEl = createFakeEl();
+
+  constructor(public leaf: WorkspaceLeaf) {}
+
+  registerEvent(): void {}
+}
+
+export function debounce<T extends (...args: unknown[]) => unknown>(fn: T): T {
+  return fn;
 }
 
 export class Modal {
@@ -187,6 +207,7 @@ export interface App {
     create: (path: string, content: string) => Promise<TFile>;
     process: (file: TFile, fn: (content: string) => string) => Promise<string>;
     read: (file: TFile) => Promise<string>;
+    cachedRead: (file: TFile) => Promise<string>;
   };
   metadataCache: {
     getFileCache: (file: TFile) => { frontmatter?: Record<string, unknown> } | null;

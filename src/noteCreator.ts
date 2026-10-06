@@ -33,6 +33,10 @@ export interface NoteOptions {
   dailyNote?: DailyNoteConfig;
   /** Contents of the user's template note. Undefined = built-in template. */
   template?: string;
+  /** Vault path (without `.md`) of the previous meeting in the same series. */
+  previousNote?: string;
+  /** Open action items of the previous meeting, listed in the new note's Agenda. */
+  carriedItems?: string[];
   /**
    * "before" → "2026-03-30 - Meeting Title.md"
    * "after"  → "Meeting Title - 2026-03-30.md"
@@ -401,7 +405,7 @@ function organizerName(event: CalendarEvent): string | undefined {
 }
 
 /** Frontmatter keys the plugin keeps in sync with the calendar. `null` = remove. */
-type SyncOptions = Pick<NoteOptions, "linkAttendees" | "dailyNote">;
+type SyncOptions = Pick<NoteOptions, "linkAttendees" | "dailyNote" | "previousNote">;
 
 interface DailyLink {
   target: string;
@@ -417,6 +421,10 @@ function dailyNoteLink(date: string, config: DailyNoteConfig | undefined): Daily
 
 function wikilink(link: DailyLink, alias = link.name): string {
   return link.target === alias ? `[[${link.target}]]` : `[[${link.target}|${alias}]]`;
+}
+
+function previousLink(path: string | undefined): DailyLink | undefined {
+  return path ? { target: path, name: path.split("/").pop() ?? path } : undefined;
 }
 
 function managedFrontmatter(
@@ -436,6 +444,10 @@ function managedFrontmatter(
     ["date", [`date: ${timing.date}`]],
     quoted("daily_note", (() => {
       const link = dailyNoteLink(timing.date, options.dailyNote);
+      return link ? wikilink(link) : undefined;
+    })()),
+    quoted("previous_meeting", (() => {
+      const link = previousLink(options.previousNote);
       return link ? wikilink(link) : undefined;
     })()),
     ["start", timing.start ? [`start: ${timing.start}`] : null],
@@ -467,6 +479,8 @@ function renderDetailsCallout(event: CalendarEvent, options: SyncOptions): strin
       ? `> **When:** ${day} · All day`
       : `> **When:** ${day} · ${timing.timeRange} (${timing.duration})`
   );
+  const previous = previousLink(options.previousNote);
+  if (previous) lines.push(`> **Previous:** ${wikilink(previous)}`);
   if (event.location) lines.push(`> **Where:** ${escapeInlineMd(event.location)}`);
   if (link) lines.push(`> **Join:** [Join ${escapeInlineMd(link.platform)}](${link.url})`);
 
@@ -518,7 +532,7 @@ tags:
 /** Placeholders available in templates, mapped to their value for this event. */
 function templateValues(
   event: CalendarEvent,
-  options: Pick<NoteOptions, "includeEventNotes" | "linkAttendees" | "dailyNote">
+  options: Pick<NoteOptions, "includeEventNotes" | "linkAttendees" | "dailyNote" | "previousNote" | "carriedItems">
 ): Record<string, string> {
   const timing = getEventTiming(event);
   const link = meetingLink(event);
@@ -527,6 +541,10 @@ function templateValues(
   const daily = dailyNoteLink(timing.date, options.dailyNote);
   const description = options.includeEventNotes && event.description
     ? descriptionLines(event.description)
+    : [];
+  const previous = previousLink(options.previousNote);
+  const carried = previous && options.carriedItems?.length
+    ? [`- Open items from ${wikilink(previous, "last meeting")}:`, ...options.carriedItems.map((item) => `  - ${item}`)]
     : [];
 
   return {
@@ -550,12 +568,13 @@ function templateValues(
     platform: link ? escapeInlineMd(link.platform) : "",
     join_link: link ? `[Join ${escapeInlineMd(link.platform)}](${link.url})` : "",
     description: description.join("\n"),
-    agenda: [...description.filter((l) => l.trim()).map((l) => `- ${l.trim()}`), "- "].join("\n"),
+    agenda: [...description.filter((l) => l.trim()).map((l) => `- ${l.trim()}`), ...carried, "- "].join("\n"),
     description_callout: description.length > 0
       ? ["> [!quote]- Event description", ...description.map((l) => (l.trim() ? `> ${l}` : ">"))].join("\n")
       : "",
     details: renderDetailsCallout(event, options).join("\n"),
     daily_note: daily ? wikilink(daily) : "",
+    previous_meeting: previous ? wikilink(previous) : "",
     event_id: escapeInlineMd(event.id),
   };
 }
@@ -623,7 +642,7 @@ function applyManagedFrontmatter(blocks: FrontmatterBlock[], entries: Array<[str
  */
 export function createNoteContent(
   event: CalendarEvent,
-  options: Pick<NoteOptions, "includeEventNotes" | "linkAttendees" | "dailyNote" | "template">
+  options: Pick<NoteOptions, "includeEventNotes" | "linkAttendees" | "dailyNote" | "template" | "previousNote" | "carriedItems">
 ): string {
   const template = (options.template ?? DEFAULT_TEMPLATE).replace(/\r\n/g, "\n");
   const values = templateValues(event, options);
@@ -847,4 +866,59 @@ export async function syncNoteFile(
     }
   }
   return changed;
+}
+
+/**
+ * The note of the previous occurrence of a recurring meeting. Occurrence IDs
+ * are `<series uid>::<original start, ISO UTC>`, so the previous one is the
+ * note in the same series with the latest earlier start.
+ */
+export function previousNoteInSeries(notesById: Map<string, TFile>, eventId: string): TFile | undefined {
+  const sep = eventId.lastIndexOf("::");
+  if (sep === -1) return undefined;
+  const series = eventId.slice(0, sep + 2);
+  const occurrence = eventId.slice(sep + 2);
+  let best: { occurrence: string; file: TFile } | undefined;
+  for (const [id, file] of notesById) {
+    if (!id.startsWith(series) || id.indexOf("::", series.length) !== -1) continue;
+    const other = id.slice(series.length);
+    if (other < occurrence && (!best || other > best.occurrence)) best = { occurrence: other, file };
+  }
+  return best?.file;
+}
+
+/** An unchecked task in a note, with its 0-based line number. */
+export interface OpenTask {
+  line: number;
+  text: string;
+}
+
+const OPEN_TASK_RE = /^\s*[-*+] \[ \] (.*\S)\s*$/;
+
+/** Unchecked, non-empty tasks (`- [ ] …`) in a note's content. */
+export function openTasks(content: string): OpenTask[] {
+  const tasks: OpenTask[] = [];
+  content.split("\n").forEach((line, i) => {
+    const m = line.replace(/\r$/, "").match(OPEN_TASK_RE);
+    if (m) tasks.push({ line: i, text: m[1] });
+  });
+  return tasks;
+}
+
+/**
+ * Note options for one event: the link to the previous meeting in its series
+ * and, when `withItems` is set (new notes), that meeting's open action items.
+ */
+export async function seriesOptions(
+  app: App,
+  notesById: Map<string, TFile>,
+  event: CalendarEvent,
+  withItems: boolean
+): Promise<Pick<NoteOptions, "previousNote" | "carriedItems">> {
+  const previous = previousNoteInSeries(notesById, event.id);
+  if (!previous) return {};
+  return {
+    previousNote: previous.path.replace(/\.md$/, ""),
+    carriedItems: withItems ? openTasks(await app.vault.read(previous)).map((t) => t.text) : undefined,
+  };
 }

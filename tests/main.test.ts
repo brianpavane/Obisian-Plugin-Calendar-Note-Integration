@@ -500,3 +500,32 @@ test("openDashboard creates the Bases file once and opens it", async () => {
   const content = (app.files.get("Meeting Notes/Meetings.base") as TFile).content ?? "";
   assert.match(content, /file\.hasProperty\("calendar_event_id"\)/);
 });
+
+test("refreshNotes links each recurring meeting to the previous one and carries open items", async () => {
+  const app = createMemoryApp([{ path: "Meeting Notes", content: "" }]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ hoursInAdvance: 48 });
+
+  const occurrence = (day: string) => buildEvent({
+    id: `weekly::2026-04-0${day}T14:00:00.000Z`,
+    summary: "Weekly Sync",
+    start: { dateTime: `2026-04-0${day}T10:00:00-04:00` },
+    end: { dateTime: `2026-04-0${day}T10:30:00-04:00` },
+  });
+  plugin.getCalendarService = async () =>
+    ({ queriedCalendars: () => undefined, fetchedEventIds: () => undefined, listEventsInTimeWindow: async () => [occurrence("3")] } as never);
+  await plugin.refreshNotes(false);
+
+  const first = app.files.get("Meeting Notes/2026-04-03 - Weekly Sync.md") as TFile;
+  first.content = (first.content ?? "").replace("## Action items\n\n- [ ] ", "## Action items\n\n- [ ] Send deck\n- [x] Book room\n- [ ] ");
+
+  plugin.getCalendarService = async () =>
+    ({ queriedCalendars: () => undefined, fetchedEventIds: () => undefined, listEventsInTimeWindow: async () => [occurrence("3"), occurrence("4")] } as never);
+  await plugin.refreshNotes(false);
+
+  const second = (app.files.get("Meeting Notes/2026-04-04 - Weekly Sync.md") as TFile).content ?? "";
+  assert.match(second, /^> \*\*Previous:\*\* \[\[Meeting Notes\/2026-04-03 - Weekly Sync\|2026-04-03 - Weekly Sync\]\]$/m);
+  assert.match(second, /- Open items from \[\[Meeting Notes\/2026-04-03 - Weekly Sync\|last meeting\]\]:\n  - Send deck\n- \n/);
+  assert.doesNotMatch(second, /Book room/);
+  assert.doesNotMatch(first.content ?? "", /Previous:/);
+});

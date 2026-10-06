@@ -16,11 +16,12 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 - **One-click join** — Zoom, Google Meet, Microsoft Teams, and Webex links are found in the event's URL, location, or description and shown as a **Join** link
 - **Attendees with RSVP status** — 🟢 accepted, 🔴 declined, 🟡 tentative, ⚪ awaiting; optionally as `[[Name]]` links to your people notes
 - **Notes stay in sync** — time, attendee, and location changes are applied to existing notes; moved meetings are renamed to their new date; cancelled meetings are marked cancelled
-- **Recurring meetings** — every occurrence gets its own note
+- **Recurring meetings** — every occurrence gets its own note, linked to the previous one, with last meeting's open action items in the Agenda
 - **Your own template** — point the plugin at a template note with placeholders, or use the built-in format
 - **Daily-note links** — each meeting links to that day's daily note, so the day's meetings appear in its backlinks
 - **Next meeting in the status bar** — click it, or run **Join current or next meeting**, to open the note and join
 - **Meetings dashboard** — a ready-made Bases view of upcoming and recent meetings
+- **Action items view** — every open action item across your meetings in one sidebar, ticked off in place
 - **Declined event filtering** — events you have declined are skipped, when the calendar identifies you as an attendee or your email address is set
 - **All-day event filtering** — all-day events (holidays, OOO blocks) are skipped
 - **Configurable time window** — look ahead 1–48 hours; optionally include past events
@@ -222,11 +223,12 @@ Set **Template file** to a note in your vault, and new meeting notes are created
 | `{{attendee_list}}` | Attendees as a bulleted list with RSVP status |
 | `{{join_link}}` | `[Join Zoom](https://…)` |
 | `{{meeting_url}}` / `{{platform}}` | The join URL / `Zoom` |
-| `{{agenda}}` | Event description as bullets (ends with an empty bullet) |
+| `{{agenda}}` | Event description as bullets, then the previous meeting's open action items (ends with an empty bullet) |
 | `{{description}}` | Event description as plain text |
 | `{{description_callout}}` | Event description in a collapsed callout |
 | `{{details}}` | The **Meeting details** box (kept up to date) |
 | `{{daily_note}}` | Link to the day's daily note |
+| `{{previous_meeting}}` | Link to the previous meeting in a recurring series |
 | `{{event_id}}` | Calendar event ID |
 
 - A line containing only placeholders that come out empty (for example `{{join_link}}` for an in-person meeting) is left out.
@@ -271,6 +273,15 @@ tags:
 
 ```
 
+### Recurring meetings
+
+Each occurrence of a recurring meeting gets its own note, linked to the one before it:
+
+- **Meeting details** shows a **Previous** link, and the note gets a `previous_meeting` property.
+- A new note's **Agenda** lists the previous meeting's open action items under *Open items from last meeting*. They are plain bullets rather than checkboxes, so each item stays a single task in the earlier note — tick it off there or in the **Meeting action items** view.
+
+Only meetings that repeat in Apple Calendar are linked; separate events that happen to share a title are not.
+
 ### Daily notes
 
 With **Link to daily note** on, each meeting note gets a `daily_note` property linking to that day's daily note, named and placed according to Obsidian's **Daily notes** settings. Open a daily note and its **Backlinks** pane lists that day's meetings. To show them inside the daily note, add this to your daily-note template (requires the Dataview plugin):
@@ -285,7 +296,7 @@ The plugin never edits daily notes, and the link moves with the meeting if it is
 
 ### Keeping notes up to date
 
-Every poll, Refresh, and Rebuild updates the notes of meetings in the time window. The plugin only rewrites the calendar properties listed above (title, date, daily note, start, end, calendar, organizer, attendees, location, meeting link, status, and event ID) and the **Meeting details** box. Everything else in the note — your writing, extra properties, and tags you add — is never changed.
+Every poll, Refresh, and Rebuild updates the notes of meetings in the time window. The plugin only rewrites the calendar properties listed above (title, date, daily note, previous meeting, start, end, calendar, organizer, attendees, location, meeting link, status, and event ID) and the **Meeting details** box. Everything else in the note — your writing, extra properties, and tags you add — is never changed.
 
 If a meeting moves to another day, its note is renamed to the new date (a title you edited in the filename is kept).
 
@@ -302,6 +313,7 @@ If a meeting disappears from Apple Calendar (deleted rather than cancelled), its
 | **Auto-create notes for events in the next N hours** | Runs the same sweep as the background poll right away (N = **Hours in advance**) |
 | **Join current or next meeting** | Opens the note for the meeting in progress (or starting within 30 minutes), creating it if needed, and opens its join link |
 | **Open meetings dashboard** | Opens `Meetings.base` in your meeting-notes folder (created on first use) |
+| **Open meeting action items** | Shows every open action item from your meeting notes in the right sidebar |
 
 The ribbon icon (calendar icon, left sidebar) opens the same event picker as **Create note from calendar event**.
 
@@ -312,6 +324,10 @@ The status bar at the bottom of the window shows the meeting in progress (*Now: 
 ### Meetings dashboard
 
 **Open meetings dashboard** creates a [Bases](https://obsidian.md/help/bases) file (Obsidian 1.9 or later) listing every meeting note, with **Next 7 days**, **Last 7 days**, and **All meetings** views grouped by day. It is an ordinary `.base` file — edit its columns, filters, and views like any other base.
+
+### Meeting action items
+
+**Open meeting action items** opens a sidebar listing every unchecked task (`- [ ] …`) in your meeting notes, grouped by meeting with the newest first. Click a meeting to open its note; tick an item to check it off in that note. The list updates as you edit notes, and needs no other plugins.
 
 ---
 

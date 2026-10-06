@@ -68,3 +68,34 @@
 .cal-notes-status {
   cursor: pointer;
 }
+
+/* ----------------------------------------------------------
+   Meeting action items view
+   ---------------------------------------------------------- */
+
+.cal-notes-action-items .cal-notes-meeting {
+  margin-bottom: 1em;
+}
+
+.cal-notes-action-items .cal-notes-meeting-title {
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cal-notes-action-items .cal-notes-meeting-date,
+.cal-notes-action-items .cal-notes-empty {
+  font-size: 0.82em;
+  color: var(--text-muted);
+}
+
+.cal-notes-action-items ul {
+  margin: 0.3em 0 0;
+  padding-left: 0;
+}
+
+.cal-notes-action-items .task-list-item {
+  list-style: none;
+  display: flex;
+  gap: 0.4em;
+  align-items: baseline;
+}

@@ -4,11 +4,14 @@ import {
   createNoteContent,
   createNoteFile,
   generateNoteFilename,
+  openTasks,
+  previousNoteInSeries,
   resolveNoteFilePath,
   updateNoteContent,
 } from "../src/noteCreator";
 import type { CalendarEvent } from "../src/calendarApi";
 import { createMemoryApp } from "./support/testHelpers";
+import { TFile } from "./support/obsidianStub";
 
 function buildEvent(overrides = {}) {
   const base = {
@@ -340,4 +343,50 @@ test("createNoteContent labels times with the machine's time zone or the event's
     { includeEventNotes: false, linkAttendees: false, template: "{{time}}" }
   );
   assert.match(acrossDst, /^01:30 AM EDT – 01:30 AM EST$/m);
+});
+
+test("previousNoteInSeries finds the latest earlier occurrence of the same series", () => {
+  const note = (path: string) => new TFile(path);
+  const notes = new Map<string, TFile>([
+    ["sync::2026-01-01T15:00:00.000Z", note("a.md")],
+    ["sync::2026-01-08T15:00:00.000Z", note("b.md")],
+    ["sync::2026-01-22T15:00:00.000Z", note("d.md")],
+    ["other::2026-01-14T15:00:00.000Z", note("x.md")],
+    ["sync", note("y.md")],
+  ]);
+  assert.equal(previousNoteInSeries(notes as never, "sync::2026-01-15T15:00:00.000Z")?.path, "b.md");
+  assert.equal(previousNoteInSeries(notes as never, "sync::2026-01-01T15:00:00.000Z"), undefined);
+  assert.equal(previousNoteInSeries(notes as never, "one-off"), undefined);
+});
+
+test("openTasks lists unchecked, non-empty tasks with their lines", () => {
+  const content = "## Action items\n\n- [ ] Send deck\n- [x] Book room\n  * [ ] Nested item \n- [ ] \n";
+  assert.deepEqual(openTasks(content), [
+    { line: 2, text: "Send deck" },
+    { line: 4, text: "Nested item" },
+  ]);
+});
+
+test("createNoteContent links the previous meeting and carries its open action items", () => {
+  const event = buildEvent({
+    start: { dateTime: "2026-01-15T10:00:00-05:00" },
+    end: { dateTime: "2026-01-15T11:00:00-05:00" },
+  });
+  const content = createNoteContent(event, {
+    includeEventNotes: false,
+    linkAttendees: false,
+    previousNote: "Meetings/2026-01-08 - Weekly Sync",
+    carriedItems: ["Send deck", "Follow up with [[Bob Jones]]"],
+  });
+
+  assert.match(content, /^previous_meeting: "\[\[Meetings\/2026-01-08 - Weekly Sync\|2026-01-08 - Weekly Sync\]\]"$/m);
+  assert.match(content, /^> \*\*Previous:\*\* \[\[Meetings\/2026-01-08 - Weekly Sync\|2026-01-08 - Weekly Sync\]\]$/m);
+  assert.match(
+    content,
+    /## Agenda\n\n- Open items from \[\[Meetings\/2026-01-08 - Weekly Sync\|last meeting\]\]:\n  - Send deck\n  - Follow up with \[\[Bob Jones\]\]\n- \n\n## Notes/
+  );
+
+  const updated = updateNoteContent(content, event, { linkAttendees: false });
+  assert.doesNotMatch(updated, /previous_meeting|\*\*Previous:\*\*/);
+  assert.match(updated, /Open items from/);
 });
