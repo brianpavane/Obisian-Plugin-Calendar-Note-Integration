@@ -4,8 +4,10 @@
  * the plugin's meeting notes, grouped by meeting, person, or due date.
  * Ticking an item checks it off in its meeting note.
  *
- * Tasks may name an owner (`@Bob`, `@[[Bob Jones]]`) and a due date in the
- * Tasks plugin's formats (`📅 2026-10-10` or `[due:: 2026-10-10]`).
+ * Tasks may name an owner (`@Bob`, `@[[Bob Jones]]`, or `(owner: IT team)`),
+ * a due date and a priority in the Tasks plugin's formats (`📅 2026-10-10` or
+ * `[due:: 2026-10-10]`; ⏫ high, 🔼 medium, 🔽 low). Ticking a task adds the
+ * Tasks plugin's done date (`✅ 2026-10-07`).
  */
 
 import { App, debounce, ItemView, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
@@ -20,26 +22,44 @@ export interface MeetingTasks {
   tasks: OpenTask[];
 }
 
+export type Priority = "highest" | "high" | "medium" | "low" | "lowest";
+
 export interface TaskMeta {
-  /** Task text without the due-date marker. */
+  /** Task text without the due date, priority and created/done date markers. */
   text: string;
   owner?: string;
   due?: string;
+  priority?: Priority;
 }
 
 const DUE_RE = /\s*(?:📅\s*(\d{4}-\d{2}-\d{2})|\[due::\s*(\d{4}-\d{2}-\d{2})\s*\])/u;
 const OWNER_RE = /(?:^|\s)@(?:\[\[([^\]|]+)(?:\|[^\]]*)?\]\]|([\p{L}\p{N}_.-]+))/u;
+const ROLE_OWNER_RE = /\(owner:\s*([^)]+)\)/i;
+const PRIORITY_MARKS: Array<[RegExp, Priority]> = [
+  [/🔺/u, "highest"],
+  [/⏫|\(priority:\s*high\)/iu, "high"],
+  [/🔼|\(priority:\s*medium\)/iu, "medium"],
+  [/🔽|\(priority:\s*low\)/iu, "low"],
+  [/⏬/u, "lowest"],
+];
+const OTHER_MARKS_RE = /\s*(?:[🔺⏫🔼🔽⏬]|\(priority:\s*\w+\)|(?:➕|✅|⏳|🛫)\s*\d{4}-\d{2}-\d{2})/giu;
 
-/** Owner and due date written in a task's text. */
+/** Owner, due date and priority written in a task's text. */
 export function parseTaskMeta(text: string): TaskMeta {
   const due = text.match(DUE_RE);
-  const owner = text.match(OWNER_RE);
+  const person = text.match(OWNER_RE);
+  const role = text.match(ROLE_OWNER_RE);
   return {
-    text: due ? text.replace(DUE_RE, "").trim() : text,
-    owner: owner ? (owner[1] ?? owner[2]).trim() : undefined,
+    text: text.replace(DUE_RE, "").replace(OTHER_MARKS_RE, "").replace(/\s+/g, " ").trim(),
+    owner: person ? (person[1] ?? person[2]).trim() : role?.[1].trim(),
     due: due ? due[1] ?? due[2] : undefined,
+    priority: PRIORITY_MARKS.find(([re]) => re.test(text))?.[1],
   };
 }
+
+const PRIORITY_RANK: Record<Priority, number> = { highest: 0, high: 1, medium: 2, low: 4, lowest: 5 };
+/** Sort key: no priority ranks between medium and low, as in the Tasks plugin. */
+export const priorityRank = (p: Priority | undefined) => (p ? PRIORITY_RANK[p] : 3);
 
 export type GroupBy = "meeting" | "person" | "due";
 
@@ -76,7 +96,9 @@ export function groupItems(meetings: MeetingTasks[], groupBy: GroupBy, today: st
     const meta = parseTaskMeta(task.text);
     return { meeting, task, meta, overdue: meta.due !== undefined && meta.due < today };
   }));
-  const byDue = (a: ItemRow, b: ItemRow) => (a.meta.due ?? "9999").localeCompare(b.meta.due ?? "9999");
+  const byDue = (a: ItemRow, b: ItemRow) =>
+    priorityRank(a.meta.priority) - priorityRank(b.meta.priority) ||
+    (a.meta.due ?? "9999").localeCompare(b.meta.due ?? "9999");
 
   if (groupBy === "meeting") {
     return meetings.map((meeting) => ({
@@ -121,24 +143,26 @@ export async function collectOpenItems(app: App): Promise<MeetingTasks[]> {
 }
 
 /**
- * Check off an open task in its note. The task is looked up by text if its
- * line moved since it was listed. Returns false if it is no longer open.
+ * Check off an open task in its note, adding the Tasks plugin's done date
+ * (`✅ done`) when given. The task is looked up by text if its line moved
+ * since it was listed. Returns false if it is no longer open.
  */
-export async function completeTask(app: App, file: TFile, task: OpenTask): Promise<boolean> {
-  let done = false;
+export async function completeTask(app: App, file: TFile, task: OpenTask, done?: string): Promise<boolean> {
+  let completed = false;
   await app.vault.process(file, (content) => {
     const lines = content.split("\n");
     const isTask = (i: number) => openTasks(lines[i] ?? "").some((t) => t.text === task.text);
     const index = isTask(task.line) ? task.line : lines.findIndex((_, i) => isTask(i));
     if (index === -1) return content;
-    lines[index] = lines[index].replace("[ ]", "[x]");
-    done = true;
+    lines[index] = lines[index].replace("[ ]", "[x]").replace(/\s*$/, done ? ` ✅ ${done}` : "");
+    completed = true;
     return lines.join("\n");
   });
-  return done;
+  return completed;
 }
 
-function localDate(date: Date): string {
+/** A date as YYYY-MM-DD in this machine's time zone. */
+export function localDate(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
@@ -225,6 +249,10 @@ export class ActionItemsView extends ItemView {
         const body = item.createDiv({ cls: "cal-notes-item" });
         body.createSpan({ text: row.meta.text });
         const details = body.createDiv({ cls: "cal-notes-item-meta" });
+        if (row.meta.priority) {
+          const label = row.meta.priority[0].toUpperCase() + row.meta.priority.slice(1);
+          details.createSpan({ cls: `cal-notes-priority is-${row.meta.priority}`, text: label });
+        }
         if (row.meta.due) {
           details.createSpan({ cls: row.overdue ? "cal-notes-due is-overdue" : "cal-notes-due", text: `📅 ${row.meta.due}` });
         }
@@ -234,7 +262,7 @@ export class ActionItemsView extends ItemView {
         }
         box.addEventListener("change", async () => {
           box.disabled = true;
-          await completeTask(this.app, row.meeting.file, row.task);
+          await completeTask(this.app, row.meeting.file, row.task, localDate(new Date()));
           await this.render();
         });
       }

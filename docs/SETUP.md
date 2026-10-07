@@ -16,6 +16,7 @@ Everything here runs on your Mac. The plugin never sends anything over the netwo
 | **BRAT** community plugin | Required to install and update | Installs this plugin from GitHub and keeps it up to date |
 | Krisp | Optional | For meeting transcripts |
 | An approved AI assistant | Optional | Gemini, Claude, ChatGPT, Copilot or your own agent, for summaries |
+| **Tasks** community plugin | Recommended | Live action-item lists in any note — see [Tasks and meeting action items](TASKS.md) |
 
 ---
 
@@ -29,7 +30,7 @@ Everything here runs on your Mac. The plugin never sends anything over the netwo
 
 ## 3. Plugin settings
 
-Open **Settings → Calendar Note Integration**. Recommended values:
+Open **Settings → Meeting Notes for Apple Calendar**. Recommended values:
 
 ### Personal
 
@@ -89,7 +90,13 @@ These are Obsidian core plugins: **Settings → Core plugins**.
 
 ---
 
-## 5. Hotkeys
+## 5. The Tasks plugin
+
+Install **Tasks** from **Settings → Community plugins → Browse**. Two settings matter — **Task Format: Tasks Emoji Format** and an **empty Global filter** (both the defaults) — and two are worth turning on: **Set created date on every added task** and **Set done date on every completed task**. Full details and ready-to-paste lists are in **[Tasks and meeting action items](TASKS.md)**.
+
+---
+
+## 6. Hotkeys
 
 **Settings → Hotkeys**, search for the command, click **+**, press your keys. Suggestions below use Ctrl + Option, which Obsidian leaves free; if Obsidian shows a key as already in use, pick another.
 
@@ -101,14 +108,16 @@ These are Obsidian core plugins: **Settings → Core plugins**.
 | Import Krisp transcript into this note | Ctrl + Option + K |
 | Copy meeting for AI assistant | Ctrl + Option + C |
 | Add AI reply to this meeting | Ctrl + Option + V |
+| Open meeting tracker | Ctrl + Option + M |
 
 ---
 
-## 6. A typical day
+## 7. A typical day
 
 1. **Morning** — open **Today's meetings** (ribbon: calendar with clock). Notes for today's meetings already exist.
 2. **Before a meeting** — click **Join** (or the status bar). The note opens with the agenda and last meeting's open items.
 3. **During** — type into **Notes**, **Decisions** and **Action items** (`- [ ] Send deck @Bob 📅 2026-10-10`).
 4. **After** — run **Import Krisp transcript into this note** (or confirm the automatic offer), then **Copy meeting for AI assistant**, paste into your assistant, copy its reply, and run **Add AI reply to this meeting**.
 5. **File it** — move the note into your own folder structure. Its action items, links and dashboard entries follow it.
-6. **Follow up** — the **Meeting action items** panel (ribbon: checklist) shows everything still open, by meeting, person or due date.
+6. **Follow up** — the **Meeting action items** panel (ribbon: checklist) shows everything still open, by meeting, person or due date. Tick items off there or in the note.
+7. **Weekly** — open the **Meeting tracker** (ribbon: gauge) for overdue items, what's due this week, open items by account and person, and the last 30 days' decisions.

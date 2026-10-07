@@ -1,5 +1,5 @@
 /* =========================================================
-   Calendar Note Integration — Plugin Styles
+   Meeting Notes for Apple Calendar — Plugin Styles
    ========================================================= */
 
 /* ----------------------------------------------------------
@@ -191,4 +191,18 @@
 
 .cal-notes-wide-setting .setting-item-control {
   width: 100%;
+}
+
+.cal-notes-priority {
+  font-weight: 600;
+}
+
+.cal-notes-priority.is-highest,
+.cal-notes-priority.is-high {
+  color: var(--text-error);
+}
+
+.cal-notes-priority.is-low,
+.cal-notes-priority.is-lowest {
+  color: var(--text-faint);
 }

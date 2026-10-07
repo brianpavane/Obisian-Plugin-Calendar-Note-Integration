@@ -687,7 +687,7 @@ test("Add AI reply files an agent report into a filed note and rejects unrelated
   const report = "**Category:** Team Sync\n**Primary Account / Project:** General\n**Key Decisions Made:**\n- Ship it\n### Action Items & Commitments\n| Action Item | Owner | Due |\n|---|---|---|\n| Write notes | Alice Smith | 2026-04-10 |";
 
   assert.equal(await plugin.applyAssistantReply(file as never, report), true);
-  assert.match(file.content ?? "", /## Action items\n\n- \[ \] Write notes @\[\[Alice Smith\]\] 📅 2026-04-10\n/);
+  assert.match(file.content ?? "", /## Action items\n\n- \[ \] Write notes @\[\[Alice Smith\]\] ➕ 2026-04-03 📅 2026-04-10\n/);
   assert.match(file.content ?? "", /^meeting_category: "Team Sync"$/m);
   assert.doesNotMatch(file.content ?? "", /^account:/m, "General is not an account");
   assert.match(getNotices().at(-1)?.message ?? "", /Updated the summary; added 1 new decision and 1 new action item/);
@@ -695,4 +695,25 @@ test("Add AI reply files an agent report into a filed note and rejects unrelated
   const before = file.content;
   assert.equal(await plugin.applyAssistantReply(file as never, "Hello there"), false);
   assert.equal(file.content, before);
+});
+
+test("Open meeting tracker builds the tracker from notes anywhere and rebuilds it in place", async () => {
+  const app = createMemoryApp([
+    { path: "Clients/Acme/2026/Q4/Pilot.md", content: "---\ntitle: \"Pilot\"\nstart: 2026-04-02T10:00\naccount: \"Acme\"\ncalendar_event_id: \"p\"\n---\n\n## Decisions\n\n- Go live\n\n## Action items\n\n- [ ] Send scope @[[Bob Jones]] ⏫ 📅 2026-04-01\n- [ ] \n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+
+  await plugin.openTracker();
+  const tracker = app.files.get("Meeting Notes/Meeting Tracker.md") as TFile;
+  assert.match(tracker.content ?? "", /## Overdue\n\n- Send scope @\[\[Bob Jones\]\] · ⏫ 📅 2026-04-01 · \[\[Clients\/Acme\/2026\/Q4\/Pilot\|Pilot\]\]/);
+  assert.match(tracker.content ?? "", /### Acme \(1\)/);
+  assert.match(tracker.content ?? "", /- Go live/);
+  assert.deepEqual(app.openedFiles, ["Meeting Notes/Meeting Tracker.md"]);
+
+  (app.files.get("Clients/Acme/2026/Q4/Pilot.md") as TFile).content =
+    (app.files.get("Clients/Acme/2026/Q4/Pilot.md") as TFile).content?.replace("- [ ] Send", "- [x] Send");
+  await plugin.openTracker();
+  assert.equal(app.createdPaths.filter((p) => p.endsWith("Meeting Tracker.md")).length, 1);
+  assert.match(tracker.content ?? "", /\| 0 \| 0 \| 0 \| 0 \|/);
 });

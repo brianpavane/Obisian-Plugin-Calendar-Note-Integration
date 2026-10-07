@@ -27,6 +27,13 @@ test("collectOpenItems lists open tasks from meeting notes, newest meeting first
   );
 });
 
+test("completeTask adds the Tasks plugin's done date when given", async () => {
+  const app = createMemoryApp([{ path: "Meetings/Sync.md", content: "## Action items\n\n- [ ] Send deck 📅 2026-10-09" }]);
+  const file = app.files.get("Meetings/Sync.md") as TFile;
+  assert.equal(await completeTask(app as never, file as never, { line: 2, text: "Send deck 📅 2026-10-09" }, "2026-10-07"), true);
+  assert.equal(file.content, "## Action items\n\n- [x] Send deck 📅 2026-10-09 ✅ 2026-10-07");
+});
+
 test("completeTask checks off the task, finding it by text if its line moved", async () => {
   const app = createMemoryApp([
     { path: "Meetings/Sync.md", content: "## Action items\n\n- [ ] Send deck\n- [ ] Draft plan" },
@@ -44,9 +51,35 @@ test("completeTask checks off the task, finding it by text if its line moved", a
 });
 
 test("parseTaskMeta reads @owners and due dates in both Tasks formats", () => {
-  assert.deepEqual(parseTaskMeta("Send deck @Bob 📅 2026-10-10"), { text: "Send deck @Bob", owner: "Bob", due: "2026-10-10" });
-  assert.deepEqual(parseTaskMeta("Draft plan @[[Alice Smith]] [due:: 2026-10-08]"), { text: "Draft plan @[[Alice Smith]]", owner: "Alice Smith", due: "2026-10-08" });
-  assert.deepEqual(parseTaskMeta("Email bob@example.com"), { text: "Email bob@example.com", owner: undefined, due: undefined });
+  assert.deepEqual(parseTaskMeta("Send deck @Bob 📅 2026-10-10"), { text: "Send deck @Bob", owner: "Bob", due: "2026-10-10", priority: undefined });
+  assert.deepEqual(parseTaskMeta("Draft plan @[[Alice Smith]] [due:: 2026-10-08]"), { text: "Draft plan @[[Alice Smith]]", owner: "Alice Smith", due: "2026-10-08", priority: undefined });
+  assert.deepEqual(parseTaskMeta("Email bob@example.com"), { text: "Email bob@example.com", owner: undefined, due: undefined, priority: undefined });
+});
+
+test("parseTaskMeta reads Tasks priorities, role owners, and hides created and done dates", () => {
+  assert.deepEqual(parseTaskMeta("Send scope @[[Bob Jones]] ⏫ ➕ 2026-10-07 📅 2026-10-09"), {
+    text: "Send scope @[[Bob Jones]]", owner: "Bob Jones", due: "2026-10-09", priority: "high",
+  });
+  assert.deepEqual(parseTaskMeta("Confirm window (owner: Customer IT team) 🔽"), {
+    text: "Confirm window (owner: Customer IT team)", owner: "Customer IT team", due: undefined, priority: "low",
+  });
+  assert.equal(parseTaskMeta("Old style (priority: Medium)").priority, "medium");
+  assert.equal(parseTaskMeta("Old style (priority: Medium)").text, "Old style");
+});
+
+test("groupItems puts higher priority first within a person or due-date group", () => {
+  const meeting: MeetingTasks = {
+    file: new TFile("Meetings/Sync.md") as never,
+    title: "Sync",
+    start: "2026-10-01T10:00",
+    tasks: [
+      { line: 0, text: "Low thing @Bob 🔽 📅 2026-10-02" },
+      { line: 1, text: "Plain thing @Bob 📅 2026-10-01" },
+      { line: 2, text: "Urgent thing @Bob ⏫ 📅 2026-10-20" },
+    ],
+  };
+  const [bob] = groupItems([meeting], "person", "2026-10-05");
+  assert.deepEqual(bob.rows.map((r) => r.meta.text), ["Urgent thing @Bob", "Plain thing @Bob", "Low thing @Bob"]);
 });
 
 test("groupItems groups by person and by due date", () => {

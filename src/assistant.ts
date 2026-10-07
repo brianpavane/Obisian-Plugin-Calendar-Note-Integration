@@ -263,16 +263,22 @@ export function parseReply(text: string): AssistantReply | undefined {
   };
 }
 
-const PRIORITY_TEXT = { High: "(priority: High)", Medium: "(priority: Medium)", Low: "(priority: Low)" } as const;
+/** The Tasks plugin's priority markers. */
+const PRIORITY_MARK = { High: "⏫", Medium: "🔼", Low: "🔽" } as const;
 
-/** An action item as a task line. */
-export function actionLine(item: ActionItem): string {
-  if (item.raw !== undefined) return `- [ ] ${item.raw}`;
+/**
+ * An action item as a task line, in the Tasks plugin's format: owner in the
+ * text, then priority, created date (`created`, if given) and due date.
+ */
+export function actionLine(item: ActionItem, created?: string): string {
+  const added = created ? `➕ ${created}` : "";
+  if (item.raw !== undefined) return [`- [ ] ${item.raw}`, added].filter(Boolean).join(" ");
   return [
     `- [ ] ${item.task}`,
     item.person ? `@[[${item.person}]]` : "",
     item.role ? `(owner: ${item.role})` : "",
-    item.priority ? PRIORITY_TEXT[item.priority] : "",
+    item.priority ? PRIORITY_MARK[item.priority] : "",
+    added,
     item.due ? `📅 ${item.due}` : "",
   ].filter(Boolean).join(" ");
 }
@@ -299,9 +305,10 @@ export interface ApplyResult {
  * File the reply into the note: the summary replaces Meeting Summary;
  * decisions and action items not already in their sections are added; the
  * category, account and tags become properties when `saveProperties` is set.
+ * New action items are stamped with `today` as their created date.
  * Applying the same reply twice changes nothing the second time.
  */
-export function applyReply(content: string, reply: AssistantReply, saveProperties: boolean): ApplyResult {
+export function applyReply(content: string, reply: AssistantReply, saveProperties: boolean, today?: string): ApplyResult {
   let out = content;
   if (reply.summary.length > 0) out = replaceSection(out, SUMMARY_SECTIONS, reply.summary, TRANSCRIPT_SECTIONS);
 
@@ -316,7 +323,7 @@ export function applyReply(content: string, reply: AssistantReply, savePropertie
   };
   const decisions = fresh(DECISIONS_SECTIONS, reply.decisions.map((d) => `- ${d}`));
   if (decisions.length > 0) out = appendToSection(out, DECISIONS_SECTIONS, decisions, ACTION_SECTIONS);
-  const actions = fresh(ACTION_SECTIONS, reply.actionItems.map(actionLine));
+  const actions = fresh(ACTION_SECTIONS, reply.actionItems.map((item) => actionLine(item, today)));
   if (actions.length > 0) out = appendToSection(out, ACTION_SECTIONS, actions, SUMMARY_SECTIONS);
 
   if (saveProperties) {

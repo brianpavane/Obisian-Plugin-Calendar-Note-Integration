@@ -83,7 +83,7 @@ test("parseReply reads the short format in its usual variations", () => {
   ].join("\n"));
   assert.deepEqual(reply?.summary, ["We reviewed the design and agreed to ship."]);
   assert.deepEqual(reply?.decisions, ["Ship on Friday", "Keep the old API"]);
-  assert.deepEqual(reply?.actionItems.map(actionLine), ["- [ ] Update the docs @[[Bob Jones]] 📅 2026-10-09", "- [ ] Book the launch room"]);
+  assert.deepEqual(reply?.actionItems.map((i) => actionLine(i)), ["- [ ] Update the docs @[[Bob Jones]] 📅 2026-10-09", "- [ ] Book the launch room"]);
 });
 
 test("parseReply reads a full agent report: whole report as summary, decisions, table rows and properties", () => {
@@ -93,10 +93,10 @@ test("parseReply reads a full agent report: whole report as summary, decisions, 
   assert.ok(reply.summary.includes("| Send the pilot scope document | Bob Jones | High | 2026-10-09 |"));
   assert.ok(!reply.summary.some((l) => /^-{3,}$/.test(l)), "horizontal rules are dropped");
   assert.deepEqual(reply.decisions, ["Move to a production pilot in November", "Keep SSL inspection off for finance traffic"]);
-  assert.deepEqual(reply.actionItems.map(actionLine), [
-    "- [ ] Send the pilot scope document @[[Bob Jones]] (priority: High) 📅 2026-10-09",
-    "- [ ] Confirm firewall change window (owner: Customer IT team) (priority: Medium)",
-    "- [ ] Book the kickoff (priority: Low)",
+  assert.deepEqual(reply.actionItems.map((i) => actionLine(i)), [
+    "- [ ] Send the pilot scope document @[[Bob Jones]] ⏫ 📅 2026-10-09",
+    "- [ ] Confirm firewall change window (owner: Customer IT team) 🔼",
+    "- [ ] Book the kickoff 🔽",
   ]);
   assert.equal(reply.category, "External Customer");
   assert.equal(reply.account, "Acme Corp");
@@ -106,13 +106,13 @@ test("parseReply reads a full agent report: whole report as summary, decisions, 
 test("parseReply demotes a report's top-level headings below the Meeting Summary heading", () => {
   const reply = parseReply("# Overview\nText\n## Action Items\n| Task | Owner |\n|---|---|\n| Do it | Bob |");
   assert.deepEqual(reply?.summary.slice(0, 3), ["### Overview", "Text", "#### Action Items"]);
-  assert.deepEqual(reply?.actionItems.map(actionLine), ["- [ ] Do it @[[Bob]]"]);
+  assert.deepEqual(reply?.actionItems.map((i) => actionLine(i)), ["- [ ] Do it @[[Bob]]"]);
 });
 
 test("parseReply copes with a report whose table is missing or malformed", () => {
   const reply = parseReply("### Executive Synthesis\n**Key Decisions Made:**\n- None\n### Action Items & Commitments\n- Call Bob\n");
   assert.deepEqual(reply?.decisions, []);
-  assert.deepEqual(reply?.actionItems.map(actionLine), ["- [ ] Call Bob"]);
+  assert.deepEqual(reply?.actionItems.map((i) => actionLine(i)), ["- [ ] Call Bob"]);
   assert.equal(reply?.category, undefined);
   assert.equal(parseReply("Sure! Here is a summary of the meeting."), undefined);
 });
@@ -122,7 +122,7 @@ test("applyReply files a full report and changes nothing when applied twice", ()
   const once = applyReply(blankNote, reply, true);
   assert.equal(once.decisions, 2);
   assert.equal(once.actionItems, 3);
-  assert.match(once.content, /## Decisions\n\n- Move to a production pilot in November\n- Keep SSL inspection off for finance traffic\n\n## Action items\n\n- \[ \] Send the pilot scope document @\[\[Bob Jones\]\] \(priority: High\) 📅 2026-10-09\n/);
+  assert.match(once.content, /## Decisions\n\n- Move to a production pilot in November\n- Keep SSL inspection off for finance traffic\n\n## Action items\n\n- \[ \] Send the pilot scope document @\[\[Bob Jones\]\] ⏫ 📅 2026-10-09\n/);
   assert.match(once.content, /## Meeting Summary\n\n### Meeting Overview\n/);
   assert.match(once.content, /\n## Transcript\n/);
   assert.match(once.content, /^meeting_category: "External Customer"$/m);
@@ -149,8 +149,17 @@ test("parseReply ignores the chat around a reply and writes an owner of You as m
   const fenced = parseReply("Sure! Here's the analysis.\n\n```markdown\n### Overview\n**Key Decisions Made:**\n- Go\n### Action Items\n| Task | Owner |\n|---|---|\n| Review bands | You |\n```\nLet me know if you need more.");
   assert.equal(fenced?.summary[0], "### Overview");
   assert.ok(!fenced?.summary.some((l) => /Let me know|Sure!/.test(l)));
-  assert.deepEqual(fenced?.actionItems.map(actionLine), ["- [ ] Review bands (owner: me)"]);
+  assert.deepEqual(fenced?.actionItems.map((i) => actionLine(i)), ["- [ ] Review bands (owner: me)"]);
 
   const unfenced = parseReply("Here you go:\n\n### Overview\n**Key Decisions Made:**\n- Go");
   assert.equal(unfenced?.summary[0], "### Overview");
+});
+
+test("action items from a reply get the Tasks plugin's created date", () => {
+  const reply = parseReply(AGENT_REPLY)!;
+  assert.equal(actionLine(reply.actionItems[0], "2026-10-07"), "- [ ] Send the pilot scope document @[[Bob Jones]] ⏫ ➕ 2026-10-07 📅 2026-10-09");
+  const once = applyReply(blankNote, reply, false, "2026-10-07");
+  assert.match(once.content, /- \[ \] Book the kickoff 🔽 ➕ 2026-10-07\n/);
+  const nextDay = applyReply(once.content, reply, false, "2026-10-08");
+  assert.equal(nextDay.content, once.content, "a later run doesn't add the same items with a new created date");
 });

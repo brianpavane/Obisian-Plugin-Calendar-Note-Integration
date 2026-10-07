@@ -1,14 +1,15 @@
 # Dashboards — a step-by-step guide
 
-The plugin gives you three dashboards. A dashboard is a page that pulls information together and shows it in one place, so you don't have to open each note or flip to Calendar.app.
+The plugin gives you four dashboards. A dashboard is a page that pulls information together and shows it in one place, so you don't have to open each note or flip to Calendar.app.
 
 | Dashboard | What it answers | Where it appears |
 |---|---|---|
 | **Today's meetings** | "What's on today, and how do I get into the next one?" | A panel in the **right sidebar** |
 | **Meeting action items** | "What did I promise to do, in any meeting? What's overdue? What does Bob owe me?" | A panel in the **right sidebar** |
 | **Meetings dashboard** | "What meetings do I have coming up, and what did I have last week?" | A table that opens in the **main editor area**, like a note |
+| **Meeting tracker** | "Across everything: what's overdue, what's due this week, what's open per customer and per person, what did we decide?" | A note, `Meeting Tracker.md`, in the **main editor area** |
 
-**Today's meetings** reads your Apple Calendar. The other two are built from the meeting notes the plugin created (notes with a `calendar_event_id` property, wherever in the vault you've filed them). None of them ever change your calendar.
+**Today's meetings** reads your Apple Calendar. The other three are built from the meeting notes the plugin created (notes with a `calendar_event_id` property, wherever in the vault you've filed them). None of them ever change your calendar.
 
 ---
 
@@ -21,12 +22,13 @@ The **ribbon** is the thin strip of icons down the far-left edge of the Obsidian
 | **Calendar-with-clock** icon | **Today's meetings** |
 | **Checklist** icon (☑ with lines) | **Meeting action items** |
 | **Dashboard** icon (four squares) | **Meetings dashboard** |
+| **Gauge** icon (a dial) | **Meeting tracker** |
 
 (The plain **calendar** icon next to them is the older "create a note from an event" button.)
 
 Hover over a button and its name appears. Click it to open the dashboard.
 
-**Don't see the buttons?** Make sure the plugin is updated to 6.11.0 or later. If the ribbon itself is hidden, turn it back on under **Settings → Appearance → Show ribbon**. If a button is missing, right-click the ribbon and tick it in the list.
+**Don't see the buttons?** Make sure the plugin is updated (6.15.0 or later for the gauge). If the ribbon itself is hidden, turn it back on under **Settings → Appearance → Show ribbon**. If a button is missing, right-click the ribbon and tick it in the list.
 
 ## The other way: the command palette
 
@@ -36,7 +38,7 @@ You can also open every dashboard with a *command*. Obsidian runs commands from 
 2. A search box appears. Start typing the command's name, for example `action items`.
 3. Click the matching line, or press **Return**.
 
-In the palette, every command from this plugin starts with **Calendar Note Integration - Apple-iCal-Google:**, so typing `calendar` lists them all.
+In the palette, every command from this plugin starts with **Meeting Notes for Apple Calendar:**, so typing `meeting` lists most of them.
 
 > **Tip — give it a shortcut.** Open **Settings → Hotkeys**, search for `today's meetings`, `action items`, or `meetings dashboard`, click the **+** next to the command, and press the keys you want, for example **Cmd + Shift + A**.
 
@@ -179,6 +181,12 @@ The 📅 and `[due:: ]` formats are the ones the **Tasks** community plugin uses
 
 In the panel, a due date shows under the item, in **red** once the date has passed.
 
+### Priority
+
+Mark an item's priority with the Tasks plugin's symbols: `⏫` high, `🔼` medium, `🔽` low (`🔺` highest, `⏬` lowest). Action items added from an AI reply get these from the reply's Priority column. The panel shows **High** in red, and when grouped by person or due date, puts higher-priority items first.
+
+Ticking an item in the panel also adds the date it was done (`✅ 2026-10-08`), in the same format the Tasks plugin uses. More in **[Tasks and meeting action items](TASKS.md)**.
+
 ### Grouping: by meeting, by person, or by due date
 
 At the top of the panel is a menu, set to **By meeting** at first. Change it to see the same items another way:
@@ -231,6 +239,24 @@ The day views are grouped by day. **By account** and **By category** fill in as 
 
 ---
 
+## 4. Meeting tracker
+
+### What it is
+
+One page summarizing every meeting note: how many items are open, overdue, due in the next 7 days and high priority; then lists of **Overdue**, **Due in the next 7 days**, **High priority**, **Open items by account**, **Open items by person**, **Decisions in the last 30 days**, and **Meetings this week** by category. Each item links to its meeting.
+
+It needs no other plugins. Accounts and categories come from the `account` and `meeting_category` properties that **Add AI reply to this meeting** saves (or that you type yourself).
+
+### How to open it
+
+Click the **gauge** button in the left ribbon, or press **Cmd + P** and run **Open meeting tracker**.
+
+It's a snapshot: each time you open it this way, the plugin rebuilds `Meeting Tracker.md` in your meeting-notes folder with the latest numbers. Don't write in it — your edits are replaced the next time. To tick an item off, use the **Meeting action items** panel or the meeting's own note, then reopen the tracker.
+
+The items are plain bullets, not checkboxes, so the action items panel and the Tasks plugin never count them twice.
+
+---
+
 ## Troubleshooting
 
 **The action items panel is empty, but I have open items.**
@@ -238,7 +264,7 @@ The day views are grouped by day. **By account** and **By category** fill in as 
 - The line must be a checkbox with text: `- [ ] Do the thing`. A plain bullet (`- Do the thing`) isn't a to-do.
 
 **Today's meetings says "Couldn't read your calendar."**
-The plugin couldn't reach Apple Calendar. Open **Settings → Calendar Note Integration** and click **Test connection**; see the README's Troubleshooting section for the usual fixes (Calendar access permission).
+The plugin couldn't reach Apple Calendar. Open **Settings → Meeting Notes for Apple Calendar** and click **Test connection**; see the README's Troubleshooting section for the usual fixes (Calendar access permission).
 
 **An item has a date, but it isn't red / isn't under Overdue.**
 The date must be written year-month-day with two-digit month and day, e.g. `📅 2026-10-05`, not `📅 10/5`.

@@ -1,6 +1,6 @@
-# Calendar Note Integration - Apple-iCal-Google
+# Meeting Notes for Apple Calendar
 
-An Obsidian plugin that automatically creates structured meeting notes from your calendar events.
+An Obsidian plugin that turns your Apple Calendar into meeting notes: a note before every meeting, a Today panel with one-click join, Krisp transcripts, AI summaries by copy and paste, and action items tracked across all your meetings.
 
 Reads events from **Apple Calendar on your Mac** — any account synced to Calendar.app, limited to the specific calendars you choose.
 
@@ -26,7 +26,9 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 - **AI summaries by copy and paste** — copy a meeting for Gemini, Claude, ChatGPT or Copilot (or your own agent), paste the reply back into Meeting Summary, Decisions and Action items; the plugin itself never goes online
 - **File notes anywhere** — move finished notes into your own folders; the plugin still finds them
 - **Skip rules** — no automatic notes for meetings titled Focus time, Lunch, etc., or with no one else invited
-- **Action items view** — every open action item across your meetings in one sidebar, grouped by meeting, owner (`@Bob`), or due date (`📅 2026-10-10`), ticked off in place ([guide](docs/DASHBOARDS.md))
+- **Action items view** — every open action item across your meetings in one sidebar, grouped by meeting, owner (`@Bob`), or due date (`📅 2026-10-10`), with priorities, ticked off in place ([guide](docs/DASHBOARDS.md))
+- **Meeting tracker** — one page with overdue and upcoming items, high priorities, open items by account and person, recent decisions and this week's meetings ([guide](docs/DASHBOARDS.md))
+- **Works with the Tasks plugin** — action items use its format (priority, created, due and done dates), for live lists in any note ([guide](docs/TASKS.md))
 - **Declined event filtering** — events you have declined are skipped, when the calendar identifies you as an attendee or your email address is set
 - **All-day event filtering** — all-day events (holidays, OOO blocks) are skipped
 - **Configurable time window** — look ahead 1–48 hours; optionally include past events
@@ -46,7 +48,7 @@ The plugin is not listed in the Obsidian Community Plugins directory. Install it
 2. Open the command palette (Cmd+P) and run **BRAT: Add a beta plugin for testing**
 3. Enter the repository URL: `https://github.com/brianpavane/Obisian-Plugin-Calendar-Note-Integration`
 4. Choose the latest version and click **Add Plugin**
-5. Enable **Calendar Note Integration - Apple-iCal-Google** under **Settings → Community plugins**
+5. Enable **Meeting Notes for Apple Calendar** under **Settings → Community plugins**
 
 BRAT checks for new releases when Obsidian starts. To update immediately, run **BRAT: Check for updates to all beta plugins and UPDATE** from the command palette.
 
@@ -62,7 +64,7 @@ Manual installs do not update automatically.
 
 ## Setup
 
-Open **Settings → Calendar Note Integration - Apple-iCal-Google**. **Calendar source** defaults to Apple Calendar.
+Open **Settings → Meeting Notes for Apple Calendar**. **Calendar source** defaults to Apple Calendar.
 
 ### Apple Calendar (macOS) — recommended
 
@@ -351,7 +353,7 @@ Use any AI assistant your organization approves — Gemini, Claude, ChatGPT, Cop
 The plugin understands two kinds of reply:
 
 - **The short format** the built-in instructions ask for (**Summary**, **Decisions**, **Action items** headings): the summary goes into **Meeting Summary**, decisions into **Decisions**, action items into **Action items**.
-- **A full report from your own agent** (see **[AI agent instructions](docs/AGENT_INSTRUCTIONS.md)**): the whole report goes into **Meeting Summary**; bullets under **Key Decisions Made** go into **Decisions**; each row of the action items table becomes a checkbox in **Action items** — owners as `@[[Full Name]]` (or `(owner: Customer IT team)` for a role), due dates as `📅 YYYY-MM-DD`. The report's **Category**, **Primary Account / Project** and **Search Tags** become the note's `meeting_category`, `account` and `tags` properties, for the **By account** and **By category** dashboard views.
+- **A full report from your own agent** (see **[AI agent instructions](docs/AGENT_INSTRUCTIONS.md)**): the whole report goes into **Meeting Summary**; bullets under **Key Decisions Made** go into **Decisions**; each row of the action items table becomes a checkbox in **Action items** — owners as `@[[Full Name]]` (or `(owner: Customer IT team)` for a role), priority as `⏫` / `🔼` / `🔽`, the date added as `➕ YYYY-MM-DD` and due dates as `📅 YYYY-MM-DD` — the [Tasks plugin's format](docs/TASKS.md). The report's **Category**, **Primary Account / Project** and **Search Tags** become the note's `meeting_category`, `account` and `tags` properties, for the **By account** and **By category** dashboard views.
 
 Running it again with the same reply is safe: **Meeting Summary is replaced**, and decisions and action items already in the note (ticked or not) aren't added twice. Your own writing in Notes, Decisions and Action items is kept.
 
@@ -370,11 +372,12 @@ Both steps are optional. The note's sections are there for you to write in by ha
 | **Open meetings dashboard** | Opens `Meetings.base` in your meeting-notes folder (created on first use) |
 | **Open today's meetings** | Shows today's meetings in the right sidebar, with Open note and Join buttons, arrows to other days, and a New note button |
 | **Open meeting action items** | Shows every open action item from your meeting notes in the right sidebar |
+| **Open meeting tracker** | Rebuilds and opens `Meeting Tracker.md` in your meeting-notes folder: overdue, due soon, high priority, by account, by person, recent decisions, this week's meetings |
 | **Import Krisp transcript into this note** | Suggests the open note's Krisp recording and, once you confirm, fills its empty Transcript section — see [Krisp transcripts](#krisp-transcripts) |
 | **Copy meeting for AI assistant** | Copies the open note's meeting details, notes and transcript (and, if switched on, the instructions) — see [AI summaries](#ai-summaries-copy-and-paste) |
 | **Add AI reply to this meeting** | Files the AI reply on the clipboard into the open note's Meeting Summary, Decisions and Action items, and its properties |
 
-The plugin adds four buttons to the ribbon (the icon strip on the far left of the window):
+The plugin adds five buttons to the ribbon (the icon strip on the far left of the window):
 
 | Icon | Opens |
 |---|---|
@@ -382,6 +385,7 @@ The plugin adds four buttons to the ribbon (the icon strip on the far left of th
 | Calendar with clock | The **Today's meetings** panel |
 | Checklist | The **Meeting action items** panel |
 | Dashboard (four squares) | The **Meetings dashboard** |
+| Gauge | The **Meeting tracker** |
 
 Hover over a button to see its name.
 
@@ -393,7 +397,7 @@ The status bar at the bottom of the window shows the meeting in progress (*Now: 
 
 ## Dashboards
 
-New to these? **[Dashboards — a step-by-step guide](docs/DASHBOARDS.md)** explains what each one is, where to find it, and how to use it. Setting everything up for the first time? See **[Recommended setup](docs/SETUP.md)**.
+New to these? **[Dashboards — a step-by-step guide](docs/DASHBOARDS.md)** explains what each one is, where to find it, and how to use it. Setting everything up for the first time? See **[Recommended setup](docs/SETUP.md)**. Using the Tasks plugin? See **[Tasks and meeting action items](docs/TASKS.md)**.
 
 ### Today's meetings
 

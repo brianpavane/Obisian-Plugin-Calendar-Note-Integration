@@ -1,6 +1,6 @@
 /**
  * @file main.ts
- * @description Entry point for Calendar Note Integration - Apple-iCal-Google.
+ * @description Entry point for Meeting Notes for Apple Calendar.
  *
  * Supports three calendar sources:
  *   - Apple Calendar — reads from Calendar.app on macOS via EventKit (primary)
@@ -30,6 +30,7 @@ import {
 import {
   applyReply,
   copyText,
+  DECISIONS_SECTIONS,
   DEFAULT_INSTRUCTIONS,
   parseReply,
   TRANSCRIPT_SECTIONS,
@@ -38,7 +39,8 @@ import {
 } from "./assistant";
 import { appendToSection, sectionText } from "./sections";
 import { isSkipped } from "./skipRules";
-import { ActionItemsView, ACTION_ITEMS_VIEW } from "./actionItems";
+import { ActionItemsView, ACTION_ITEMS_VIEW, localDate, parseTaskMeta } from "./actionItems";
+import { buildTracker, TRACKER_FILENAME, type TrackerMeeting } from "./tracker";
 import { DASHBOARD_CONTENT, DASHBOARD_FILENAME } from "./dashboard";
 import { TodayView, TODAY_VIEW } from "./todayView";
 import { currentOrNextMeeting, meetingToJoin, statusText } from "./meetingStatus";
@@ -57,6 +59,7 @@ import {
   findNotesByEventId,
   joinUrl,
   markNoteRemoved,
+  openTasks,
   resolveNoteFilePath,
   seriesOptions,
   setFrontmatterValue,
@@ -133,6 +136,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     this.addRibbonIcon("calendar-clock", "Open today's meetings", () => this.openSidebarView(TODAY_VIEW));
     this.addRibbonIcon("list-checks", "Open meeting action items", () => this.openSidebarView(ACTION_ITEMS_VIEW));
     this.addRibbonIcon("layout-dashboard", "Open meetings dashboard", () => this.openDashboard());
+    this.addRibbonIcon("gauge", "Open meeting tracker", () => this.openTracker());
 
     this.addCommand({
       id: "create-note-from-event",
@@ -181,6 +185,12 @@ export default class GoogleCalendarPlugin extends Plugin {
       id: "open-today",
       name: "Open today's meetings",
       callback: () => this.openSidebarView(TODAY_VIEW),
+    });
+
+    this.addCommand({
+      id: "open-meeting-tracker",
+      name: "Open meeting tracker",
+      callback: () => this.openTracker(),
     });
 
     this.addCommand({
@@ -269,6 +279,50 @@ export default class GoogleCalendarPlugin extends Plugin {
     } else {
       new Notice(`Calendar Notes: "${meeting.event.summary ?? "This meeting"}" has no join link.`);
     }
+  }
+
+  /** Every meeting note's open items, decisions, account and category, for the tracker. */
+  async trackerMeetings(): Promise<TrackerMeeting[]> {
+    const meetings: TrackerMeeting[] = [];
+    for (const file of findNotesByEventId(this.app).values()) {
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+      const content = await this.app.vault.cachedRead(file);
+      const start = frontmatterDate(fm.start) ?? frontmatterDate(fm.date);
+      const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+      meetings.push({
+        path: file.path.replace(/\.md$/, ""),
+        title: text(fm.title) ?? file.basename,
+        date: start ? localDate(start) : "",
+        account: text(fm.account),
+        category: text(fm.meeting_category),
+        openItems: openTasks(content).map((t) => parseTaskMeta(t.text)),
+        decisions: sectionText(content, DECISIONS_SECTIONS)
+          .split("\n")
+          .map((l) => l.replace(/^\s*[-*+]\s+/, "").trim())
+          .filter(Boolean),
+      });
+    }
+    return meetings;
+  }
+
+  /** Rebuild the Meeting Tracker note in the note folder and open it. */
+  async openTracker(): Promise<void> {
+    const now = this.now();
+    const content = buildTracker(
+      await this.trackerMeetings(),
+      localDate(now),
+      `${localDate(now)} ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+    );
+    const folder = this.settings.noteFolder.trim() ? normalizePath(this.settings.noteFolder.trim()) : "";
+    const path = normalizePath(folder ? `${folder}/${TRACKER_FILENAME}` : TRACKER_FILENAME);
+    let file = this.app.vault.getAbstractFileByPath(path);
+    if (file instanceof TFile) {
+      await this.app.vault.process(file, () => content);
+    } else {
+      if (folder && !this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
+      file = await this.app.vault.create(path, content);
+    }
+    await this.app.workspace.getLeaf(false).openFile(file as TFile);
   }
 
   /** Open the meetings dashboard (a Bases file), creating it on first use. */
@@ -449,7 +503,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     const refreshToken = decrypt(this.settings.refreshToken);
     if (!refreshToken) {
       throw new Error(
-        "Not authenticated. Please sign in via Settings → Calendar Note Integration - Apple-iCal-Google."
+        "Not authenticated. Please sign in via Settings → Meeting Notes for Apple Calendar."
       );
     }
 
@@ -773,7 +827,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     if (!this.isConfigured()) {
       new Notice(
         "Calendar Notes: Please configure your connection in " +
-          "Settings → Calendar Note Integration - Apple-iCal-Google."
+          "Settings → Meeting Notes for Apple Calendar."
       );
       return;
     }
@@ -812,7 +866,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     if (!this.isConfigured()) {
       new Notice(
         "Calendar Notes: Please configure your connection in " +
-          "Settings → Calendar Note Integration - Apple-iCal-Google."
+          "Settings → Meeting Notes for Apple Calendar."
       );
       return;
     }
@@ -1071,7 +1125,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
     let result: ApplyResult | undefined;
     await this.app.vault.process(file, (content) => {
-      result = applyReply(content, reply, this.settings.aiSaveProperties);
+      result = applyReply(content, reply, this.settings.aiSaveProperties, localDate(this.now()));
       return result.content;
     });
     const plural = (n: number, word: string) => `${n} new ${word}${n !== 1 ? "s" : ""}`;

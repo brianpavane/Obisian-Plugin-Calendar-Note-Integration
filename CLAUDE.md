@@ -1,4 +1,4 @@
-# Calendar Note Integration — Claude Instructions
+# Meeting Notes for Apple Calendar — Claude Instructions
 
 ## Project Overview
 

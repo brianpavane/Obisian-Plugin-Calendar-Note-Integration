@@ -1,7 +1,7 @@
 /**
  * @file settings.ts
  * @description Plugin settings interface, defaults, and the Obsidian settings
- * tab UI for Calendar Note Integration - Apple-iCal-Google.
+ * tab UI for Meeting Notes for Apple Calendar.
  *
  * Supports three authentication modes:
  *   - "apple" — Apple Calendar on macOS via EventKit (primary, no auth required)
@@ -187,7 +187,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "Calendar Note Integration - Apple-iCal-Google" });
+    containerEl.createEl("h2", { text: "Meeting Notes for Apple Calendar" });
 
     const versionEl = containerEl.createEl("p", {
       text: `Version ${this.plugin.manifest.version} — built ${__BUILD_DATE__}`,

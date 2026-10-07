@@ -1,9 +1,32 @@
 # Changelog
 
-All notable changes to **Calendar Note Integration - Apple-iCal-Google** are documented here.
+All notable changes to **Meeting Notes for Apple Calendar** (formerly Calendar Note Integration - Apple-iCal-Google) are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [Unreleased]
+
+### Added
+
+**Meeting tracker**
+**Open meeting tracker** (and a new gauge button in the ribbon) builds one page from all your meeting notes: open, overdue, due-soon and high-priority counts; overdue, due in the next 7 days and high-priority lists; open items by account and by person; decisions from the last 30 days; and this week's meetings by category. It needs no other plugins and is rebuilt each time you open it.
+
+**Priorities in the action items panel**
+Action items with the Tasks plugin's priority symbols (⏫ high, 🔼 medium, 🔽 low) show their priority, High in red, and higher-priority items come first when grouped by person or due date. `(owner: Customer IT team)` owners now group under that team in **By person**.
+
+**Tasks plugin guide**
+`docs/TASKS.md` explains installing and setting up the Tasks community plugin, how meeting action items are written, and ready-to-paste lists (overdue, due this week, high priority, by owner, by account, done this week). The setup guide covers it too.
+
+### Changed
+
+**Renamed to Meeting Notes for Apple Calendar**
+The plugin is now called **Meeting Notes for Apple Calendar**, with a description that covers what it does today. Its ID is unchanged, so your settings, hotkeys and BRAT updates carry on as before. Commands in the command palette now start with "Meeting Notes for Apple Calendar:".
+
+**Action items in the Tasks plugin's format**
+Action items added from an AI reply now carry the Tasks plugin's priority symbol and created date (`⏫ ➕ 2026-10-07`) instead of `(priority: High)`, and ticking an item in the action items panel adds its done date (`✅ 2026-10-08`). Items written by 6.14.0 are still read correctly.
 
 ---
 
