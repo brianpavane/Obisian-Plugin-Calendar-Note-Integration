@@ -5,7 +5,7 @@
  * with buttons to open (or create) its note and to join.
  */
 
-import { App, ItemView, Modal, Setting, WorkspaceLeaf } from "obsidian";
+import { App, ItemView, Modal, Setting, setIcon, WorkspaceLeaf } from "obsidian";
 import type { CalendarEvent } from "./calendarApi";
 import { joinUrl } from "./noteCreator";
 
@@ -68,7 +68,18 @@ export interface TodayHost {
   /** IDs of events that already have a note. */
   notedEventIds(): Set<string>;
   openNote(event: CalendarEvent): Promise<void>;
+  /** Run a follow-up step on the meeting's note. */
+  noteAction(event: CalendarEvent, action: NoteAction): Promise<void>;
 }
+
+export type NoteAction = "transcript" | "copy" | "reply";
+
+/** Follow-up buttons on a meeting that has started: icon, label, action. */
+const FOLLOW_UPS: Array<[string, string, NoteAction]> = [
+  ["file-audio", "Import Krisp transcript", "transcript"],
+  ["clipboard-copy", "Copy meeting for AI assistant", "copy"],
+  ["clipboard-paste", "Add AI reply", "reply"],
+];
 
 class TitleModal extends Modal {
   constructor(app: App, private readonly onSubmit: (title: string) => void) {
@@ -211,6 +222,13 @@ export class TodayView extends ItemView {
       if (url && row.state !== "done") {
         const join = actions.createEl("button", { cls: "mod-cta", text: "Join" });
         join.addEventListener("click", () => window.open(url));
+      }
+      if (hasNote && row.state !== "upcoming") {
+        for (const [icon, label, action] of FOLLOW_UPS) {
+          const button = actions.createEl("button", { cls: "clickable-icon cal-notes-icon-button", attr: { "aria-label": label } });
+          setIcon(button, icon);
+          button.addEventListener("click", () => this.host.noteAction(row.event, action));
+        }
       }
     }
   }

@@ -206,3 +206,12 @@
 .cal-notes-priority.is-lowest {
   color: var(--text-faint);
 }
+
+.cal-notes-today .cal-notes-actions {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.cal-notes-icon-button {
+  padding: 4px 6px;
+}

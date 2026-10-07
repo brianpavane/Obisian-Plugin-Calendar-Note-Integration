@@ -16,7 +16,7 @@
  *   - Expose the settings tab.
  */
 
-import { normalizePath, Notice, Plugin, TFile } from "obsidian";
+import { MarkdownView, normalizePath, Notice, Plugin, TFile } from "obsidian";
 import {
   candidateRecordings,
   listRecordings,
@@ -42,7 +42,7 @@ import { isSkipped } from "./skipRules";
 import { ActionItemsView, ACTION_ITEMS_VIEW, localDate, parseTaskMeta } from "./actionItems";
 import { buildTracker, TRACKER_FILENAME, type TrackerMeeting } from "./tracker";
 import { DASHBOARD_CONTENT, DASHBOARD_FILENAME } from "./dashboard";
-import { TodayView, TODAY_VIEW } from "./todayView";
+import { TodayView, TODAY_VIEW, type NoteAction } from "./todayView";
 import { currentOrNextMeeting, meetingToJoin, statusText } from "./meetingStatus";
 import {
   GoogleCalendarSettings,
@@ -124,6 +124,8 @@ export default class GoogleCalendarPlugin extends Plugin {
   /** Notes whose transcript offer was declined; not offered again until Obsidian restarts. */
   private readonly dismissedTranscripts = new Set<string>();
   private transcriptOfferOpen = false;
+  /** Header icons added to meeting notes' views, so they can be removed again. */
+  private readonly noteActions = new Map<MarkdownView, HTMLElement[]>();
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -173,6 +175,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       loadDay: (day) => this.loadDayEvents(day),
       notedEventIds: () => new Set(findNotesByEventId(this.app).keys()),
       openNote: (event) => this.openNoteForEvent(event),
+      noteAction: (event, action) => this.meetingNoteAction(event, action),
     }));
 
     this.addCommand({
@@ -210,6 +213,12 @@ export default class GoogleCalendarPlugin extends Plugin {
       name: "Add AI reply to this meeting",
       callback: () => this.withActiveNote((file) => this.addAssistantReply(file)),
     });
+
+    const refreshActions = () => this.updateNoteActions();
+    this.registerEvent(this.app.workspace.on("file-open", refreshActions));
+    this.registerEvent(this.app.workspace.on("layout-change", refreshActions));
+    this.registerEvent(this.app.metadataCache.on("changed", refreshActions));
+    this.app.workspace.onLayoutReady(refreshActions);
 
     this.addSettingTab(new GoogleCalendarSettingTab(this.app, this));
 
@@ -362,6 +371,18 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
   }
 
+  /** A follow-up step from the Today panel, run on the meeting's note. */
+  async meetingNoteAction(event: CalendarEvent, action: NoteAction): Promise<void> {
+    const file = findNotesByEventId(this.app).get(event.id);
+    if (!file) {
+      new Notice("Calendar Notes: This meeting has no note yet — click Create note first.");
+      return;
+    }
+    if (action === "transcript") await this.importKrispTranscript(file);
+    else if (action === "copy") await this.copyForAssistant(file);
+    else await this.addAssistantReply(file);
+  }
+
   /** Open the event's note, creating it first if it has none. */
   async openNoteForEvent(event: CalendarEvent): Promise<void> {
     const existing = findNotesByEventId(this.app).get(event.id);
@@ -389,7 +410,43 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
   }
 
+  /**
+   * Show one-click icons in the header of every open meeting note (a note
+   * with a calendar_event_id): import the Krisp transcript, copy the meeting
+   * for an AI assistant, and add the assistant's reply. Other notes get none.
+   */
+  updateNoteActions(): void {
+    const views = new Set<MarkdownView>();
+    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+      if (leaf.view instanceof MarkdownView) views.add(leaf.view);
+    }
+    for (const [view, icons] of this.noteActions) {
+      if (views.has(view) && this.isMeetingNote(view.file)) continue;
+      icons.forEach((icon) => icon.remove());
+      this.noteActions.delete(view);
+    }
+    for (const view of views) {
+      if (this.noteActions.has(view) || !this.isMeetingNote(view.file)) continue;
+      const run = (action: (file: TFile) => Promise<void>) => () => {
+        if (view.file) void action.call(this, view.file);
+      };
+      // addAction puts each new icon to the left of the previous one.
+      this.noteActions.set(view, [
+        view.addAction("clipboard-paste", "Add AI reply to this meeting", run(this.addAssistantReply)),
+        view.addAction("clipboard-copy", "Copy meeting for AI assistant", run(this.copyForAssistant)),
+        view.addAction("file-audio", "Import Krisp transcript into this note", run(this.importKrispTranscript)),
+      ]);
+    }
+  }
+
+  private isMeetingNote(file: TFile | null): file is TFile {
+    const id = file ? this.app.metadataCache.getFileCache(file)?.frontmatter?.calendar_event_id : undefined;
+    return typeof id === "string" && id.length > 0;
+  }
+
   onunload(): void {
+    for (const icons of this.noteActions.values()) icons.forEach((icon) => icon.remove());
+    this.noteActions.clear();
     if (this.startupTimeoutId !== undefined) {
       window.clearTimeout(this.startupTimeoutId);
     }

@@ -76,8 +76,8 @@ export function copyText(content: string, meeting: MeetingInfo, instructions?: s
 
 export interface ActionItem {
   task: string;
-  /** A person, written as `@[[Name]]`. */
-  person?: string;
+  /** People who own the task, each written as `@[[Name]]`. */
+  people?: string[];
   /** A role or team that owns the task, written as `(owner: …)`. */
   role?: string;
   priority?: "High" | "Medium" | "Low";
@@ -85,6 +85,8 @@ export interface ActionItem {
   due?: string;
   /** Text already in the assistant's own task format (short replies). */
   raw?: string;
+  /** Already done (a Status column saying Done, Complete or Closed). */
+  done?: boolean;
 }
 
 export interface AssistantReply {
@@ -97,7 +99,10 @@ export interface AssistantReply {
 }
 
 const HEADING_RE = /^\s*(#{1,6})\s+(.+?)\s*#*\s*$/;
-const LABEL_RE = /^\s*(?:[-*]\s+)?\*\*(.+?)\*\*\s*:?\s*$/;
+const LABEL_RE = /^\s*(?:[-*]\s+|\d+[.)]\s+)?\*\*(.+?)\*\*\s*:?\s*$/;
+/** A bold label with text after it on the same line: "- **Key Decisions**: None". */
+const INLINE_LABEL_RE = /^\s*(?:[-*]\s+|\d+[.)]\s+)?\*\*([^*]+?)\s*:?\s*\*\*\s*:?\s*(\S.*)$/;
+const QUOTE_RE = /^\s*(?:>\s?)+/;
 const PLAIN_HEADING_RE = /^\s*(summary|decisions|action items)\s*:?\s*$/i;
 const BULLET_RE = /^\s*(?:[-*+•]|\d+[.)])\s+(?:\[[ xX]?\]\s*)?/;
 const RULE_RE = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
@@ -142,11 +147,20 @@ function cells(row: string): string[] {
 const ROLE_WORDS = /\b(team|group|customer|client|vendor|partner|it|ops|engineering|lead|leads|manager|management|leadership|sales|support|security|legal|finance|procurement|all|everyone|both|us|we|me|you|i|tbd|owner|unassigned|inferred)\b/i;
 const PERSON_RE = /^[\p{Lu}][\p{L}'’.-]*(?:\s+[\p{Lu}][\p{L}'’.-]*){0,3}$/u;
 
-function owner(cell: string): Pick<ActionItem, "person" | "role"> {
+const isPerson = (name: string) => PERSON_RE.test(name) && !ROLE_WORDS.test(name);
+
+/**
+ * Who owns a task, from an Owner cell: `@[[Bob Jones]]` links (one or more),
+ * plain names ("Bob Jones", "Bob Jones / Alice Smith"), or a role or team.
+ */
+function owner(cell: string): Pick<ActionItem, "people" | "role"> {
+  const links = [...cell.matchAll(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)].map((m) => m[1].trim()).filter(Boolean);
+  if (links.length > 0) return { people: links };
   const value = cell.replace(/^\[|\]$/g, "").replace(/^@/, "").trim();
   if (!value || isNone(value) || /^(unassigned|tbd)\b/i.test(value)) return {};
   if (/^(you|me|i|myself)$/i.test(value)) return { role: "me" };
-  return PERSON_RE.test(value) && !ROLE_WORDS.test(value) ? { person: value } : { role: value };
+  const names = value.split(/\s*(?:[,/&]|\band\b)\s*/).map((n) => n.replace(/^@/, "").trim()).filter(Boolean);
+  return names.every(isPerson) ? { people: names } : { role: value };
 }
 
 function priority(cell: string): ActionItem["priority"] {
@@ -174,6 +188,7 @@ function tableAfter(lines: string[], from: number): ActionItem[] | undefined {
   const ownerCol = col(/owner|assignee|who/, -1);
   const priorityCol = col(/priority/, -1);
   const dueCol = col(/due|date|timeline|when/, -1);
+  const statusCol = col(/status|state/, -1);
   const items: ActionItem[] = [];
   for (i++; i < lines.length && lines[i].trim().startsWith("|"); i++) {
     const row = cells(lines[i]);
@@ -185,6 +200,7 @@ function tableAfter(lines: string[], from: number): ActionItem[] | undefined {
       ...(ownerCol >= 0 ? owner(row[ownerCol] ?? "") : {}),
       priority: priorityCol >= 0 ? priority(row[priorityCol] ?? "") : undefined,
       due: dueCol >= 0 ? (row[dueCol] ?? "").match(/\d{4}-\d{2}-\d{2}/)?.[0] : undefined,
+      done: statusCol >= 0 && /^(done|complete|completed|closed|resolved)\b/i.test(row[statusCol] ?? "") ? true : undefined,
     });
   }
   return items;
@@ -212,7 +228,10 @@ function replyLines(text: string): string[] {
   const fences = all.map((l, i) => (/^\s*```/.test(l) ? i : -1)).filter((i) => i !== -1);
   if (fences.length >= 2) return trimBlank(all.slice(fences[0] + 1, fences[fences.length - 1]));
   const lines = all.filter((l) => !/^\s*```/.test(l));
-  const first = lines.findIndex((l) => !!headingText(l) || FIELD_RE.test(l));
+  const first = lines.findIndex((l) => {
+    const unquoted = l.replace(QUOTE_RE, "");
+    return !!headingText(unquoted) || FIELD_RE.test(unquoted);
+  });
   return trimBlank(first > 0 ? lines.slice(first) : lines);
 }
 
@@ -223,8 +242,14 @@ export function parseReply(text: string): AssistantReply | undefined {
   const find = (test: (t: string) => boolean) => headings.findIndex((h) => !!h && test(h.text.toLowerCase()));
 
   const summaryAt = find((t) => t === "summary");
-  const decisionsAt = find((t) => t.includes("decision"));
+  let decisionsAt = find((t) => t.includes("decision"));
   const actionsAt = find((t) => t.includes("action item"));
+  const inlineDecisions: string[] = [];
+  if (decisionsAt === -1) {
+    decisionsAt = lines.findIndex((l) => /decision/i.test(l.match(INLINE_LABEL_RE)?.[1] ?? ""));
+    const rest = decisionsAt === -1 ? "" : lines[decisionsAt].match(INLINE_LABEL_RE)![2].trim();
+    if (rest && !isNone(rest)) inlineDecisions.push(rest.replace(/^[-*]\s+/, ""));
+  }
 
   let summary: string[];
   if (summaryAt !== -1) {
@@ -242,20 +267,23 @@ export function parseReply(text: string): AssistantReply | undefined {
 
   if (summary.length === 0 && actionItems.length === 0 && decisionsAt === -1) return undefined;
 
+  /** A "**Label:** value" field, also inside a quote or among several on one line split by " | ". */
   const field = (re: RegExp) => {
     for (const line of lines) {
-      const m = line.match(FIELD_RE);
-      if (m && re.test(m[1])) return m[2].trim();
+      for (const part of line.replace(QUOTE_RE, "").split(/\s+\|\s+/)) {
+        const m = part.match(FIELD_RE);
+        if (m && re.test(m[1].trim())) return m[2].trim();
+      }
     }
     return undefined;
   };
   const category = field(/^category$/i);
-  const account = field(/^(primary )?account( \/ project)?$|^project$/i);
+  const account = field(/^(primary )?(account|project)( \/ (project|account))?$/i);
   const tags = [...(field(/^(search )?tags$/i) ?? "").matchAll(/#([\p{L}\p{N}_/-]+)/gu)].map((m) => m[1]).filter((t) => !/^\d+$/.test(t));
 
   return {
     summary,
-    decisions: decisionsAt !== -1 ? bulletsAfter(lines, decisionsAt) : [],
+    decisions: decisionsAt !== -1 ? [...inlineDecisions, ...bulletsAfter(lines, decisionsAt)] : [],
     actionItems,
     category: category || undefined,
     account: account && !/^general$/i.test(account) ? account : undefined,
@@ -274,12 +302,13 @@ export function actionLine(item: ActionItem, created?: string): string {
   const added = created ? `➕ ${created}` : "";
   if (item.raw !== undefined) return [`- [ ] ${item.raw}`, added].filter(Boolean).join(" ");
   return [
-    `- [ ] ${item.task}`,
-    item.person ? `@[[${item.person}]]` : "",
+    `- [${item.done ? "x" : " "}] ${item.task}`,
+    ...(item.people ?? []).map((p) => `@[[${p}]]`),
     item.role ? `(owner: ${item.role})` : "",
     item.priority ? PRIORITY_MARK[item.priority] : "",
     added,
     item.due ? `📅 ${item.due}` : "",
+    item.done && created ? `✅ ${created}` : "",
   ].filter(Boolean).join(" ");
 }
 

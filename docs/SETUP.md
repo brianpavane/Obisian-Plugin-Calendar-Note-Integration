@@ -117,7 +117,7 @@ Install **Tasks** from **Settings → Community plugins → Browse**. Two settin
 1. **Morning** — open **Today's meetings** (ribbon: calendar with clock). Notes for today's meetings already exist.
 2. **Before a meeting** — click **Join** (or the status bar). The note opens with the agenda and last meeting's open items.
 3. **During** — type into **Notes**, **Decisions** and **Action items** (`- [ ] Send deck @Bob 📅 2026-10-10`).
-4. **After** — run **Import Krisp transcript into this note** (or confirm the automatic offer), then **Copy meeting for AI assistant**, paste into your assistant, copy its reply, and run **Add AI reply to this meeting**.
+4. **After** — click the three icons in the note's top-right corner (or on the meeting in **Today's meetings**), left to right: **Import Krisp transcript** (confirm the recording), **Copy meeting for AI assistant** (paste into your assistant, copy its reply), **Add AI reply**.
 5. **File it** — move the note into your own folder structure. Its action items, links and dashboard entries follow it.
 6. **Follow up** — the **Meeting action items** panel (ribbon: checklist) shows everything still open, by meeting, person or due date. Tick items off there or in the note.
 7. **Weekly** — open the **Meeting tracker** (ribbon: gauge) for overdue items, what's due this week, open items by account and person, and the last 30 days' decisions.

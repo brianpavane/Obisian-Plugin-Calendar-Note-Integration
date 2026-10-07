@@ -346,9 +346,11 @@ If you record meetings with Krisp, the plugin can copy a recording's transcript 
 
 Use any AI assistant your organization approves — Gemini, Claude, ChatGPT, Copilot, or a custom agent of your own. The plugin never contacts any of them; it copies text for you to paste and files the reply you copy back:
 
-1. Open the meeting note and run **Copy meeting for AI assistant**. It copies a **MEETING DETAILS** block from your calendar (title, date, time, attendees), your **Notes** and the **Transcript** — with the plugin's instructions in front, unless you turned **Include instructions when copying** off.
+1. In the meeting note, click the **Copy meeting for AI assistant** icon (clipboard with an arrow) in the note's top-right corner — or the same button on the meeting in **Today's meetings**. It copies a **MEETING DETAILS** block from your calendar (title, date, time, attendees), your **Notes** and the **Transcript** — with the plugin's instructions in front, unless you turned **Include instructions when copying** off.
 2. Paste it into your assistant, then copy its whole reply.
-3. Back in the note, run **Add AI reply to this meeting**.
+3. Click the **Add AI reply** icon (clipboard with a page) next to it.
+
+Every meeting note's header also has an **Import Krisp transcript** icon (a file with a sound wave). All three are commands too (**Cmd + P**), for hotkeys.
 
 The plugin understands two kinds of reply:
 
@@ -401,7 +403,7 @@ New to these? **[Dashboards — a step-by-step guide](docs/DASHBOARDS.md)** expl
 
 ### Today's meetings
 
-Click the **calendar-with-clock** button in the left ribbon (or run **Open today's meetings**). A panel in the right sidebar lists today's meetings in order: finished ones faded, the current one marked **Now**. Each has an **Open note** (or **Create note**) button and, while the meeting is still to come or in progress, a **Join** button. Use the **‹** / **›** arrows beside the date to see the day before or after, and **Today** to come back. **New note** asks for a title and creates a note from your template for a meeting that isn't on your calendar, dated on the day shown. It re-reads the calendar every 5 minutes, or straight away with **Refresh**.
+Click the **calendar-with-clock** button in the left ribbon (or run **Open today's meetings**). A panel in the right sidebar lists today's meetings in order: finished ones faded, the current one marked **Now**. Each has an **Open note** (or **Create note**) button and, while the meeting is still to come or in progress, a **Join** button. Use the **‹** / **›** arrows beside the date to see the day before or after, and **Today** to come back. **New note** asks for a title and creates a note from your template for a meeting that isn't on your calendar, dated on the day shown. Once a meeting has started and has a note, it also gets three small buttons: **Import Krisp transcript**, **Copy meeting for AI assistant** and **Add AI reply** (hover for the name). It re-reads the calendar every 5 minutes, or straight away with **Refresh**.
 
 ### Meetings dashboard
 

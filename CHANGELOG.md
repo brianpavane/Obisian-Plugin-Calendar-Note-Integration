@@ -7,6 +7,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+**One-click buttons for transcripts and AI summaries**
+Every meeting note now has three icons in its top-right corner — **Import Krisp transcript**, **Copy meeting for AI assistant** and **Add AI reply** — and every meeting that has started gets the same three buttons in the **Today's meetings** panel. No more command palette for the after-meeting steps.
+
+### Changed
+
+**Reads more agent report layouts**
+**Add AI reply to this meeting** now also reads: details in a quote block with several fields on one line (`> **Date:** … | **Category:** …`); owners written as `@[[Full Name]]` (one or more) in the table; numbered bold section labels (`3. **Action Items Table**:`); a **Status** column (Done items are added already ticked); `**Key Decisions**: None` on one line; and an **Account / Project** field. `docs/AGENT_INSTRUCTIONS.md` now holds the two-mode agent instructions, with notes on choosing the mode.
+
+---
+
 ## [6.15.0] – 2026-10-07
 
 ### Added

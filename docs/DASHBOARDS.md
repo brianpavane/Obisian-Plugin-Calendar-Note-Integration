@@ -65,11 +65,11 @@ It opens in the **right sidebar**. Like the action items panel, it stays there a
 
 9:00 AM – 9:15 AM                        ← faded: already over
 Standup
-[Open note]
+[Open note] [🎵] [📋→] [📋+]
 
 11:00 AM – 12:00 PM  [Now]               ← highlighted: happening now
 Design Review
-[Open note] [Join]
+[Open note] [Join] [🎵] [📋→] [📋+]
 
 3:00 PM – 4:00 PM
 Planning
@@ -80,6 +80,7 @@ Planning
 - **Open note** opens the meeting's note. If the note doesn't exist yet, the button says **Create note** and makes it, using your template, with the link to the previous meeting and its open items.
 - **Join** opens the Zoom / Meet / Teams / Webex link. It appears only when the meeting has one, and disappears once the meeting is over.
 - Clicking a meeting's **title** does the same as Open note / Create note.
+- Once a meeting has started and has a note, three small buttons follow up on it (hover for the name): **Import Krisp transcript**, **Copy meeting for AI assistant** and **Add AI reply**. So after a meeting: click the first, confirm the recording, click the second, paste into your AI assistant, copy its reply, click the third. The same three icons are in the top-right corner of every meeting note.
 - All-day events, cancelled meetings, and meetings you declined are left out, just as they are for note creation.
 
 ### Other days

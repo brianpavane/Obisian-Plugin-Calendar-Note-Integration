@@ -163,3 +163,86 @@ test("action items from a reply get the Tasks plugin's created date", () => {
   const nextDay = applyReply(once.content, reply, false, "2026-10-08");
   assert.equal(nextDay.content, once.content, "a later run doesn't add the same items with a new created date");
 });
+
+const MODE2_REPLY = `> # Acme Zero Trust POV Review
+> **Date:** 2026-10-06 | **Category:** Customer
+> **Participants:** @[[Alice Smith]], @[[Bob Jones]]
+> **Search Tags:** #Customer #Acme #MeetingNotes #ZeroTrust
+
+### 2. Executive Synthesis
+- **Executive Summary**: Acme reviewed the POV and agreed to a pilot.
+- **Key Decisions**:
+  - Move to a production pilot
+  - Keep SSL inspection off for finance
+
+### 3. Action Items Table
+| Task Description | Owner | Target Date | Status |
+| :--- | :--- | :--- | :--- |
+| Send the pilot scope | @[[Bob Jones]] | 📅 2026-10-09 | Open |
+| Confirm the firewall window | @[[Alice Smith]], @[[Bob Jones]] | TBD | Open |
+| Share POV results | Customer IT team | 📅 2026-10-06 | Done |
+
+### 4. Risks, Blockers & Concerns
+- **Technical/Architectural**: Firewall policy conflicts.`;
+
+test("parseReply reads the agent's Mode 2 report: quoted details block, link owners, status column", () => {
+  const reply = parseReply(MODE2_REPLY)!;
+  assert.equal(reply.summary[0], "> # Acme Zero Trust POV Review", "the details block stays in the summary");
+  assert.equal(reply.category, "Customer");
+  assert.deepEqual(reply.tags, ["Customer", "Acme", "MeetingNotes", "ZeroTrust"]);
+  assert.equal(reply.account, undefined);
+  assert.deepEqual(reply.decisions, ["Move to a production pilot", "Keep SSL inspection off for finance"]);
+  assert.deepEqual(reply.actionItems.map((i) => actionLine(i, "2026-10-07")), [
+    "- [ ] Send the pilot scope @[[Bob Jones]] ➕ 2026-10-07 📅 2026-10-09",
+    "- [ ] Confirm the firewall window @[[Alice Smith]] @[[Bob Jones]] ➕ 2026-10-07",
+    "- [x] Share POV results (owner: Customer IT team) ➕ 2026-10-07 📅 2026-10-06 ✅ 2026-10-07",
+  ]);
+});
+
+test("parseReply reads numbered bold section labels, inline decisions and an Account / Project field", () => {
+  const reply = parseReply([
+    "1. **Semantic Metadata Block**:",
+    "> **Date:** 2026-10-06 | **Category:** 1:1 | **Account / Project:** Q4 Hiring",
+    "2. **Executive Synthesis**:",
+    "- **Executive Summary**: Talked hiring.",
+    "- **Key Decisions**: Open two SE roles",
+    "3. **Action Items Table**:",
+    "| Task Description | Owner | Target Date | Status |",
+    "| --- | --- | --- | --- |",
+    "| Draft the job description | Bob Jones / Alice Smith | 2026-10-13 | Open |",
+  ].join("\n"))!;
+  assert.equal(reply.category, "1:1");
+  assert.equal(reply.account, "Q4 Hiring");
+  assert.deepEqual(reply.decisions, ["Open two SE roles"]);
+  assert.deepEqual(reply.actionItems.map((i) => actionLine(i)), ["- [ ] Draft the job description @[[Bob Jones]] @[[Alice Smith]] 📅 2026-10-13"]);
+  assert.equal(parseReply("- **Key Decisions**: None\n### Action Items\n| Task | Owner |\n|---|---|\n| Do it | Bob |")?.decisions.length, 0);
+});
+
+test("parseReply reads the agent's Mode 1 reply", () => {
+  const reply = parseReply([
+    "## Summary",
+    "We reviewed the pilot. Acme agreed to proceed. Dates were set.",
+    "",
+    "## Decisions",
+    "- Proceed with the pilot",
+    "",
+    "## Action items",
+    "- [ ] Send the scope @[[Bob Jones]] 📅 2026-10-09",
+    "- [ ] Book the kickoff @[[Alice Smith]]",
+    "- [ ] Confirm the budget 📅 2026-10-15",
+  ].join("\n"))!;
+  assert.deepEqual(reply.summary, ["We reviewed the pilot. Acme agreed to proceed. Dates were set."]);
+  assert.deepEqual(reply.decisions, ["Proceed with the pilot"]);
+  assert.deepEqual(reply.actionItems.map((i) => actionLine(i, "2026-10-07")), [
+    "- [ ] Send the scope @[[Bob Jones]] 📅 2026-10-09 ➕ 2026-10-07",
+    "- [ ] Book the kickoff @[[Alice Smith]] ➕ 2026-10-07",
+    "- [ ] Confirm the budget 📅 2026-10-15 ➕ 2026-10-07",
+  ]);
+});
+
+test("a Mode 2 report filed twice changes nothing, including its already-done item", () => {
+  const once = applyReply(blankNote, parseReply(MODE2_REPLY)!, true, "2026-10-07");
+  assert.match(once.content, /^meeting_category: "Customer"$/m);
+  assert.match(once.content, /## Meeting Summary\n\n> # Acme Zero Trust POV Review\n/);
+  assert.equal(applyReply(once.content, parseReply(MODE2_REPLY)!, true, "2026-10-08").content, once.content);
+});

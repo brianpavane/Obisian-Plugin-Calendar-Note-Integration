@@ -99,6 +99,7 @@ export class Plugin {
   addCommand(): void {}
   addSettingTab(): void {}
   registerInterval(): void {}
+  registerEvent(): void {}
   registerView(): void {}
 
   async loadData(): Promise<unknown> {
@@ -123,6 +124,19 @@ export class ItemView {
   getState(): Record<string, unknown> { return {}; }
   async setState(): Promise<void> {}
 }
+
+export class MarkdownView extends ItemView {
+  file: TFile | null = null;
+  actions: Array<{ icon: string; title: string; callback: () => void; removed: boolean }> = [];
+
+  addAction(icon: string, title: string, callback: () => void): HTMLElement {
+    const action = { icon, title, callback, removed: false };
+    this.actions.push(action);
+    return { remove: () => { action.removed = true; } } as unknown as HTMLElement;
+  }
+}
+
+export function setIcon(): void {}
 
 export function debounce<T extends (...args: unknown[]) => unknown>(fn: T): T {
   return fn;

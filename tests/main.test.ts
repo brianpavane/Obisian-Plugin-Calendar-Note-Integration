@@ -5,8 +5,10 @@ import { DEFAULT_SETTINGS } from "../src/settings";
 import {
   App,
   getNotices,
+  MarkdownView,
   resetObsidianTestState,
   TFile,
+  WorkspaceLeaf,
 } from "./support/obsidianStub";
 import { createMemoryApp, buildEvent } from "./support/testHelpers";
 import { mkdtemp, mkdir, writeFile, rm } from "fs/promises";
@@ -716,4 +718,61 @@ test("Open meeting tracker builds the tracker from notes anywhere and rebuilds i
   await plugin.openTracker();
   assert.equal(app.createdPaths.filter((p) => p.endsWith("Meeting Tracker.md")).length, 1);
   assert.match(tracker.content ?? "", /\| 0 \| 0 \| 0 \| 0 \|/);
+});
+
+test("meeting notes get Krisp, copy and add-reply icons in their header; other notes don't", () => {
+  const app = createMemoryApp([
+    { path: "Clients/Sync.md", content: "---\ntitle: \"Sync\"\ncalendar_event_id: \"sync\"\n---\n" },
+    { path: "Ideas.md", content: "Just a note" },
+  ]);
+  const meetingView = new MarkdownView(new WorkspaceLeaf());
+  meetingView.file = app.files.get("Clients/Sync.md") as TFile;
+  const otherView = new MarkdownView(new WorkspaceLeaf());
+  otherView.file = app.files.get("Ideas.md") as TFile;
+  let leaves = [{ view: meetingView }, { view: otherView }];
+  (app.workspace as unknown as { getLeavesOfType: () => unknown[] }).getLeavesOfType = () => leaves;
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+
+  plugin.updateNoteActions();
+  plugin.updateNoteActions();
+  assert.deepEqual(meetingView.actions.map((a) => a.title), [
+    "Add AI reply to this meeting",
+    "Copy meeting for AI assistant",
+    "Import Krisp transcript into this note",
+  ], "added once, in reverse so they read left to right");
+  assert.equal(otherView.actions.length, 0);
+
+  meetingView.file = otherView.file;
+  plugin.updateNoteActions();
+  assert.ok(meetingView.actions.every((a) => a.removed), "removed when the tab shows another note");
+
+  meetingView.file = app.files.get("Clients/Sync.md") as TFile;
+  plugin.updateNoteActions();
+  leaves = [];
+  plugin.updateNoteActions();
+  assert.ok(meetingView.actions.every((a) => a.removed), "removed when the tab closes");
+});
+
+test("the Today panel's follow-up buttons copy and add replies for the meeting's own note", async () => {
+  const app = createMemoryApp([
+    { path: "Clients/2026/Sync.md", content: "---\ntitle: \"Sync\"\ncalendar_event_id: \"sync\"\n---\n\n## Notes\n\n- Mine\n\n## Action items\n\n- [ ] \n\n## Transcript\n\n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ aiIncludeInstructions: false });
+  let clipboard = "";
+  Object.defineProperty(globalThis, "navigator", {
+    value: { clipboard: { writeText: async (t: string) => { clipboard = t; }, readText: async () => clipboard } },
+    configurable: true,
+  });
+
+  await plugin.meetingNoteAction(buildEvent({ id: "sync" }), "copy");
+  assert.match(clipboard, /^MEETING DETAILS\nTitle: Sync\n[\s\S]*MY NOTES\n- Mine/);
+
+  clipboard = "## Summary\nDone.\n## Action items\n- [ ] Ship it @[[Bob Jones]]";
+  await plugin.meetingNoteAction(buildEvent({ id: "sync" }), "reply");
+  assert.match((app.files.get("Clients/2026/Sync.md") as TFile).content ?? "", /## Action items\n\n- \[ \] Ship it @\[\[Bob Jones\]\] ➕ 2026-04-03\n/);
+
+  await plugin.meetingNoteAction(buildEvent({ id: "missing" }), "copy");
+  assert.match(getNotices().at(-1)?.message ?? "", /no note yet/);
 });
