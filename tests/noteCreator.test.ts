@@ -1,12 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  ALL_SECTIONS,
+  builtInTemplate,
   createNoteContent,
   createNoteFile,
   generateNoteFilename,
   openTasks,
   previousNoteInSeries,
   resolveNoteFilePath,
+  setFrontmatterValue,
   updateNoteContent,
 } from "../src/noteCreator";
 import type { CalendarEvent } from "../src/calendarApi";
@@ -389,4 +392,27 @@ test("createNoteContent links the previous meeting and carries its open action i
   const updated = updateNoteContent(content, event, { linkAttendees: false });
   assert.doesNotMatch(updated, /previous_meeting|\*\*Previous:\*\*/);
   assert.match(updated, /Open items from/);
+});
+
+test("the built-in format keeps every section by default and drops only the ones switched off", () => {
+  const event = buildEvent({ summary: "Sync" });
+  const all = createNoteContent(event, { includeEventNotes: false, linkAttendees: false, template: builtInTemplate() });
+  assert.equal(all, createNoteContent(event, { includeEventNotes: false, linkAttendees: false }));
+  for (const heading of ["Agenda", "Notes", "Decisions", "Action items", "Meeting Summary", "Transcript"]) {
+    assert.match(all, new RegExp(`^## ${heading}$`, "m"));
+  }
+
+  const trimmed = createNoteContent(event, {
+    includeEventNotes: false,
+    linkAttendees: false,
+    template: builtInTemplate({ ...ALL_SECTIONS, agenda: false, transcript: false }),
+  });
+  assert.doesNotMatch(trimmed, /## Agenda|## Transcript/);
+  assert.match(trimmed, /## Notes\n\n- \n\n## Decisions\n\n- \n\n## Action items\n\n- \[ \] \n\n## Meeting Summary\n\n\n$/);
+});
+
+test("setFrontmatterValue adds or replaces one property", () => {
+  const out = setFrontmatterValue("---\ntitle: \"Sync\"\n---\nBody", "krisp_recording", "Sync 2026");
+  assert.equal(out, "---\ntitle: \"Sync\"\nkrisp_recording: \"Sync 2026\"\n---\nBody");
+  assert.equal(setFrontmatterValue("No frontmatter", "a", "b"), "No frontmatter");
 });

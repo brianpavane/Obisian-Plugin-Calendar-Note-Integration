@@ -103,10 +103,10 @@ export function groupItems(meetings: MeetingTasks[], groupBy: GroupBy, today: st
   }));
 }
 
-/** Meeting notes under `noteFolder` that have open tasks, newest first. */
-export async function collectOpenItems(app: App, noteFolder: string): Promise<MeetingTasks[]> {
+/** Meeting notes anywhere in the vault that have open tasks, newest first. */
+export async function collectOpenItems(app: App): Promise<MeetingTasks[]> {
   const meetings: MeetingTasks[] = [];
-  for (const file of findNotesByEventId(app, noteFolder).values()) {
+  for (const file of findNotesByEventId(app).values()) {
     const tasks = openTasks(await app.vault.cachedRead(file));
     if (tasks.length === 0) continue;
     const fm = app.metadataCache.getFileCache(file)?.frontmatter ?? {};
@@ -147,7 +147,7 @@ export class ActionItemsView extends ItemView {
   private readonly refresh = debounce(() => this.render(), 500, true);
   private groupBy: GroupBy = "meeting";
 
-  constructor(leaf: WorkspaceLeaf, private readonly noteFolder: () => string) {
+  constructor(leaf: WorkspaceLeaf) {
     super(leaf);
   }
 
@@ -184,7 +184,7 @@ export class ActionItemsView extends ItemView {
   }
 
   async render(): Promise<void> {
-    const meetings = await collectOpenItems(this.app, this.noteFolder());
+    const meetings = await collectOpenItems(this.app);
     const el = this.contentEl;
     el.empty();
     el.addClass("cal-notes-action-items");

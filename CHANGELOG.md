@@ -7,6 +7,29 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+**Krisp transcript import**
+Run **Import Krisp transcript into this note** to fill a meeting note's empty Transcript section from its Krisp recording, matched by start time and title (or picked from a list). Set the folder under **Krisp Transcripts** in settings (default `~/Documents/Transcripts/Krisp Meetings`). **Import transcripts automatically** (off by default) does the same on every sync for meetings that ended in the last 2 days.
+
+**Gemini summaries by copy and paste**
+**Copy Gemini prompt for this meeting** copies a prompt built from the note's notes and transcript. Paste it into Gemini, copy the reply, and run **Add Gemini reply to this meeting** to put the summary, decisions and action items (with `@owner` and `📅` due dates) into their sections. The plugin never contacts Gemini itself.
+
+**Skip rules for automatic notes**
+New settings stop notes being created automatically for meetings whose title contains words you list (such as Focus time or Lunch), and optionally for events with no one else invited. You can still create these notes by hand.
+
+**Choose the sections in new notes**
+Under **Sections in new notes**, switch off any of Agenda, Notes, Decisions, Action items, Meeting Summary or Transcript in the built-in format. All are on by default; a template file, if you use one, is unaffected.
+
+### Fixed
+
+**Notes filed in other folders are still found**
+Meeting notes moved out of the Note folder used to be invisible to the plugin: the Today's meetings panel offered **Create note** (making a duplicate), the action items panel dropped them, and recurring meetings lost their Previous link. The plugin now finds meeting notes anywhere in the vault.
+
+---
+
 ## [6.12.0] – 2026-10-06
 
 ### Added

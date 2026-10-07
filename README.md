@@ -22,6 +22,10 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 - **Next meeting in the status bar** — click it, or run **Join current or next meeting**, to open the note and join
 - **Meetings dashboard** — a ready-made Bases view of upcoming and recent meetings ([guide](docs/DASHBOARDS.md))
 - **Today's meetings** — a sidebar of today's meetings (arrows step to other days) with one-click **Open note**, **Join** and **New note** buttons ([guide](docs/DASHBOARDS.md))
+- **Krisp transcripts** — fill a meeting's Transcript section from its Krisp recording, by command or automatically
+- **Gemini summaries by copy and paste** — copy a ready-made prompt, paste Gemini's reply back into Meeting Summary, Decisions and Action items; the plugin itself never goes online
+- **File notes anywhere** — move finished notes into your own folders; the plugin still finds them
+- **Skip rules** — no automatic notes for meetings titled Focus time, Lunch, etc., or with no one else invited
 - **Action items view** — every open action item across your meetings in one sidebar, grouped by meeting, owner (`@Bob`), or due date (`📅 2026-10-10`), ticked off in place ([guide](docs/DASHBOARDS.md))
 - **Declined event filtering** — events you have declined are skipped, when the calendar identifies you as an attendee or your email address is set
 - **All-day event filtering** — all-day events (holidays, OOO blocks) are skipped
@@ -113,14 +117,17 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Note folder | Meeting Notes | Vault-relative folder for created notes |
+| Note folder | Meeting Notes | Vault-relative folder for created notes. You can move notes anywhere in the vault afterwards — the plugin finds them by their `calendar_event_id` property |
 | Hours in advance | 12 | Create notes for events starting within this many hours (1–48) |
 | Poll interval | 30 min | How often to check for new upcoming events (5–120) |
 | Include past events | Off | Also create notes for events that have already started |
 | Days back | 1 | How many days back to look when past events are enabled (1–30) |
+| Skip meetings titled | *(empty)* | Meetings whose title contains any of these words (one per line, any case) never get a note automatically — e.g. `Focus time`, `Lunch`, `Hold`. You can still create one by hand |
+| Skip meetings with no one else invited | Off | Don't auto-create notes for events with no attendees besides you. Set **Your email address** so the plugin knows which attendee is you |
 | Include event description | On | Add the event's description to the Agenda section of new notes |
 | Link attendees | Off | Write the organizer and attendees as `[[Name]]` links instead of plain names and emails |
 | Template file | *(built-in)* | A note to use as the template for new meeting notes — see [Custom templates](#custom-templates) |
+| Sections in new notes | All on | Which sections the built-in format includes: Agenda, Notes, Decisions, Action items, Meeting Summary, Transcript. Ignored when a template file is set. Existing notes are not changed |
 | Link to daily note | On | Link each meeting note to that day's daily note, using your Daily Notes format and folder |
 | Show next meeting in status bar | On | Show the meeting in progress or coming up next at the bottom of the window; click it to join |
 | Date position in filename | Before | `2026-01-15 - Meeting Name.md` or `Meeting Name - 2026-01-15.md` |
@@ -131,6 +138,13 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 |---------|---------|-------------|
 | Days ahead to fetch | 7 | Look-ahead window for the event picker modal (1–30) |
 | Max events to show | 20 | Maximum events listed in the picker modal (1–50) |
+
+### Krisp Transcripts
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Krisp folder | `~/Documents/Transcripts/Krisp Meetings` | Where Krisp saves recordings on this Mac: one folder per meeting, each with a `transcript.txt` |
+| Import transcripts automatically | Off | On every sync, fill the empty **Transcript** section of meetings that ended in the last 2 days. Off: import only with the command |
 
 ### Manual Actions
 
@@ -303,6 +317,29 @@ If a meeting moves to another day, its note is renamed to the new date (a title 
 
 If a meeting disappears from Apple Calendar (deleted rather than cancelled), its note is marked `status: removed` with a red **Meeting removed from calendar** box. This only happens for meetings in the time window and from calendars the plugin read, so turning a calendar off never marks its notes. If the meeting comes back — for example it was moved more than a week out and is now back in range — the next sync restores the note. Notes created by versions before 6.7 get their properties updated but keep their original layout.
 
+### Filing notes into your own folders
+
+New notes are created in the **Note folder**, but you can move them anywhere in the vault once the meeting is done. The plugin finds meeting notes anywhere by their `calendar_event_id` property, so a filed note keeps its **Open note** button, its action items, its **Previous** link from the next meeting in the series, and its calendar updates. If a filed meeting moves to another day, the note is renamed in the folder you filed it in.
+
+### Krisp transcripts
+
+If you record meetings with Krisp, the plugin can copy a recording's transcript into the note's **Transcript** section. Set **Krisp folder** in settings (default `~/Documents/Transcripts/Krisp Meetings`), open the meeting note, and run **Import Krisp transcript into this note**.
+
+- The recording is matched by time: one made from 20 minutes before the meeting starts to 30 minutes after it ends, preferring one whose title matches. If none matches, you pick the recording from a list.
+- The transcript only goes into an empty Transcript section; clear the section to import again.
+- The note records which recording it came from (`krisp_recording`), so the same recording is never matched to a second meeting.
+- Turn on **Import transcripts automatically** to have every sync do this for meetings that ended in the last 2 days. It's off until you turn it on.
+
+### Gemini summaries (copy and paste)
+
+The plugin never contacts Gemini or any other service. Instead it prepares a prompt for you to paste, then files the answer:
+
+1. Open the meeting note and run **Copy Gemini prompt for this meeting**. The prompt holds the meeting's title, time, attendees, your **Notes** section and the **Transcript**, and asks Gemini to reply with **Summary**, **Decisions** and **Action items** headings, with owners as `@Name` and due dates as `📅 YYYY-MM-DD`.
+2. Paste it into Gemini, then copy Gemini's whole reply.
+3. Back in the note, run **Add Gemini reply to this meeting**. The summary goes into **Meeting Summary**, decisions into **Decisions**, and action items into **Action items**, replacing the empty placeholder bullets and added after anything you already wrote.
+
+Both steps are optional. The note's sections are there for you to write in by hand either way.
+
 ---
 
 ## Commands
@@ -316,6 +353,9 @@ If a meeting disappears from Apple Calendar (deleted rather than cancelled), its
 | **Open meetings dashboard** | Opens `Meetings.base` in your meeting-notes folder (created on first use) |
 | **Open today's meetings** | Shows today's meetings in the right sidebar, with Open note and Join buttons, arrows to other days, and a New note button |
 | **Open meeting action items** | Shows every open action item from your meeting notes in the right sidebar |
+| **Import Krisp transcript into this note** | Fills the open note's empty Transcript section from its Krisp recording — see [Krisp transcripts](#krisp-transcripts) |
+| **Copy Gemini prompt for this meeting** | Copies a summary prompt built from the open note's notes and transcript — see [Gemini summaries](#gemini-summaries-copy-and-paste) |
+| **Add Gemini reply to this meeting** | Puts the Gemini reply on the clipboard into the open note's Meeting Summary, Decisions and Action items |
 
 The plugin adds four buttons to the ribbon (the icon strip on the far left of the window):
 
@@ -384,6 +424,7 @@ If the plugin can't read your calendar during a background check, it shows one n
 | Mode | Data handling |
 |------|--------------|
 | Apple Calendar | All data stays on-device. No network requests are made by the plugin; Calendar.app manages its own syncing independently. |
+| Krisp and Gemini | Krisp transcripts are read from a folder on this Mac. The Gemini prompt is only copied to your clipboard; you choose where to paste it. |
 | iCal URL | The plugin fetches your iCal URL directly from Obsidian. The URL is stored encrypted in your vault. |
 | OAuth | Access tokens are stored encrypted in your vault. The plugin requests read-only scope (`calendar.readonly`). No data is sent to any third-party server. |
 

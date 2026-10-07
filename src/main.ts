@@ -17,6 +17,10 @@
  */
 
 import { normalizePath, Notice, Plugin, TFile } from "obsidian";
+import { listRecordings, matchRecording, readTranscript, Recording, RecordingSuggestModal, type MeetingTime } from "./krisp";
+import { applyReply, buildPrompt, parseReply, TRANSCRIPT_SECTIONS } from "./gemini";
+import { appendToSection, sectionText } from "./sections";
+import { isSkipped } from "./skipRules";
 import { ActionItemsView, ACTION_ITEMS_VIEW } from "./actionItems";
 import { DASHBOARD_CONTENT, DASHBOARD_FILENAME } from "./dashboard";
 import { TodayView, TODAY_VIEW } from "./todayView";
@@ -31,12 +35,14 @@ import { GoogleAuth } from "./googleAuth";
 import { encrypt, decrypt } from "./secureStorage";
 import { EventSuggestModal } from "./eventModal";
 import {
+  builtInTemplate,
   createNoteFile,
   findNotesByEventId,
   joinUrl,
   markNoteRemoved,
   resolveNoteFilePath,
   seriesOptions,
+  setFrontmatterValue,
   syncNoteFile,
   DailyNoteConfig,
   NoteOptions,
@@ -68,6 +74,8 @@ interface FetchResult {
 const IN_PROGRESS_LOOKBACK_MS = 12 * 60 * 60 * 1_000;
 /** "Join meeting" acts on a meeting starting within this long. */
 const JOIN_WINDOW_MS = 30 * 60 * 1_000;
+/** Automatic Krisp import looks at meetings that ended within this long. */
+const KRISP_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1_000;
 
 function frontmatterDate(value: unknown): Date | undefined {
   if (value instanceof Date) return value;
@@ -136,10 +144,10 @@ export default class GoogleCalendarPlugin extends Plugin {
       callback: () => this.openDashboard(),
     });
 
-    this.registerView(ACTION_ITEMS_VIEW, (leaf) => new ActionItemsView(leaf, () => this.settings.noteFolder));
+    this.registerView(ACTION_ITEMS_VIEW, (leaf) => new ActionItemsView(leaf));
     this.registerView(TODAY_VIEW, (leaf) => new TodayView(leaf, {
       loadDay: (day) => this.loadDayEvents(day),
-      notedEventIds: () => new Set(findNotesByEventId(this.app, this.settings.noteFolder).keys()),
+      notedEventIds: () => new Set(findNotesByEventId(this.app).keys()),
       openNote: (event) => this.openNoteForEvent(event),
     }));
 
@@ -153,6 +161,24 @@ export default class GoogleCalendarPlugin extends Plugin {
       id: "open-today",
       name: "Open today's meetings",
       callback: () => this.openSidebarView(TODAY_VIEW),
+    });
+
+    this.addCommand({
+      id: "import-krisp-transcript",
+      name: "Import Krisp transcript into this note",
+      callback: () => this.withActiveNote((file) => this.importKrispTranscript(file)),
+    });
+
+    this.addCommand({
+      id: "copy-gemini-prompt",
+      name: "Copy Gemini prompt for this meeting",
+      callback: () => this.withActiveNote((file) => this.copyGeminiPrompt(file)),
+    });
+
+    this.addCommand({
+      id: "add-gemini-reply",
+      name: "Add Gemini reply to this meeting",
+      callback: () => this.withActiveNote((file) => this.addGeminiReply(file)),
     });
 
     this.addSettingTab(new GoogleCalendarSettingTab(this.app, this));
@@ -264,7 +290,7 @@ export default class GoogleCalendarPlugin extends Plugin {
 
   /** Open the event's note, creating it first if it has none. */
   async openNoteForEvent(event: CalendarEvent): Promise<void> {
-    const existing = findNotesByEventId(this.app, this.settings.noteFolder).get(event.id);
+    const existing = findNotesByEventId(this.app).get(event.id);
     if (existing) {
       await this.app.workspace.getLeaf(false).openFile(existing);
       return;
@@ -345,6 +371,19 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
     if (typeof merged.lastRunVersion !== "string") {
       merged.lastRunVersion = DEFAULT_SETTINGS.lastRunVersion;
+    }
+
+    const sections = (typeof stored.noteSections === "object" && stored.noteSections !== null
+      ? stored.noteSections : {}) as Record<string, unknown>;
+    merged.noteSections = { ...DEFAULT_SETTINGS.noteSections };
+    for (const key of Object.keys(merged.noteSections) as Array<keyof typeof merged.noteSections>) {
+      if (typeof sections[key] === "boolean") merged.noteSections[key] = sections[key] as boolean;
+    }
+    for (const key of ["skipTitles", "krispFolder"] as const) {
+      if (typeof merged[key] !== "string") merged[key] = DEFAULT_SETTINGS[key];
+    }
+    for (const key of ["skipSolo", "krispAutoImport"] as const) {
+      if (typeof merged[key] !== "boolean") merged[key] = DEFAULT_SETTINGS[key];
     }
 
     // Sanitize enum field
@@ -439,7 +478,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       linkAttendees: this.settings.linkAttendees,
       datePosition: this.settings.datePosition,
       dailyNote: this.settings.dailyNoteLink ? this.getDailyNoteConfig() : undefined,
-      template: await this.loadTemplate(verbose),
+      template: (await this.loadTemplate(verbose)) ?? builtInTemplate(this.settings.noteSections),
     };
   }
 
@@ -635,7 +674,8 @@ export default class GoogleCalendarPlugin extends Plugin {
       this.settings.processedEventIds.push(id);
     };
     const options = await this.getNoteOptions(verbose);
-    const notesById = findNotesByEventId(this.app, options.noteFolder);
+    const notesById = findNotesByEventId(this.app);
+    const skipRules = { titles: this.settings.skipTitles, solo: this.settings.skipSolo };
     let created = 0;
     let updated = 0;
 
@@ -648,7 +688,7 @@ export default class GoogleCalendarPlugin extends Plugin {
           markProcessed(event.id);
           continue;
         }
-        if (event.cancelled) continue;
+        if (event.cancelled || isSkipped(event, skipRules)) continue;
         if (processedSet.has(event.id) && !recreateDeleted) continue;
         if (this.app.vault.getAbstractFileByPath(resolveNoteFilePath(event, options)) instanceof TFile) {
           markProcessed(event.id);
@@ -665,6 +705,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
 
     const removed = await this.markRemovedMeetings(fetched, notesById);
+    const transcripts = await this.autoImportTranscripts();
 
     await this.trimAndSaveProcessedIds();
 
@@ -673,6 +714,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       ...(created > 0 ? [`created ${plural(created, "note")}`] : []),
       ...(updated > 0 ? [`updated ${plural(updated, "note")}`] : []),
       ...(removed > 0 ? [`marked ${plural(removed, "note")} removed from calendar`] : []),
+      ...(transcripts > 0 ? [`imported ${plural(transcripts, "Krisp transcript")}`] : []),
     ];
     if (parts.length > 0) {
       const message = parts.join(", ");
@@ -788,7 +830,7 @@ export default class GoogleCalendarPlugin extends Plugin {
   private async createAndOpenNote(event: CalendarEvent): Promise<void> {
     try {
       const options = await this.getNoteOptions(true);
-      const series = await seriesOptions(this.app, findNotesByEventId(this.app, options.noteFolder), event, true);
+      const series = await seriesOptions(this.app, findNotesByEventId(this.app), event, true);
       const { file } = await createNoteFile(this.app, event, { ...options, ...series });
       await this.app.workspace.getLeaf(false).openFile(file as TFile);
       new Notice(`Note ready: ${file.name}`);
@@ -797,5 +839,168 @@ export default class GoogleCalendarPlugin extends Plugin {
         `Calendar Notes: Failed to create note — ${safeErrorMessage(err)}`
       );
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Krisp transcripts and the Gemini round trip
+  // ---------------------------------------------------------------------------
+
+  private withActiveNote(run: (file: TFile) => Promise<void>): void {
+    const file = this.app.workspace.getActiveFile();
+    if (!(file instanceof TFile) || file.extension !== "md") {
+      new Notice("Calendar Notes: Open a meeting note first.");
+      return;
+    }
+    void run(file);
+  }
+
+  /** Title and times of a meeting note, from its properties; undefined without a start. */
+  private noteMeeting(file: TFile): MeetingTime | undefined {
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    const start = frontmatterDate(fm?.start);
+    if (!start) return undefined;
+    const end = frontmatterDate(fm?.end) ?? start;
+    return { title: typeof fm?.title === "string" ? fm.title : file.basename, start, end };
+  }
+
+  /** Recording folders already imported into a note. */
+  private usedRecordings(): Set<string> {
+    const used = new Set<string>();
+    for (const file of findNotesByEventId(this.app).values()) {
+      const name = this.app.metadataCache.getFileCache(file)?.frontmatter?.krisp_recording;
+      if (typeof name === "string") used.add(name);
+    }
+    return used;
+  }
+
+  /** Fill the note's Transcript section from the recording; false if the transcript was empty. */
+  private async writeTranscript(file: TFile, recording: Recording): Promise<boolean> {
+    const lines = await readTranscript(recording);
+    if (lines.length === 0) return false;
+    await this.app.vault.process(file, (content) =>
+      setFrontmatterValue(appendToSection(content, TRANSCRIPT_SECTIONS, lines), "krisp_recording", recording.name)
+    );
+    return true;
+  }
+
+  async importKrispTranscript(file: TFile): Promise<void> {
+    const folder = this.settings.krispFolder.trim();
+    if (!folder) {
+      new Notice("Calendar Notes: Set your Krisp folder in the plugin settings first.");
+      return;
+    }
+    if (sectionText(await this.app.vault.read(file), TRANSCRIPT_SECTIONS)) {
+      new Notice("Calendar Notes: This note's Transcript section already has text. Clear it to import again.");
+      return;
+    }
+    let recordings: Recording[];
+    try {
+      recordings = await listRecordings(folder);
+    } catch (err) {
+      new Notice(`Calendar Notes: Couldn't read the Krisp folder — ${safeErrorMessage(err)}`);
+      return;
+    }
+    if (recordings.length === 0) {
+      new Notice(`Calendar Notes: No Krisp recordings found in ${folder}.`);
+      return;
+    }
+
+    const write = async (recording: Recording) => {
+      try {
+        if (await this.writeTranscript(file, recording)) {
+          new Notice(`Calendar Notes: Imported the transcript of "${recording.title}".`);
+        } else {
+          new Notice(`Calendar Notes: The recording "${recording.title}" has no transcript text yet.`);
+        }
+      } catch (err) {
+        new Notice(`Calendar Notes: Couldn't import the transcript — ${safeErrorMessage(err)}`);
+      }
+    };
+    const meeting = this.noteMeeting(file);
+    const used = this.usedRecordings();
+    const match = meeting && matchRecording(recordings.filter((r) => !used.has(r.name)), meeting);
+    if (match) await write(match);
+    else new RecordingSuggestModal(this.app, recordings, (r) => void write(r)).open();
+  }
+
+  /** Fill empty Transcript sections of meetings that ended recently; returns how many were filled. */
+  async autoImportTranscripts(): Promise<number> {
+    const folder = this.settings.krispFolder.trim();
+    if (!this.settings.krispAutoImport || !folder) return 0;
+    const now = this.now();
+    const since = new Date(now.getTime() - KRISP_LOOKBACK_MS);
+    const ended = [...findNotesByEventId(this.app).values()]
+      .map((file) => ({ file, meeting: this.noteMeeting(file) }))
+      .filter((n): n is { file: TFile; meeting: MeetingTime } =>
+        !!n.meeting && n.meeting.end <= now && n.meeting.end >= since);
+    if (ended.length === 0) return 0;
+
+    let recordings: Recording[];
+    try {
+      recordings = await listRecordings(folder, since);
+    } catch (err) {
+      console.warn("[CalendarNoteIntegration] Couldn't read the Krisp folder:", err);
+      return 0;
+    }
+    const used = this.usedRecordings();
+    let imported = 0;
+    for (const { file, meeting } of ended) {
+      const recording = matchRecording(recordings.filter((r) => !used.has(r.name)), meeting);
+      if (!recording) continue;
+      try {
+        if (sectionText(await this.app.vault.read(file), TRANSCRIPT_SECTIONS)) continue;
+        if (await this.writeTranscript(file, recording)) {
+          used.add(recording.name);
+          imported++;
+        }
+      } catch (err) {
+        console.warn("[CalendarNoteIntegration] Failed to import a Krisp transcript:", err);
+      }
+    }
+    return imported;
+  }
+
+  async copyGeminiPrompt(file: TFile): Promise<void> {
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    const meeting = this.noteMeeting(file);
+    const time = (d: Date) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    const date = typeof fm?.date === "string" ? fm.date : "";
+    const listed: unknown = fm?.attendees;
+    const attendees = (Array.isArray(listed) ? listed : [])
+      .filter((a): a is string => typeof a === "string")
+      .map((a) => a.replace(/\[\[|\]\]/g, "").replace(/\s*<[^>]*>$/, "").trim());
+    const prompt = buildPrompt(await this.app.vault.read(file), {
+      title: meeting?.title ?? file.basename,
+      when: meeting ? `${date}, ${time(meeting.start)} – ${time(meeting.end)}` : date,
+      date,
+      attendees,
+    });
+    if (!prompt) {
+      new Notice("Calendar Notes: Add notes or a transcript to this meeting first.");
+      return;
+    }
+    await navigator.clipboard.writeText(prompt);
+    new Notice(
+      "Calendar Notes: Prompt copied. Paste it into Gemini, copy Gemini's whole reply, " +
+        "then run Add Gemini reply to this meeting.",
+      8_000
+    );
+  }
+
+  async addGeminiReply(file: TFile): Promise<void> {
+    const reply = parseReply(await navigator.clipboard.readText());
+    if (!reply) {
+      new Notice(
+        "Calendar Notes: The clipboard doesn't hold a Gemini reply — expected Summary, " +
+          "Decisions and Action items headings. Copy Gemini's whole reply and try again."
+      );
+      return;
+    }
+    await this.app.vault.process(file, (content) => applyReply(content, reply));
+    const items = reply.actionItems.length;
+    new Notice(
+      `Calendar Notes: Added the summary, ${reply.decisions.length} decision${reply.decisions.length !== 1 ? "s" : ""} ` +
+        `and ${items} action item${items !== 1 ? "s" : ""}.`
+    );
   }
 }

@@ -13,13 +13,15 @@ test("collectOpenItems lists open tasks from meeting notes, newest meeting first
     { path: "Meetings/2026-01-15 - Review.md", content: note("Review", "2026-01-15T10:00", "- [ ] Draft plan") },
     { path: "Meetings/2026-01-20 - Done.md", content: note("Done", "2026-01-20T10:00", "- [x] All done\n- [ ] ") },
     { path: "Other/Todo.md", content: "- [ ] Not a meeting" },
+    { path: "Projects/Acme/2026-01-10 - Kickoff.md", content: note("Kickoff", "2026-01-10T10:00", "- [ ] Filed away") },
   ]);
 
-  const meetings = await collectOpenItems(app as never, "Meetings");
+  const meetings = await collectOpenItems(app as never);
   assert.deepEqual(
     meetings.map((m) => [m.title, m.start, m.tasks.map((t) => t.text)]),
     [
       ["Review", "2026-01-15T10:00", ["Draft plan"]],
+      ["Kickoff", "2026-01-10T10:00", ["Filed away"]],
       ["Sync", "2026-01-08T10:00", ["Send deck"]],
     ]
   );

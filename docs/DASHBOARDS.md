@@ -8,7 +8,7 @@ The plugin gives you three dashboards. A dashboard is a page that pulls informat
 | **Meeting action items** | "What did I promise to do, in any meeting? What's overdue? What does Bob owe me?" | A panel in the **right sidebar** |
 | **Meetings dashboard** | "What meetings do I have coming up, and what did I have last week?" | A table that opens in the **main editor area**, like a note |
 
-**Today's meetings** reads your Apple Calendar. The other two are built from the meeting notes the plugin created (notes in your **Note folder**, default `Meeting Notes`). None of them ever change your calendar.
+**Today's meetings** reads your Apple Calendar. The other two are built from the meeting notes the plugin created (notes with a `calendar_event_id` property, wherever in the vault you've filed them). None of them ever change your calendar.
 
 ---
 
@@ -230,7 +230,7 @@ Each view is grouped by day. **Click a note name** to open that meeting's note. 
 ## Troubleshooting
 
 **The action items panel is empty, but I have open items.**
-- The items must be in notes the plugin created: notes with a `calendar_event_id` property, inside your **Note folder** (Settings → Calendar Note Integration → **Note folder**).
+- The items must be in notes the plugin created: notes with a `calendar_event_id` property. They can be in any folder.
 - The line must be a checkbox with text: `- [ ] Do the thing`. A plain bullet (`- Do the thing`) isn't a to-do.
 
 **Today's meetings says "Couldn't read your calendar."**

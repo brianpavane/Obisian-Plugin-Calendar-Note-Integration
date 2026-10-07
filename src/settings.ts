@@ -25,6 +25,7 @@ import { IcalCalendarApi, GoogleCalendarApi } from "./calendarApi";
 import { GoogleAuth } from "./googleAuth";
 import { encrypt, decrypt } from "./secureStorage";
 import { listAppleCalendars, runAppleCalendarDiagnostic } from "./appleCalendarApi";
+import { ALL_SECTIONS, NoteSections } from "./noteCreator";
 
 // ---------------------------------------------------------------------------
 // Settings interface & defaults
@@ -59,6 +60,16 @@ export interface GoogleCalendarSettings {
   processedEventIds: string[];
   /** Plugin version of the last completed startup sweep; a change triggers a rebuild. */
   lastRunVersion: string;
+  /** Sections of the built-in note format (ignored when a template file is set). */
+  noteSections: NoteSections;
+  /** Title fragments (one per line) of meetings that never get a note automatically. */
+  skipTitles: string;
+  /** Don't create notes automatically for events with no other attendees. */
+  skipSolo: boolean;
+  /** Folder Krisp saves recordings in (one subfolder per recording). */
+  krispFolder: string;
+  /** Fill empty Transcript sections from Krisp on every sync. */
+  krispAutoImport: boolean;
 }
 
 export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
@@ -87,6 +98,11 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   maxEvents: 20,
   processedEventIds: [],
   lastRunVersion: "",
+  noteSections: { ...ALL_SECTIONS },
+  skipTitles: "",
+  skipSolo: false,
+  krispFolder: "~/Documents/Transcripts/Krisp Meetings",
+  krispAutoImport: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -664,6 +680,39 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
         });
     }
 
+    new Setting(containerEl)
+      .setName("Skip meetings titled")
+      .setDesc(
+        "Meetings whose title contains any of these words or phrases (one per line, any case) " +
+          "never get a note automatically, for example Focus time, Lunch, or Hold. You can still " +
+          "create one from the Today's meetings panel or the event picker."
+      )
+      .addTextArea((text) => {
+        text.inputEl.rows = 4;
+        text
+          .setPlaceholder("Focus time\nLunch\nHold")
+          .setValue(this.plugin.settings.skipTitles)
+          .onChange(async (value) => {
+            this.plugin.settings.skipTitles = value;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Skip meetings with no one else invited")
+      .setDesc(
+        "Don't create notes automatically for events with no attendees besides you, such as " +
+          "blocks you put on your own calendar. Set your email address above so the plugin can tell which attendee is you."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.skipSolo)
+          .onChange(async (value) => {
+            this.plugin.settings.skipSolo = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     // ----- Note Contents ----------------------------------------------------
     containerEl.createEl("h3", { text: "Note Contents" });
 
@@ -729,6 +778,30 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           });
       });
+
+    containerEl.createEl("h4", { text: "Sections in new notes" });
+    containerEl.createEl("p", {
+      text: "Which sections the built-in format includes. Ignored when a template file is set — " +
+        "edit the template instead. Existing notes are not changed.",
+    });
+    const sectionNames: Array<[keyof NoteSections, string]> = [
+      ["agenda", "Agenda"],
+      ["notes", "Notes"],
+      ["decisions", "Decisions"],
+      ["actionItems", "Action items"],
+      ["summary", "Meeting Summary"],
+      ["transcript", "Transcript"],
+    ];
+    for (const [key, name] of sectionNames) {
+      new Setting(containerEl).setName(name).addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.noteSections[key])
+          .onChange(async (value) => {
+            this.plugin.settings.noteSections[key] = value;
+            await this.plugin.saveSettings();
+          })
+      );
+    }
 
     const daily = this.plugin.getDailyNoteConfig();
     new Setting(containerEl)
@@ -802,6 +875,43 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
             }
           });
       });
+
+    // ----- Krisp Transcripts -----------------------------------------------
+    containerEl.createEl("h3", { text: "Krisp Transcripts" });
+
+    new Setting(containerEl)
+      .setName("Krisp folder")
+      .setDesc(
+        "The folder on this Mac where Krisp saves recordings (one folder per recording, each " +
+          "with a transcript.txt). Run Import Krisp transcript on a meeting note to fill its " +
+          "Transcript section. ~ means your home folder."
+      )
+      .addText((text) => {
+        text.inputEl.style.width = "100%";
+        text
+          .setPlaceholder("~/Documents/Transcripts/Krisp Meetings")
+          .setValue(this.plugin.settings.krispFolder)
+          .onChange(async (value) => {
+            this.plugin.settings.krispFolder = value.trim();
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Import transcripts automatically")
+      .setDesc(
+        "On every sync, fill the empty Transcript section of meetings that ended in the last " +
+          "2 days with their Krisp recording, matched by start time and title. Off: import " +
+          "only when you run the command."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.krispAutoImport)
+          .onChange(async (value) => {
+            this.plugin.settings.krispAutoImport = value;
+            await this.plugin.saveSettings();
+          })
+      );
 
     // ----- Manual Actions ---------------------------------------------------
     containerEl.createEl("h3", { text: "Manual Actions" });

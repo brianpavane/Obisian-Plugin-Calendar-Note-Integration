@@ -1,0 +1,67 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtemp, mkdir, writeFile, rm } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
+import { listRecordings, matchRecording, parseKrispHeader, transcriptBody, type Recording } from "../src/krisp";
+
+test("parseKrispHeader reads the title and start time in common formats", () => {
+  for (const line of [
+    "2026-10-06 09:00",
+    "October 6, 2026 9:00 AM",
+    "Tuesday, October 6, 2026 at 9:00 AM",
+    "Start time: Oct 6, 2026, 9:00am",
+  ]) {
+    const header = parseKrispHeader(`Weekly Sync\n${line}\n45:12\n\nSpeaker 1: hi`);
+    assert.equal(header.title, "Weekly Sync", line);
+    assert.equal(header.start?.getTime(), new Date(2026, 9, 6, 9, 0).getTime(), line);
+    assert.equal(header.headerLines, 3, line);
+  }
+});
+
+test("parseKrispHeader copes with labels and a missing time", () => {
+  const header = parseKrispHeader("Title: Hallway chat\nDuration: 12:30\n\ntext");
+  assert.equal(header.title, "Hallway chat");
+  assert.equal(header.start, undefined);
+  assert.equal(header.headerLines, 2);
+});
+
+test("transcriptBody drops the header and escapes heading-like lines", () => {
+  assert.deepEqual(
+    transcriptBody("Sync\n2026-10-06 09:00\n30:00\n\nAlice | 00:01\n# of tickets is high\n\n"),
+    ["Alice | 00:01", "\\# of tickets is high"]
+  );
+});
+
+const rec = (name: string, title: string, time: Date): Recording => ({ name, path: name, title, time });
+
+test("matchRecording picks the recording made around the meeting, preferring its title", () => {
+  const meeting = { title: "Design Review", start: new Date(2026, 9, 6, 11), end: new Date(2026, 9, 6, 12) };
+  const recordings = [
+    rec("early", "Standup", new Date(2026, 9, 6, 9)),
+    rec("near", "Some call", new Date(2026, 9, 6, 11, 2)),
+    rec("titled", "Design Review", new Date(2026, 9, 6, 11, 10)),
+    rec("late", "Design Review", new Date(2026, 9, 6, 14)),
+  ];
+  assert.equal(matchRecording(recordings, meeting)?.name, "titled");
+  assert.equal(matchRecording(recordings.slice(0, 2), meeting)?.name, "near");
+  assert.equal(matchRecording([recordings[0], recordings[3]], meeting), undefined);
+});
+
+test("listRecordings reads each recording folder's transcript header", async () => {
+  const root = await mkdtemp(join(tmpdir(), "krisp-test-"));
+  try {
+    await mkdir(join(root, "rec-1"));
+    await writeFile(join(root, "rec-1", "transcript.txt"), "Weekly Sync\n2026-10-06 09:00\n30:00\n\nhello");
+    await mkdir(join(root, "rec-2"));
+    await writeFile(join(root, "rec-2", "transcript.txt"), "Design Review\n2026-10-07 11:00\n60:00\n\nhi");
+    await mkdir(join(root, "empty"));
+    await writeFile(join(root, "notes.txt"), "not a recording");
+
+    const recordings = await listRecordings(root);
+    assert.deepEqual(recordings.map((r) => [r.name, r.title]), [["rec-2", "Design Review"], ["rec-1", "Weekly Sync"]]);
+    assert.equal(recordings[1].time.getTime(), new Date(2026, 9, 6, 9).getTime());
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

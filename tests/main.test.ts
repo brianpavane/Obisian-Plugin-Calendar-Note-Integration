@@ -9,6 +9,9 @@ import {
   TFile,
 } from "./support/obsidianStub";
 import { createMemoryApp, buildEvent } from "./support/testHelpers";
+import { mkdtemp, mkdir, writeFile, rm } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
 
 function createPlugin(app?: App): GoogleCalendarPlugin {
   const plugin = new GoogleCalendarPlugin(
@@ -554,4 +557,90 @@ test("loadDayEvents reads the given day midnight to midnight and drops all-day a
     new Date(2026, 3, 4).getTime(),
     new Date(2026, 3, 5).getTime(),
   ]);
+});
+
+const serviceFor = (events: ReturnType<typeof buildEvent>[]) => async () =>
+  ({
+    queriedCalendars: () => undefined,
+    fetchedEventIds: () => undefined,
+    listEventsInTimeWindow: async () => events,
+  } as never);
+
+test("refreshNotes skips listed titles and solo events for new notes but still updates existing ones", async () => {
+  const app = createMemoryApp([
+    { path: "Meeting Notes/2026-04-03 - Lunch.md", content: "---\ntitle: \"Lunch\"\ncalendar_event_id: \"lunch\"\n---\n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ skipTitles: "lunch\nfocus", skipSolo: true });
+  const other = [{ email: "bob@example.com" }];
+  plugin.getCalendarService = serviceFor([
+    buildEvent({ id: "lunch", summary: "Lunch", location: "Cafe", attendees: other }),
+    buildEvent({ id: "focus", summary: "Focus block", attendees: other }),
+    buildEvent({ id: "solo", summary: "Prep", attendees: [] }),
+    buildEvent({ id: "sync", summary: "Sync", attendees: other }),
+  ]);
+
+  await plugin.refreshNotes(false);
+
+  assert.deepEqual(app.createdPaths, ["Meeting Notes/2026-04-03 - Sync.md"]);
+  assert.match((app.files.get("Meeting Notes/2026-04-03 - Lunch.md") as TFile).content ?? "", /^location: "Cafe"$/m);
+  assert.ok(!plugin.settings.processedEventIds.includes("focus"));
+});
+
+test("notes filed outside the note folder are still found, updated and opened", async () => {
+  const app = createMemoryApp([
+    { path: "Projects/Acme/2026-04-03 - Sync.md", content: "---\ntitle: \"Sync\"\ncalendar_event_id: \"sync\"\n---\n\n## Notes\n\n- Mine\n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+  const event = buildEvent({ id: "sync", summary: "Sync", location: "Room 4" });
+  plugin.getCalendarService = serviceFor([event]);
+
+  await plugin.refreshNotes(false);
+  await plugin.openNoteForEvent(event);
+
+  assert.deepEqual(app.createdPaths, []);
+  assert.deepEqual(app.openedFiles, ["Projects/Acme/2026-04-03 - Sync.md"]);
+  assert.match((app.files.get("Projects/Acme/2026-04-03 - Sync.md") as TFile).content ?? "", /^location: "Room 4"$/m);
+});
+
+test("autoImportTranscripts fills empty Transcript sections from matching Krisp recordings, once", async () => {
+  const root = await mkdtemp(join(tmpdir(), "krisp-main-"));
+  try {
+    await mkdir(join(root, "Weekly Sync"));
+    await writeFile(join(root, "Weekly Sync", "transcript.txt"), "Weekly Sync\n2026-04-02 10:00\n30:00\n\nAlice: hello\nBob: hi");
+    const noteText = (title: string, start: string, end: string) =>
+      `---\ntitle: "${title}"\nstart: ${start}\nend: ${end}\ncalendar_event_id: "${title}"\n---\n\n## Notes\n\n- \n\n## Transcript\n\n`;
+    const app = createMemoryApp([
+      { path: "Projects/Weekly Sync.md", content: noteText("Weekly Sync", "2026-04-02T10:00", "2026-04-02T10:30") },
+      { path: "Meeting Notes/Later.md", content: noteText("Later", "2026-04-03T10:00", "2026-04-03T11:00") },
+    ]);
+    const plugin = createPlugin(app);
+    plugin.settings = appleSettings({ krispFolder: root });
+
+    assert.equal(await plugin.autoImportTranscripts(), 0, "off by default");
+
+    plugin.settings.krispAutoImport = true;
+    assert.equal(await plugin.autoImportTranscripts(), 1);
+    const content = (app.files.get("Projects/Weekly Sync.md") as TFile).content ?? "";
+    assert.match(content, /## Transcript\n\nAlice: hello\nBob: hi\n$/);
+    assert.match(content, /^krisp_recording: "Weekly Sync"$/m);
+    assert.match(content, /## Notes\n\n- \n/);
+
+    assert.equal(await plugin.autoImportTranscripts(), 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("loadSettings keeps every note section on unless switched off", async () => {
+  const plugin = createPlugin();
+  plugin.loadData = async () => ({ noteSections: { transcript: false, agenda: "no" }, skipSolo: "yes", krispFolder: 5 });
+  await plugin.loadSettings();
+  assert.deepEqual(plugin.settings.noteSections, {
+    agenda: true, notes: true, decisions: true, actionItems: true, summary: true, transcript: false,
+  });
+  assert.equal(plugin.settings.skipSolo, false);
+  assert.equal(plugin.settings.krispFolder, "~/Documents/Transcripts/Krisp Meetings");
+  assert.equal(plugin.settings.krispAutoImport, false);
 });

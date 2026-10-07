@@ -494,40 +494,41 @@ function renderDetailsCallout(event: CalendarEvent, options: SyncOptions): strin
   return lines;
 }
 
-/** The built-in note layout, written in the same placeholder syntax as user templates. */
-export const DEFAULT_TEMPLATE = `---
-type: meeting
-tags:
-  - meeting
----
+/** The sections of the built-in note layout that can be switched off. */
+export interface NoteSections {
+  agenda: boolean;
+  notes: boolean;
+  decisions: boolean;
+  actionItems: boolean;
+  summary: boolean;
+  transcript: boolean;
+}
 
-# {{title}}
+export const ALL_SECTIONS: NoteSections = {
+  agenda: true,
+  notes: true,
+  decisions: true,
+  actionItems: true,
+  summary: true,
+  transcript: true,
+};
 
-{{details}}
+const SECTION_BLOCKS: Array<[keyof NoteSections, string]> = [
+  ["agenda", "## Agenda\n\n{{agenda}}\n"],
+  ["notes", "## Notes\n\n- \n"],
+  ["decisions", "## Decisions\n\n- \n"],
+  ["actionItems", "## Action items\n\n- [ ] \n"],
+  ["summary", "## Meeting Summary\n\n\n"],
+  ["transcript", "## Transcript\n\n"],
+];
 
-## Agenda
+/** The built-in note layout with the chosen sections, written in the same placeholder syntax as user templates. */
+export function builtInTemplate(sections: NoteSections = ALL_SECTIONS): string {
+  const blocks = SECTION_BLOCKS.filter(([key]) => sections[key]).map(([, block]) => `\n${block}`);
+  return `---\ntype: meeting\ntags:\n  - meeting\n---\n\n# {{title}}\n\n{{details}}\n${blocks.join("")}`;
+}
 
-{{agenda}}
-
-## Notes
-
-- 
-
-## Decisions
-
-- 
-
-## Action items
-
-- [ ] 
-
-## Meeting Summary
-
-
-
-## Transcript
-
-`;
+export const DEFAULT_TEMPLATE = builtInTemplate();
 
 /** Placeholders available in templates, mapped to their value for this event. */
 function templateValues(
@@ -697,6 +698,14 @@ export function updateNoteContent(
   return newFrontmatter + bodyLines.join("\n");
 }
 
+/** Set one quoted string property in a note's frontmatter; a note without frontmatter is returned unchanged. */
+export function setFrontmatterValue(content: string, key: string, value: string): string {
+  const parsed = parseFrontmatter(content);
+  if (!parsed) return content;
+  applyManagedFrontmatter(parsed.blocks, [[key, [`${key}: "${escapeYaml(sanitizeInline(value))}"`]]]);
+  return `---\n${parsed.blocks.flatMap((b) => b.lines).join("\n")}\n---${parsed.end}${parsed.rest}`;
+}
+
 /** HTTPS join URL for the event's video meeting, if it has one. */
 export function joinUrl(event: CalendarEvent): string | undefined {
   return meetingLink(event)?.url;
@@ -821,14 +830,12 @@ export async function createNoteFile(
 }
 
 /**
- * Index the notes under `noteFolder` (recursively; whole vault when empty) by
- * their `calendar_event_id` property.
+ * Index every note in the vault by its `calendar_event_id` property, so notes
+ * filed away from the note folder are still found.
  */
-export function findNotesByEventId(app: App, noteFolder: string): Map<string, TFile> {
-  const folder = noteFolder.trim() ? normalizePath(noteFolder.trim()) + "/" : "";
+export function findNotesByEventId(app: App): Map<string, TFile> {
   const byId = new Map<string, TFile>();
   for (const file of app.vault.getMarkdownFiles()) {
-    if (folder && !file.path.startsWith(folder)) continue;
     const id = app.metadataCache.getFileCache(file)?.frontmatter?.calendar_event_id;
     if (typeof id === "string" && id && !byId.has(id)) byId.set(id, file);
   }
