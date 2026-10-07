@@ -53,6 +53,24 @@ test("parseJxaEvents keeps a moved occurrence's id stable via its original date"
   assert.equal(event.start.dateTime, "2026-01-23T17:00:00.000Z");
 });
 
+test("parseJxaEvents ignores the /RID suffix Google adds to a moved occurrence's identifier", () => {
+  const series = "4B81F012-FD5E-4916-B80F-DCA39E64BFED:49mmnr4iccm5fqud5h5osvlb12@google.com";
+  const [event] = parseJxaEvents(
+    JSON.stringify([
+      raw({
+        uid: `${series}/RID=813072600`,
+        recurring: true,
+        occurrenceDate: "2026-10-07T13:30:00.000Z",
+        startDate: "2026-10-09T13:30:00.000Z",
+        endDate: "2026-10-09T14:00:00.000Z",
+      }),
+    ]),
+    []
+  );
+
+  assert.equal(event.id, `${series}::2026-10-07T13:30:00.000Z`);
+});
+
 test("parseJxaEvents keeps plain ids for one-off events and reads calendar details", () => {
   const [event] = parseJxaEvents(
     JSON.stringify([raw({ uid: "ONE-OFF", status: 3, url: "https://zoom.us/j/987654321" })]),
