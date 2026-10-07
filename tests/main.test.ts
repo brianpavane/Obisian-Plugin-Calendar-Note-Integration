@@ -915,3 +915,60 @@ test("refreshNotes adopts a note saved with a moved occurrence's /RID id and ren
   assert.match(content, new RegExp(`^calendar_event_id: "${series}::2026-04-03T14:00:00\\.000Z"$`, "m"));
   assert.match(content, /- Mine/);
 });
+
+test("a recurring meeting's Previous link skips an occurrence that was removed from the calendar", async () => {
+  const app = createMemoryApp([{ path: "Meeting Notes", content: "" }]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ hoursInAdvance: 48 });
+  const occurrence = (day: string) => buildEvent({
+    id: `weekly::2026-04-0${day}T14:00:00.000Z`,
+    summary: "Weekly Sync",
+    calendarName: "Work",
+    start: { dateTime: `2026-04-0${day}T10:00:00-04:00` },
+    end: { dateTime: `2026-04-0${day}T10:30:00-04:00` },
+  });
+  plugin.getCalendarService = appleService([occurrence("3")], ["Work"]);
+  await plugin.refreshNotes(false);
+  plugin.getCalendarService = appleService([occurrence("3"), occurrence("4")], ["Work"]);
+  await plugin.refreshNotes(false);
+
+  plugin.getCalendarService = appleService([occurrence("3")], ["Work"]);
+  await plugin.refreshNotes(false);
+  assert.match((app.files.get("Meeting Notes/2026-04-04 - Weekly Sync.md") as TFile).content ?? "", /^status: removed$/m);
+
+  plugin.getCalendarService = appleService([occurrence("3"), occurrence("5")], ["Work"]);
+  plugin.now = () => new Date("2026-04-04T06:00:00-04:00");
+  await plugin.refreshNotes(false);
+
+  const third = (app.files.get("Meeting Notes/2026-04-05 - Weekly Sync.md") as TFile).content ?? "";
+  assert.match(third, /^> \*\*Previous:\*\* \[\[Meeting Notes\/2026-04-03 - Weekly Sync\|2026-04-03 - Weekly Sync\]\]$/m);
+});
+
+test("refreshNotes marks the note of a meeting you declined, and restores it if you accept again", async () => {
+  const app = createMemoryApp([{ path: "Meeting Notes", content: "" }]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+  const meeting = (responseStatus: "accepted" | "declined") => buildEvent({
+    id: "one-off",
+    summary: "Review",
+    calendarName: "Work",
+    attendees: [
+      { email: "me@example.com", self: true, responseStatus },
+      { email: "them@example.com", responseStatus: "accepted" },
+    ],
+  });
+  plugin.getCalendarService = appleService([meeting("accepted")], ["Work"]);
+  await plugin.refreshNotes(false);
+
+  plugin.getCalendarService = appleService([meeting("declined")], ["Work"]);
+  await plugin.refreshNotes(false);
+  const note = () => (app.files.get("Meeting Notes/2026-04-03 - Review.md") as TFile).content ?? "";
+  assert.match(note(), /^status: declined$/m);
+  assert.match(note(), /^> \[!warning\] Meeting declined$/m);
+
+  plugin.getCalendarService = appleService([meeting("accepted")], ["Work"]);
+  await plugin.refreshNotes(false);
+  assert.doesNotMatch(note(), /^status:/m);
+  assert.match(note(), /^> \[!info\] Meeting details$/m);
+  assert.equal(app.createdPaths.length, 1);
+});

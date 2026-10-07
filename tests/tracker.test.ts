@@ -38,3 +38,14 @@ test("buildTracker says so when there is nothing to show", () => {
   assert.match(content, /\| 0 \| 0 \| 0 \| 0 \| 0 \|/);
   assert.equal(content.match(/Nothing here\./g)?.length, 7);
 });
+
+test("buildTracker leaves cancelled, removed and declined meetings out of this week's meetings but keeps their items", () => {
+  const content = buildTracker([
+    meeting("Team/Sync", "2026-10-06", { category: "Team Sync" }),
+    meeting("Team/Skipped sync", "2026-10-07", { category: "Team Sync", skipped: true, openItems: [parseTaskMeta("Reschedule demo")] }),
+  ], "2026-10-07", "now");
+
+  assert.match(content, /\| Team Sync \(1\) \| \[\[Team\/Sync\\\|Sync\]\] \|/);
+  assert.doesNotMatch(content, /\| [^\n]*Skipped sync\\\|/);
+  assert.match(content, /- Reschedule demo · \[\[Team\/Skipped sync\|Skipped sync\]\]/);
+});

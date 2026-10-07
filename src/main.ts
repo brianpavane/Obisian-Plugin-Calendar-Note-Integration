@@ -58,6 +58,7 @@ import {
   builtInTemplate,
   createNoteFile,
   findNotesByEventId,
+  isSkippedStatus,
   joinUrl,
   doneTasks,
   markNoteRemoved,
@@ -88,6 +89,8 @@ interface FetchResult {
   seenIds: Set<string>;
   /** Filtered events from the whole date range that start outside the window (e.g. a meeting moved to later in the week). */
   outsideWindow: CalendarEvent[];
+  /** Meetings you declined, from the whole date range. */
+  declined: CalendarEvent[];
   /** Calendars the fetch covered; undefined when the source can't tell. */
   queriedCalendars?: string[];
   timeMin: Date;
@@ -327,6 +330,7 @@ export default class GoogleCalendarPlugin extends Plugin {
           .split("\n")
           .map((l) => l.replace(/^\s*[-*+]\s+/, "").trim())
           .filter(Boolean),
+        skipped: isSkippedStatus(fm.status),
       });
     }
     return meetings;
@@ -760,14 +764,15 @@ export default class GoogleCalendarPlugin extends Plugin {
    * one matching selfEmail. Events where the user is not listed are kept.
    */
   private filterDeclinedEvents(events: CalendarEvent[]): CalendarEvent[] {
+    return events.filter((event) => !this.isDeclined(event));
+  }
+
+  private isDeclined(event: CalendarEvent): boolean {
     const selfEmail = this.settings.selfEmail.trim().toLowerCase();
-    return events.filter((event) => {
-      if (!event.attendees || event.attendees.length === 0) return true;
-      const self = event.attendees.find(
-        (a) => a.self === true || (!!selfEmail && a.email.toLowerCase() === selfEmail)
-      );
-      return !self || self.responseStatus !== "declined";
-    });
+    const self = event.attendees?.find(
+      (a) => a.self === true || (!!selfEmail && a.email.toLowerCase() === selfEmail)
+    );
+    return self?.responseStatus === "declined";
   }
 
   // ---------------------------------------------------------------------------
@@ -847,6 +852,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       live,
       seenIds: new Set((all ?? raw).map((e) => e.id)),
       outsideWindow: all ? filter(all).filter((e) => !inWindow.has(e.id)) : [],
+      declined: this.markSelfAttendee(this.filterOutAllDay(all ?? raw)).filter((e) => this.isDeclined(e)),
       queriedCalendars,
       timeMin,
       timeMax,
@@ -895,7 +901,8 @@ export default class GoogleCalendarPlugin extends Plugin {
    *    details (managed properties and the "Meeting details" callout) updated,
    *    and is renamed if the meeting moved to another day. This also covers
    *    notes of meetings fetched outside the window, so a meeting moved to
-   *    later in the week is renamed straight away.
+   *    later in the week is renamed straight away, and notes of meetings you
+   *    declined, which are marked declined.
    *  - Otherwise a note is created, unless the event was already processed
    *    (its note was deliberately deleted) and `recreateDeleted` is false, or
    *    the event is cancelled.
@@ -946,12 +953,16 @@ export default class GoogleCalendarPlugin extends Plugin {
       }
     }
 
-    for (const event of fetched.outsideWindow) {
+    const existingOnly = [
+      ...fetched.outsideWindow.map((event) => ({ event, declined: false })),
+      ...fetched.declined.map((event) => ({ event, declined: true })),
+    ];
+    for (const { event, declined } of existingOnly) {
       const existing = notesById.get(event.id);
       if (!existing) continue;
       try {
         const series = await seriesOptions(this.app, notesById, event, false);
-        if (await syncNoteFile(this.app, existing, event, { ...options, ...series })) updated++;
+        if (await syncNoteFile(this.app, existing, event, { ...options, ...series, declined })) updated++;
       } catch (err) {
         console.warn("[CalendarNoteIntegration] Failed to sync note for event:", err);
       }

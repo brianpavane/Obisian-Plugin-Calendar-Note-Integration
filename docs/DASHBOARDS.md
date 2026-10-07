@@ -234,7 +234,7 @@ At the top left of the table is a **view menu** showing the current view's name.
 
 The day views are grouped by day. **By account** and **By category** fill in as you add AI replies that include a Category and Primary Account / Project (see [AI agent instructions](AGENT_INSTRUCTIONS.md)); you can also type the `account` and `meeting_category` properties yourself.
 
-> **Already have `Meetings.base`?** The plugin never changes your copy, so it won't get the two new views by itself. Delete `Meetings.base` and run **Open meetings dashboard** to get a fresh one (any changes you made to it are lost), or add the views yourself. **Click a note name** to open that meeting's note. The **status** column shows `cancelled` or `removed` for meetings that were cancelled or deleted from your calendar.
+> **Already have `Meetings.base`?** The plugin never changes your copy, so it won't get the two new views by itself. Delete `Meetings.base` and run **Open meetings dashboard** to get a fresh one (any changes you made to it are lost), or add the views yourself. **Click a note name** to open that meeting's note. The **status** column shows `cancelled`, `removed` or `declined` for meetings that were cancelled, deleted from your calendar or declined.
 
 ### Changing it
 
@@ -254,7 +254,7 @@ It needs no other plugins. Accounts and categories come from the `account` and `
 
 Click the **gauge** button in the left ribbon, or press **Cmd + P** and run **Open meeting tracker**.
 
-It's a snapshot: each time you open it this way, the plugin rebuilds `Meeting Tracker.md` in your Meeting Hub folder with the latest numbers. Don't write in it — your edits are replaced the next time. To tick an item off, use the **Meeting action items** panel or the meeting's own note, then reopen the tracker.
+It's a snapshot: each time you open it this way, the plugin rebuilds `Meeting Tracker.md` in your Meeting Hub folder with the latest numbers. Don't write in it — your edits are replaced the next time. To tick an item off, use the **Meeting action items** panel or the meeting's own note, then reopen the tracker. Meetings that were cancelled, deleted from your calendar or declined aren't listed under this week's meetings, but their open items still are.
 
 The items are plain bullets, not checkboxes, so the action items panel and the Tasks plugin never count them twice.
 

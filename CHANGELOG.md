@@ -7,6 +7,23 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+**Declined meetings are marked in their notes**
+If you decline a meeting that already has a note, the note now gets `status: declined` and a yellow **Meeting declined** box instead of keeping stale details. Accepting again restores it.
+
+### Fixed
+
+**Skipped occurrences no longer break a recurring meeting's Previous link**
+When one occurrence of a weekly meeting was cancelled, deleted or declined after its note was made, the next week's **Previous** link (and its carried-over items) pointed to the meeting that didn't happen. It now points to the last meeting that took place.
+
+**Meetings that didn't happen aren't counted in the tracker or weekly review**
+Cancelled, removed and declined meetings are left out of the Meeting Tracker's and weekly review's meeting lists and counts. Any open items written in their notes are still listed.
+
+---
+
 ## [6.17.1] – 2026-10-07
 
 ### Fixed

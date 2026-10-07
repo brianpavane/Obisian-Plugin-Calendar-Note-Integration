@@ -15,7 +15,7 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 - **Structured meeting notes** — searchable properties, a Meeting details box, and Agenda, Notes, Decisions, Action items, Meeting Summary, and Transcript sections
 - **One-click join** — Zoom, Google Meet, Microsoft Teams, and Webex links are found in the event's URL, location, or description and shown as a **Join** link
 - **Attendees with RSVP status** — 🟢 accepted, 🔴 declined, 🟡 tentative, ⚪ awaiting; optionally as `[[Name]]` links to your people notes
-- **Notes stay in sync** — time, attendee, and location changes are applied to existing notes; moved meetings are renamed to their new date; cancelled meetings are marked cancelled
+- **Notes stay in sync** — time, attendee, and location changes are applied to existing notes; moved meetings are renamed to their new date; cancelled, deleted and declined meetings are marked as such
 - **Recurring meetings** — every occurrence gets its own note, linked to the previous one, with last meeting's open action items in the Agenda
 - **Your own template** — point the plugin at a template note with placeholders, or use the built-in format
 - **Daily-note links** — each meeting links to that day's daily note, so the day's meetings appear in its backlinks
@@ -309,6 +309,8 @@ Each occurrence of a recurring meeting gets its own note, linked to the one befo
 
 Only meetings that repeat in Apple Calendar are linked; separate events that happen to share a title are not.
 
+The **Previous** link skips occurrences that didn't happen (cancelled, deleted from the calendar, or declined), so it always points to the last meeting that took place. Moving a single occurrence to another day renames its note; it stays in the series.
+
 ### Daily notes
 
 With **Link to daily note** on, each meeting note gets a `daily_note` property linking to that day's daily note, named and placed according to Obsidian's **Daily notes** settings. Open a daily note and its **Backlinks** pane lists that day's meetings. To show them inside the daily note, add this to your daily-note template (requires the Dataview plugin):
@@ -327,7 +329,11 @@ Every poll, Refresh, and Rebuild updates the notes of meetings in the time windo
 
 If a meeting moves to another day, its note is renamed to the new date on the next sync (a title you edited in the filename is kept). This works for any new date in the look-ahead range, even if it's beyond the window in which new notes are created.
 
-If a meeting disappears from Apple Calendar (deleted rather than cancelled), its note is marked `status: removed` with a red **Meeting removed from calendar** box. This only happens for meetings in the time window and from calendars the plugin read, so turning a calendar off never marks its notes. If the meeting comes back — for example it was moved more than a week out and is now back in range — the next sync restores the note. Notes created by versions before 6.7 get their properties updated but keep their original layout.
+If a meeting disappears from Apple Calendar (deleted rather than cancelled), its note is marked `status: removed` with a red **Meeting removed from calendar** box. This only happens for meetings in the time window and from calendars the plugin read, so turning a calendar off never marks its notes. If the meeting comes back — for example it was moved more than a week out and is now back in range — the next sync restores the note.
+
+If you decline a meeting that already has a note, the note is marked `status: declined` with a yellow **Meeting declined** box. Accept it again and the next sync restores the note. No new notes are created for declined meetings.
+
+Cancelled, removed and declined meetings are left out of the meeting lists in the Meeting Tracker and weekly reviews, but any action items you wrote in their notes are still listed. Notes created by versions before 6.7 get their properties updated but keep their original layout.
 
 ### Filing notes into your own folders
 

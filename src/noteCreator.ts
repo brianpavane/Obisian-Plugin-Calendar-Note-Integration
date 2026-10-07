@@ -406,7 +406,18 @@ function organizerName(event: CalendarEvent): string | undefined {
 }
 
 /** Frontmatter keys the plugin keeps in sync with the calendar. `null` = remove. */
-type SyncOptions = Pick<NoteOptions, "linkAttendees" | "dailyNote" | "previousNote">;
+type SyncOptions = Pick<NoteOptions, "linkAttendees" | "dailyNote" | "previousNote"> & {
+  /** You declined this meeting. */
+  declined?: boolean;
+};
+
+/** `status` values of a meeting that didn't happen (for you). */
+const SKIPPED_STATUSES = new Set(["cancelled", "removed", "declined"]);
+
+/** True if a note's `status` property says the meeting was cancelled, removed or declined. */
+export function isSkippedStatus(status: unknown): boolean {
+  return typeof status === "string" && SKIPPED_STATUSES.has(status);
+}
 
 interface DailyLink {
   target: string;
@@ -461,17 +472,21 @@ function managedFrontmatter(
     quoted("location", event.location ? sanitizeInline(event.location) : undefined),
     quoted("meeting_url", link?.url),
     quoted("conference_platform", link ? link.platform : undefined),
-    ["status", event.cancelled ? ["status: cancelled"] : null],
+    ["status", event.cancelled ? ["status: cancelled"] : options.declined ? ["status: declined"] : null],
     quoted("calendar_event_id", event.id),
   ];
 }
 
-const DETAILS_CALLOUT_RE = /^> \[!(info|danger)\] Meeting (details|cancelled|removed from calendar)\s*$/;
+const DETAILS_CALLOUT_RE = /^> \[!(info|danger|warning)\] Meeting (details|cancelled|declined|removed from calendar)\s*$/;
 
 function renderDetailsCallout(event: CalendarEvent, options: SyncOptions): string[] {
   const timing = getEventTiming(event);
   const link = meetingLink(event);
-  const lines = [event.cancelled ? "> [!danger] Meeting cancelled" : "> [!info] Meeting details"];
+  const lines = [
+    event.cancelled ? "> [!danger] Meeting cancelled"
+      : options.declined ? "> [!warning] Meeting declined"
+      : "> [!info] Meeting details",
+  ];
 
   const daily = dailyNoteLink(timing.date, options.dailyNote);
   const day = daily ? wikilink(daily, timing.dateLong) : timing.dateLong;
@@ -962,6 +977,7 @@ export function doneTasks(content: string): OpenTask[] {
 
 /**
  * Note options for one event: the link to the previous meeting in its series
+ * that took place (cancelled, removed and declined ones are skipped)
  * and, when `withItems` is set (new notes), that meeting's open action items.
  */
 export async function seriesOptions(
@@ -970,7 +986,10 @@ export async function seriesOptions(
   event: CalendarEvent,
   withItems: boolean
 ): Promise<Pick<NoteOptions, "previousNote" | "carriedItems">> {
-  const previous = previousNoteInSeries(notesById, event.id);
+  const held = new Map(
+    [...notesById].filter(([, file]) => !isSkippedStatus(app.metadataCache.getFileCache(file)?.frontmatter?.status))
+  );
+  const previous = previousNoteInSeries(held, event.id);
   if (!previous) return {};
   return {
     previousNote: previous.path.replace(/\.md$/, ""),

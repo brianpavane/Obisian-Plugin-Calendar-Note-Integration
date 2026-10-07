@@ -52,3 +52,14 @@ test("refreshReview replaces only the plugin's part and keeps the user's writing
   assert.match(refreshed, /- Closed the Acme pilot/);
   assert.equal(refreshReview("markers deleted", "anything"), "markers deleted");
 });
+
+test("reviewBody doesn't count a meeting that didn't happen, but keeps its open items", () => {
+  const body = reviewBody([
+    meeting("Team/Sync", "2026-10-06"),
+    meeting("Team/Skipped", "2026-10-08", { skipped: true, openItems: [parseTaskMeta("Reschedule demo")] }),
+  ], isoWeek("2026-10-07"), "2026-10-07", "now");
+
+  assert.match(body, /\| 1 \| 0 \| 0 \| 1 \| 0 \|/);
+  assert.doesNotMatch(body, /### Thursday, October 8/);
+  assert.match(body, /## Still open from this week's meetings\n\n- Reschedule demo · \[\[Team\/Skipped\|Skipped\]\]/);
+});

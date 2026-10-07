@@ -22,6 +22,8 @@ export interface TrackerMeeting {
   /** Ticked items (with their done date, if they have one). */
   doneItems: TaskMeta[];
   decisions: string[];
+  /** The meeting was cancelled, removed from the calendar or declined. */
+  skipped?: boolean;
 }
 
 export interface Item {
@@ -82,7 +84,7 @@ export function buildTracker(meetings: TrackerMeeting[], today: string, updated:
   const monday = addDays(today, -((day + 6) % 7));
   const sunday = addDays(monday, 6);
   const thisWeek = meetings
-    .filter((m) => m.date >= monday && m.date <= sunday)
+    .filter((m) => !m.skipped && m.date >= monday && m.date <= sunday)
     .sort((a, b) => a.date.localeCompare(b.date));
   const categories = new Map<string, TrackerMeeting[]>();
   for (const m of thisWeek) {
