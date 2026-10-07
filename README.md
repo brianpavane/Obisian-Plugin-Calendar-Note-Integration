@@ -21,7 +21,7 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 - **Daily-note links** — each meeting links to that day's daily note, so the day's meetings appear in its backlinks
 - **Next meeting in the status bar** — click it, or run **Join current or next meeting**, to open the note and join
 - **Meetings dashboard** — a ready-made Bases view of upcoming and recent meetings ([guide](docs/DASHBOARDS.md))
-- **Today's meetings** — a sidebar of today's meetings with one-click **Open note** and **Join** buttons ([guide](docs/DASHBOARDS.md))
+- **Today's meetings** — a sidebar of today's meetings (arrows step to other days) with one-click **Open note**, **Join** and **New note** buttons ([guide](docs/DASHBOARDS.md))
 - **Action items view** — every open action item across your meetings in one sidebar, grouped by meeting, owner (`@Bob`), or due date (`📅 2026-10-10`), ticked off in place ([guide](docs/DASHBOARDS.md))
 - **Declined event filtering** — events you have declined are skipped, when the calendar identifies you as an attendee or your email address is set
 - **All-day event filtering** — all-day events (holidays, OOO blocks) are skipped
@@ -314,7 +314,7 @@ If a meeting disappears from Apple Calendar (deleted rather than cancelled), its
 | **Auto-create notes for events in the next N hours** | Runs the same sweep as the background poll right away (N = **Hours in advance**) |
 | **Join current or next meeting** | Opens the note for the meeting in progress (or starting within 30 minutes), creating it if needed, and opens its join link |
 | **Open meetings dashboard** | Opens `Meetings.base` in your meeting-notes folder (created on first use) |
-| **Open today's meetings** | Shows today's meetings in the right sidebar, with Open note and Join buttons |
+| **Open today's meetings** | Shows today's meetings in the right sidebar, with Open note and Join buttons, arrows to other days, and a New note button |
 | **Open meeting action items** | Shows every open action item from your meeting notes in the right sidebar |
 
 The plugin adds four buttons to the ribbon (the icon strip on the far left of the window):
@@ -340,7 +340,7 @@ New to these? **[Dashboards — a step-by-step guide](docs/DASHBOARDS.md)** expl
 
 ### Today's meetings
 
-Click the **calendar-with-clock** button in the left ribbon (or run **Open today's meetings**). A panel in the right sidebar lists today's meetings in order: finished ones faded, the current one marked **Now**. Each has an **Open note** (or **Create note**) button and, while the meeting is still to come or in progress, a **Join** button. It re-reads the calendar every 5 minutes, or straight away with **Refresh**.
+Click the **calendar-with-clock** button in the left ribbon (or run **Open today's meetings**). A panel in the right sidebar lists today's meetings in order: finished ones faded, the current one marked **Now**. Each has an **Open note** (or **Create note**) button and, while the meeting is still to come or in progress, a **Join** button. Use the **‹** / **›** arrows beside the date to see the day before or after, and **Today** to come back. **New note** asks for a title and creates a note from your template for a meeting that isn't on your calendar, dated on the day shown. It re-reads the calendar every 5 minutes, or straight away with **Refresh**.
 
 ### Meetings dashboard
 

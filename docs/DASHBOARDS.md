@@ -59,7 +59,7 @@ It opens in the **right sidebar**. Like the action items panel, it stays there a
 ### What you see
 
 ```
-Tuesday, October 6                      [Refresh]
+‹ Tuesday, October 6 ›        [New note] [Refresh]
 
 9:00 AM – 9:15 AM                        ← faded: already over
 Standup
@@ -79,6 +79,14 @@ Planning
 - **Join** opens the Zoom / Meet / Teams / Webex link. It appears only when the meeting has one, and disappears once the meeting is over.
 - Clicking a meeting's **title** does the same as Open note / Create note.
 - All-day events, cancelled meetings, and meetings you declined are left out, just as they are for note creation.
+
+### Other days
+
+Click **‹** beside the date to see the day before, or **›** for the day after. Keep clicking to go further. On a past day every meeting is faded; you can still open or create its note. A **Today** button appears while you're on another day; click it to come back.
+
+### Notes for meetings that aren't on your calendar
+
+Click **New note**, type a title (for example `Hallway chat with Bob`), and press **Enter**. The plugin creates a note from your template, just like a calendar meeting's note, dated on the day the panel is showing and starting at the current time (rounded down to the quarter hour). Fill in who was there and what was said as usual. Because the meeting isn't on your calendar, it doesn't appear in the panel's list, and syncing never changes or flags the note.
 
 ### Keeping it current
 

@@ -530,7 +530,7 @@ test("refreshNotes links each recurring meeting to the previous one and carries 
   assert.doesNotMatch(first.content ?? "", /Previous:/);
 });
 
-test("loadTodayEvents reads midnight to midnight and drops all-day and declined meetings", async () => {
+test("loadDayEvents reads the given day midnight to midnight and drops all-day and declined meetings", async () => {
   const plugin = createPlugin();
   plugin.settings = appleSettings({ selfEmail: "me@example.com" });
   let window: [Date, Date] | undefined;
@@ -548,10 +548,10 @@ test("loadTodayEvents reads midnight to midnight and drops all-day and declined 
       },
     } as never);
 
-  const events = await plugin.loadTodayEvents();
+  const events = await plugin.loadDayEvents(new Date(2026, 3, 4));
   assert.deepEqual(events?.map((e) => e.id), ["kept"]);
   assert.deepEqual(window?.map((d) => d.getTime()), [
-    new Date(2026, 3, 3).getTime(),
     new Date(2026, 3, 4).getTime(),
+    new Date(2026, 3, 5).getTime(),
   ]);
 });

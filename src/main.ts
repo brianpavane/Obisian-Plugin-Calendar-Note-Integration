@@ -138,7 +138,7 @@ export default class GoogleCalendarPlugin extends Plugin {
 
     this.registerView(ACTION_ITEMS_VIEW, (leaf) => new ActionItemsView(leaf, () => this.settings.noteFolder));
     this.registerView(TODAY_VIEW, (leaf) => new TodayView(leaf, {
-      loadToday: () => this.loadTodayEvents(),
+      loadDay: (day) => this.loadDayEvents(day),
       notedEventIds: () => new Set(findNotesByEventId(this.app, this.settings.noteFolder).keys()),
       openNote: (event) => this.openNoteForEvent(event),
     }));
@@ -248,18 +248,16 @@ export default class GoogleCalendarPlugin extends Plugin {
     this.app.workspace.revealLeaf(leaf);
   }
 
-  /** Today's meetings (midnight to midnight), filtered like the sync; null if the calendar can't be read. */
-  async loadTodayEvents(): Promise<CalendarEvent[] | null> {
+  /** The meetings on the day starting at `dayStart` (midnight to midnight), filtered like the sync; null if the calendar can't be read. */
+  async loadDayEvents(dayStart: Date): Promise<CalendarEvent[] | null> {
     if (!this.isConfigured()) return null;
-    const now = this.now();
-    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const dayEnd = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1);
     try {
       const svc = await this.getCalendarService();
       const raw = await svc.listEventsInTimeWindow(dayStart, dayEnd);
       return this.markSelfAttendee(this.filterDeclinedEvents(this.filterOutAllDay(raw)));
     } catch (err) {
-      console.warn("[CalendarNoteIntegration] Couldn't read today's meetings:", err);
+      console.warn("[CalendarNoteIntegration] Couldn't read the day's meetings:", err);
       return null;
     }
   }

@@ -1,10 +1,11 @@
 /**
  * @file todayView.ts
  * @description The "Today's meetings" sidebar view: every timed meeting on
- * today's calendar, with buttons to open (or create) its note and to join.
+ * one day's calendar (today by default; arrows step a day back or ahead),
+ * with buttons to open (or create) its note and to join.
  */
 
-import { ItemView, WorkspaceLeaf } from "obsidian";
+import { App, ItemView, Modal, Setting, WorkspaceLeaf } from "obsidian";
 import type { CalendarEvent } from "./calendarApi";
 import { joinUrl } from "./noteCreator";
 
@@ -22,29 +23,79 @@ export interface TodayRow {
   state: MeetingState;
 }
 
-/** Today's timed, non-cancelled meetings in start order, marked done / now / upcoming. */
-export function todayRows(events: CalendarEvent[], now: Date): TodayRow[] {
-  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+/** Midnight at the start of the day `offset` days from `now`'s day. */
+export function dayStart(now: Date, offset = 0): Date {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
+}
+
+/** The day's timed, non-cancelled meetings in start order, marked done / now / upcoming. */
+export function dayRows(events: CalendarEvent[], day: Date, now: Date): TodayRow[] {
+  const dayEnd = dayStart(day, 1);
   const rows: TodayRow[] = [];
   for (const event of events) {
     if (event.cancelled || !event.start.dateTime) continue;
     const start = new Date(event.start.dateTime);
     const end = new Date(event.end.dateTime ?? event.start.dateTime);
-    if (isNaN(start.getTime()) || start >= dayEnd || end <= dayStart) continue;
+    if (isNaN(start.getTime()) || start >= dayEnd || end <= day) continue;
     const state: MeetingState = end <= now ? "done" : start <= now ? "now" : "upcoming";
     rows.push({ event, start, end, state });
   }
   return rows.sort((a, b) => a.start.getTime() - b.start.getTime());
 }
 
+/**
+ * A meeting that isn't on the calendar, for a note made with the "New note"
+ * button: 30 minutes on `day`, starting at the current time of day rounded
+ * down to the quarter hour.
+ */
+export function adHocEvent(title: string, day: Date, now: Date): CalendarEvent {
+  const start = new Date(day);
+  start.setHours(now.getHours(), now.getMinutes() - (now.getMinutes() % 15), 0, 0);
+  const end = new Date(start.getTime() + 30 * 60_000);
+  return {
+    id: `adhoc-${now.getTime()}`,
+    summary: title,
+    start: { dateTime: start.toISOString() },
+    end: { dateTime: end.toISOString() },
+    attendees: [],
+  };
+}
+
 /** What the view needs from the plugin. */
 export interface TodayHost {
-  /** Today's meetings from the calendar, or null if it couldn't be read. */
-  loadToday(): Promise<CalendarEvent[] | null>;
+  /** The meetings on the day starting at `day`, or null if the calendar couldn't be read. */
+  loadDay(day: Date): Promise<CalendarEvent[] | null>;
   /** IDs of events that already have a note. */
   notedEventIds(): Set<string>;
   openNote(event: CalendarEvent): Promise<void>;
+}
+
+class TitleModal extends Modal {
+  constructor(app: App, private readonly onSubmit: (title: string) => void) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.setTitle("New meeting note");
+    let title = "";
+    const submit = () => {
+      if (!title.trim()) return;
+      this.close();
+      this.onSubmit(title.trim());
+    };
+    new Setting(this.contentEl).setName("Title").addText((text) => {
+      text.setPlaceholder("Meeting title").onChange((value) => (title = value));
+      text.inputEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") submit();
+      });
+      window.setTimeout(() => text.inputEl.focus());
+    });
+    new Setting(this.contentEl).addButton((button) => button.setButtonText("Create").setCta().onClick(submit));
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
 }
 
 const clock = (date: Date) =>
@@ -52,6 +103,9 @@ const clock = (date: Date) =>
 
 export class TodayView extends ItemView {
   private events: CalendarEvent[] | null = [];
+  /** Days from today of the day shown. */
+  private offset = 0;
+  private loadedDay = dayStart(new Date());
 
   constructor(leaf: WorkspaceLeaf, private readonly host: TodayHost) {
     super(leaf);
@@ -71,37 +125,71 @@ export class TodayView extends ItemView {
 
   async onOpen(): Promise<void> {
     this.registerInterval(window.setInterval(() => this.reload(), RELOAD_MS));
-    this.registerInterval(window.setInterval(() => this.render(), TICK_MS));
+    this.registerInterval(window.setInterval(() => this.tick(), TICK_MS));
     this.registerEvent(this.app.vault.on("create", () => this.render()));
     this.registerEvent(this.app.vault.on("delete", () => this.render()));
     await this.reload();
   }
 
   async reload(): Promise<void> {
-    this.events = await this.host.loadToday();
+    const day = dayStart(new Date(), this.offset);
+    const events = await this.host.loadDay(day);
+    if (day.getTime() !== dayStart(new Date(), this.offset).getTime()) return;
+    this.loadedDay = day;
+    this.events = events;
     this.render();
+  }
+
+  /** Re-render each minute; reload when the shown day rolls over at midnight. */
+  private tick(): void {
+    if (dayStart(new Date(), this.offset).getTime() !== this.loadedDay.getTime()) void this.reload();
+    else this.render();
+  }
+
+  private go(offset: number): void {
+    this.offset = offset;
+    void this.reload();
+  }
+
+  private newNote(): void {
+    const day = this.loadedDay;
+    new TitleModal(this.app, (title) => this.host.openNote(adHocEvent(title, day, new Date()))).open();
   }
 
   render(): void {
     const now = new Date();
+    const day = this.loadedDay;
     const el = this.contentEl;
     el.empty();
     el.addClass("cal-notes-today");
 
     const header = el.createDiv({ cls: "cal-notes-header" });
-    header.createEl("h4", {
-      text: now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
+    const nav = header.createDiv({ cls: "cal-notes-day-nav" });
+    const back = nav.createEl("button", { text: "‹", attr: { "aria-label": "Previous day" } });
+    back.addEventListener("click", () => this.go(this.offset - 1));
+    nav.createEl("h4", {
+      text: day.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
     });
-    const refresh = header.createEl("button", { text: "Refresh" });
+    const ahead = nav.createEl("button", { text: "›", attr: { "aria-label": "Next day" } });
+    ahead.addEventListener("click", () => this.go(this.offset + 1));
+
+    const buttons = header.createDiv({ cls: "cal-notes-actions" });
+    if (this.offset !== 0) {
+      const today = buttons.createEl("button", { text: "Today" });
+      today.addEventListener("click", () => this.go(0));
+    }
+    const create = buttons.createEl("button", { text: "New note", attr: { "aria-label": "New meeting note for this day" } });
+    create.addEventListener("click", () => this.newNote());
+    const refresh = buttons.createEl("button", { text: "Refresh" });
     refresh.addEventListener("click", () => this.reload());
 
     if (this.events === null) {
       el.createDiv({ cls: "cal-notes-empty", text: "Couldn't read your calendar. Check the plugin's settings." });
       return;
     }
-    const rows = todayRows(this.events, now);
+    const rows = dayRows(this.events, day, now);
     if (rows.length === 0) {
-      el.createDiv({ cls: "cal-notes-empty", text: "No meetings today." });
+      el.createDiv({ cls: "cal-notes-empty", text: this.offset === 0 ? "No meetings today." : "No meetings this day." });
       return;
     }
 

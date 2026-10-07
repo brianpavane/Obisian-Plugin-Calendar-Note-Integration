@@ -7,6 +7,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+**Browse other days in Today's meetings**
+The Today's meetings panel has **‹** and **›** arrows beside the date to step a day back or ahead, and a **Today** button to jump back. Past days show every meeting as finished, so you can open or create notes for yesterday's meetings and prepare tomorrow's.
+
+**New note button in Today's meetings**
+A **New note** button in the panel asks for a title and creates a meeting note from your template for a meeting that isn't on your calendar (a hallway chat or ad-hoc call). It is dated on the day shown, starting at the current time.
+
+---
+
 ## [6.11.0] – 2026-10-06
 
 ### Added

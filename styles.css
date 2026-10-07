@@ -127,6 +127,20 @@
    Today's meetings view
    ---------------------------------------------------------- */
 
+.cal-notes-today > .cal-notes-header {
+  flex-wrap: wrap;
+}
+
+.cal-notes-day-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+}
+
+.cal-notes-day-nav h4 {
+  margin: 0;
+}
+
 .cal-notes-today-item {
   padding: 0.5em 0;
   border-bottom: 1px solid var(--background-modifier-border);
