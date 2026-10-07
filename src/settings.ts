@@ -883,7 +883,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
       .setName("Krisp folder")
       .setDesc(
         "The folder on this Mac where Krisp saves recordings (one folder per recording, each " +
-          "with a transcript.txt). Run Import Krisp transcript on a meeting note to fill its " +
+          "with a transcript.txt or transcript.md). Run Import Krisp transcript on a meeting note to fill its " +
           "Transcript section. ~ means your home folder."
       )
       .addText((text) => {

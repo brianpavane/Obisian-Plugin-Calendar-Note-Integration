@@ -143,7 +143,7 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Krisp folder | `~/Documents/Transcripts/Krisp Meetings` | Where Krisp saves recordings on this Mac: one folder per meeting, each with a `transcript.txt` |
+| Krisp folder | `~/Documents/Transcripts/Krisp Meetings` | Where Krisp saves recordings on this Mac: one folder per meeting, each with a `transcript.txt` (or `transcript.md`) |
 | Import transcripts automatically | Off | On every sync, fill the empty **Transcript** section of meetings that ended in the last 2 days. Off: import only with the command |
 
 ### Manual Actions
@@ -325,7 +325,8 @@ New notes are created in the **Note folder**, but you can move them anywhere in 
 
 If you record meetings with Krisp, the plugin can copy a recording's transcript into the note's **Transcript** section. Set **Krisp folder** in settings (default `~/Documents/Transcripts/Krisp Meetings`), open the meeting note, and run **Import Krisp transcript into this note**.
 
-- The recording is matched by time: one made from 20 minutes before the meeting starts to 30 minutes after it ends, preferring one whose title matches. If none matches, you pick the recording from a list.
+- The recording is matched by the start time in its transcript header (or folder name): one started from 20 minutes before the meeting to 30 minutes after it ends, preferring one whose title matches, then the closest start. Generic titles like "Zoom meeting" are fine — back-to-back meetings each get the recording that started nearest their own start. If none matches, you pick the recording from a list.
+- Only the transcript is copied; Krisp's header (title, time, length) is left out.
 - The transcript only goes into an empty Transcript section; clear the section to import again.
 - The note records which recording it came from (`krisp_recording`), so the same recording is never matched to a second meeting.
 - Turn on **Import transcripts automatically** to have every sync do this for meetings that ended in the last 2 days. It's off until you turn it on.
