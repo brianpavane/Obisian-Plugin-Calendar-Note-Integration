@@ -776,3 +776,31 @@ test("the Today panel's follow-up buttons copy and add replies for the meeting's
   await plugin.meetingNoteAction(buildEvent({ id: "missing" }), "copy");
   assert.match(getNotices().at(-1)?.message ?? "", /no note yet/);
 });
+
+test("Open this week's review creates the Weekly Reviews folder and keeps the user's writing on reopen", async () => {
+  const app = createMemoryApp([
+    { path: "Clients/Acme/Pilot.md", content: "---\ntitle: \"Pilot\"\nstart: 2026-04-02T10:00\ncalendar_event_id: \"p\"\n---\n\n## Decisions\n\n- Go live\n\n## Action items\n\n- [ ] Send scope 📅 2026-04-10\n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ noteFolder: "Work/Meeting Notes" });
+
+  await plugin.openWeeklyReview(0);
+  const path = "Work/Meeting Notes/Weekly Reviews/2026-W14 Weekly Review.md";
+  assert.ok(app.files.has("Work"), "missing parent folders are created");
+  assert.ok(app.files.has("Work/Meeting Notes/Weekly Reviews"));
+  const review = app.files.get(path) as TFile;
+  assert.match(review.content ?? "", /- Go live/);
+  assert.match(review.content ?? "", /## Still open from this week's meetings\n\n- Send scope · 📅 2026-04-10/);
+  assert.deepEqual(app.openedFiles, [path]);
+
+  review.content = (review.content ?? "").replace("### Wins\n\n- ", "### Wins\n\n- Shipped it");
+  (app.files.get("Clients/Acme/Pilot.md") as TFile).content =
+    (app.files.get("Clients/Acme/Pilot.md") as TFile).content?.replace("- [ ] Send scope 📅 2026-04-10", "- [x] Send scope 📅 2026-04-10 ✅ 2026-04-03");
+  await plugin.openWeeklyReview(0);
+  assert.match(review.content ?? "", /- Shipped it/);
+  assert.match(review.content ?? "", /## Done this week\n\n- Send scope · 📅 2026-04-10 · /);
+  assert.equal(app.createdPaths.filter((p) => p === path).length, 1);
+
+  await plugin.openWeeklyReview(-1);
+  assert.ok(app.files.has("Work/Meeting Notes/Weekly Reviews/2026-W13 Weekly Review.md"));
+});

@@ -109,6 +109,7 @@ Install **Tasks** from **Settings → Community plugins → Browse**. Two settin
 | Copy meeting for AI assistant | Ctrl + Option + C |
 | Add AI reply to this meeting | Ctrl + Option + V |
 | Open meeting tracker | Ctrl + Option + M |
+| Open this week's review | Ctrl + Option + W |
 
 ---
 
@@ -120,4 +121,5 @@ Install **Tasks** from **Settings → Community plugins → Browse**. Two settin
 4. **After** — click the three icons in the note's top-right corner (or on the meeting in **Today's meetings**), left to right: **Import Krisp transcript** (confirm the recording), **Copy meeting for AI assistant** (paste into your assistant, copy its reply), **Add AI reply**.
 5. **File it** — move the note into your own folder structure. Its action items, links and dashboard entries follow it.
 6. **Follow up** — the **Meeting action items** panel (ribbon: checklist) shows everything still open, by meeting, person or due date. Tick items off there or in the note.
-7. **Weekly** — open the **Meeting tracker** (ribbon: gauge) for overdue items, what's due this week, open items by account and person, and the last 30 days' decisions.
+7. **Any time** — open the **Meeting tracker** (ribbon: gauge) for overdue items, what's due this week, open items by account and person, and the last 30 days' decisions.
+8. **Friday (or Monday)** — open **This week's review** (ribbon: calendar with a check mark), or **Last week's review** on a Monday. Read the week's meetings, decisions and what got done, then write your wins, concerns and next week's focus.

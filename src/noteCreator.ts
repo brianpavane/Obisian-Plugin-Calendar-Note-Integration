@@ -931,14 +931,25 @@ export interface OpenTask {
 
 const OPEN_TASK_RE = /^\s*[-*+] \[ \] (.*\S)\s*$/;
 
-/** Unchecked, non-empty tasks (`- [ ] …`) in a note's content. */
-export function openTasks(content: string): OpenTask[] {
+function tasksMatching(content: string, re: RegExp): OpenTask[] {
   const tasks: OpenTask[] = [];
   content.split("\n").forEach((line, i) => {
-    const m = line.replace(/\r$/, "").match(OPEN_TASK_RE);
+    const m = line.replace(/\r$/, "").match(re);
     if (m) tasks.push({ line: i, text: m[1] });
   });
   return tasks;
+}
+
+/** Unchecked, non-empty tasks (`- [ ] …`) in a note's content. */
+export function openTasks(content: string): OpenTask[] {
+  return tasksMatching(content, OPEN_TASK_RE);
+}
+
+const DONE_TASK_RE = /^\s*[-*+] \[[xX]\] (.*\S)\s*$/;
+
+/** Ticked, non-empty tasks (`- [x] …`) in a note's content. */
+export function doneTasks(content: string): OpenTask[] {
+  return tasksMatching(content, DONE_TASK_RE);
 }
 
 /**

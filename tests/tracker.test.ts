@@ -4,7 +4,7 @@ import { parseTaskMeta } from "../src/actionItems";
 import { buildTracker, type TrackerMeeting } from "../src/tracker";
 
 const meeting = (path: string, date: string, extra: Partial<TrackerMeeting> = {}): TrackerMeeting => ({
-  path, title: path.split("/").pop() ?? path, date, openItems: [], decisions: [], ...extra,
+  path, title: path.split("/").pop() ?? path, date, openItems: [], doneItems: [], decisions: [], ...extra,
 });
 
 test("buildTracker summarizes open items, decisions and this week's meetings", () => {

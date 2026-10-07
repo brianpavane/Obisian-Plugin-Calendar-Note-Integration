@@ -11,6 +11,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+**Weekly review**
+**Open this week's review** (and a new ribbon button) creates a note per week in a **Weekly Reviews** folder inside your meeting-notes folder (created if needed), showing the week's meetings by day, decisions, items done, items still open and anything overdue, with **Wins**, **Concerns** and **Next week's focus** sections for you. Reopening it refreshes the numbers and keeps what you wrote. **Open last week's review** looks back at the week before.
+
 **One-click buttons for transcripts and AI summaries**
 Every meeting note now has three icons in its top-right corner — **Import Krisp transcript**, **Copy meeting for AI assistant** and **Add AI reply** — and every meeting that has started gets the same three buttons in the **Today's meetings** panel. No more command palette for the after-meeting steps.
 

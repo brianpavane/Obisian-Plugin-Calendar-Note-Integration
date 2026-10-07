@@ -19,22 +19,24 @@ export interface TrackerMeeting {
   account?: string;
   category?: string;
   openItems: TaskMeta[];
+  /** Ticked items (with their done date, if they have one). */
+  doneItems: TaskMeta[];
   decisions: string[];
 }
 
-interface Item {
+export interface Item {
   meta: TaskMeta;
   meeting: TrackerMeeting;
 }
 
-function addDays(date: string, days: number): string {
+export function addDays(date: string, days: number): string {
   const d = new Date(`${date}T12:00:00`);
   d.setDate(d.getDate() + days);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function link(meeting: TrackerMeeting, inTable = false): string {
+export function link(meeting: TrackerMeeting, inTable = false): string {
   const alias = meeting.title.replace(/[[\]|#^]/g, " ").replace(/\s+/g, " ").trim() || meeting.path;
   return `[[${meeting.path}${inTable ? "\\|" : "|"}${alias}]]`;
 }
@@ -49,11 +51,11 @@ function itemLine({ meta, meeting }: Item): string {
   return `- ${meta.text}${extras ? ` · ${extras}` : ""} · ${link(meeting)}`;
 }
 
-const byPriorityThenDue = (a: Item, b: Item) =>
+export const byPriorityThenDue = (a: Item, b: Item) =>
   priorityRank(a.meta.priority) - priorityRank(b.meta.priority) ||
   (a.meta.due ?? "9999").localeCompare(b.meta.due ?? "9999");
 
-function list(items: Item[], sort: (a: Item, b: Item) => number = byPriorityThenDue): string[] {
+export function list(items: Item[], sort: (a: Item, b: Item) => number = byPriorityThenDue): string[] {
   return items.length > 0 ? [...items].sort(sort).map(itemLine) : ["Nothing here."];
 }
 

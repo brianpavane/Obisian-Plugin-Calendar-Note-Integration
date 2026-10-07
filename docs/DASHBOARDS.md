@@ -1,6 +1,6 @@
 # Dashboards — a step-by-step guide
 
-The plugin gives you four dashboards. A dashboard is a page that pulls information together and shows it in one place, so you don't have to open each note or flip to Calendar.app.
+The plugin gives you five dashboards. A dashboard is a page that pulls information together and shows it in one place, so you don't have to open each note or flip to Calendar.app.
 
 | Dashboard | What it answers | Where it appears |
 |---|---|---|
@@ -8,8 +8,9 @@ The plugin gives you four dashboards. A dashboard is a page that pulls informati
 | **Meeting action items** | "What did I promise to do, in any meeting? What's overdue? What does Bob owe me?" | A panel in the **right sidebar** |
 | **Meetings dashboard** | "What meetings do I have coming up, and what did I have last week?" | A table that opens in the **main editor area**, like a note |
 | **Meeting tracker** | "Across everything: what's overdue, what's due this week, what's open per customer and per person, what did we decide?" | A note, `Meeting Tracker.md`, in the **main editor area** |
+| **Weekly review** | "How did this week go, and what carries into next week?" | A note per week in `Weekly Reviews`, in the **main editor area** |
 
-**Today's meetings** reads your Apple Calendar. The other three are built from the meeting notes the plugin created (notes with a `calendar_event_id` property, wherever in the vault you've filed them). None of them ever change your calendar.
+**Today's meetings** reads your Apple Calendar. The other four are built from the meeting notes the plugin created (notes with a `calendar_event_id` property, wherever in the vault you've filed them). None of them ever change your calendar.
 
 ---
 
@@ -23,6 +24,7 @@ The **ribbon** is the thin strip of icons down the far-left edge of the Obsidian
 | **Checklist** icon (☑ with lines) | **Meeting action items** |
 | **Dashboard** icon (four squares) | **Meetings dashboard** |
 | **Gauge** icon (a dial) | **Meeting tracker** |
+| **Calendar with a check mark** | **This week's review** |
 
 (The plain **calendar** icon next to them is the older "create a note from an event" button.)
 
@@ -255,6 +257,37 @@ Click the **gauge** button in the left ribbon, or press **Cmd + P** and run **Op
 It's a snapshot: each time you open it this way, the plugin rebuilds `Meeting Tracker.md` in your meeting-notes folder with the latest numbers. Don't write in it — your edits are replaced the next time. To tick an item off, use the **Meeting action items** panel or the meeting's own note, then reopen the tracker.
 
 The items are plain bullets, not checkboxes, so the action items panel and the Tasks plugin never count them twice.
+
+---
+
+## 5. Weekly review
+
+### What it is
+
+One note per week (Monday to Sunday), named like `2026-W41 Weekly Review.md`, in a **Weekly Reviews** folder inside your meeting-notes folder. The plugin creates the folder the first time.
+
+The top part is filled in for you:
+
+| Section | Shows |
+|---|---|
+| **At a glance** | Meetings held, decisions made, items done, items still open, items overdue |
+| **Meetings** | The week's meetings by day, with their category and account |
+| **Decisions** | Each meeting's decisions |
+| **Done this week** | Action items ticked off this week (they need a done date — the action items panel and the Tasks plugin add one) |
+| **Still open from this week's meetings** | What came out of this week and isn't done, highest priority first |
+| **Overdue** | Anything past its due date, from any meeting |
+
+Below that is yours: **Wins**, **Concerns** and **Next week's focus**.
+
+### How to open it
+
+Click the **calendar with a check mark** in the left ribbon, or press **Cmd + P** and run **Open this week's review**. On Monday morning, run **Open last week's review** to look back at the week that just ended.
+
+### Reopening it
+
+Open the review again any time during the week: the plugin refreshes the top part with the latest numbers and leaves everything else — your Wins, Concerns, Next week's focus, and anything you add — exactly as you wrote it. The top part sits between two hidden markers; don't delete them, or the review can no longer be refreshed (your writing is still kept).
+
+Each week keeps its own note, so the folder becomes a history of your weeks.
 
 ---
 

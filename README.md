@@ -28,6 +28,7 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 - **Skip rules** — no automatic notes for meetings titled Focus time, Lunch, etc., or with no one else invited
 - **Action items view** — every open action item across your meetings in one sidebar, grouped by meeting, owner (`@Bob`), or due date (`📅 2026-10-10`), with priorities, ticked off in place ([guide](docs/DASHBOARDS.md))
 - **Meeting tracker** — one page with overdue and upcoming items, high priorities, open items by account and person, recent decisions and this week's meetings ([guide](docs/DASHBOARDS.md))
+- **Weekly review** — a note per week with its meetings, decisions, what got done and what's still open, plus space for your own wins, concerns and next week's focus ([guide](docs/DASHBOARDS.md))
 - **Works with the Tasks plugin** — action items use its format (priority, created, due and done dates), for live lists in any note ([guide](docs/TASKS.md))
 - **Declined event filtering** — events you have declined are skipped, when the calendar identifies you as an attendee or your email address is set
 - **All-day event filtering** — all-day events (holidays, OOO blocks) are skipped
@@ -374,12 +375,13 @@ Both steps are optional. The note's sections are there for you to write in by ha
 | **Open meetings dashboard** | Opens `Meetings.base` in your meeting-notes folder (created on first use) |
 | **Open today's meetings** | Shows today's meetings in the right sidebar, with Open note and Join buttons, arrows to other days, and a New note button |
 | **Open meeting action items** | Shows every open action item from your meeting notes in the right sidebar |
+| **Open this week's review** / **Open last week's review** | Creates (or refreshes) the week's review note in `Weekly Reviews` inside your meeting-notes folder — see [Weekly review](docs/DASHBOARDS.md#5-weekly-review) |
 | **Open meeting tracker** | Rebuilds and opens `Meeting Tracker.md` in your meeting-notes folder: overdue, due soon, high priority, by account, by person, recent decisions, this week's meetings |
 | **Import Krisp transcript into this note** | Suggests the open note's Krisp recording and, once you confirm, fills its empty Transcript section — see [Krisp transcripts](#krisp-transcripts) |
 | **Copy meeting for AI assistant** | Copies the open note's meeting details, notes and transcript (and, if switched on, the instructions) — see [AI summaries](#ai-summaries-copy-and-paste) |
 | **Add AI reply to this meeting** | Files the AI reply on the clipboard into the open note's Meeting Summary, Decisions and Action items, and its properties |
 
-The plugin adds five buttons to the ribbon (the icon strip on the far left of the window):
+The plugin adds six buttons to the ribbon (the icon strip on the far left of the window):
 
 | Icon | Opens |
 |---|---|
@@ -388,6 +390,7 @@ The plugin adds five buttons to the ribbon (the icon strip on the far left of th
 | Checklist | The **Meeting action items** panel |
 | Dashboard (four squares) | The **Meetings dashboard** |
 | Gauge | The **Meeting tracker** |
+| Calendar with check mark | **This week's review** |
 
 Hover over a button to see its name.
 

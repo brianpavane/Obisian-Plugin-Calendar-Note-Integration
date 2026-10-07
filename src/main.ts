@@ -40,7 +40,8 @@ import {
 import { appendToSection, sectionText } from "./sections";
 import { isSkipped } from "./skipRules";
 import { ActionItemsView, ACTION_ITEMS_VIEW, localDate, parseTaskMeta } from "./actionItems";
-import { buildTracker, TRACKER_FILENAME, type TrackerMeeting } from "./tracker";
+import { addDays, buildTracker, TRACKER_FILENAME, type TrackerMeeting } from "./tracker";
+import { isoWeek, newReview, refreshReview, REVIEW_FOLDER, reviewBody, reviewFilename } from "./weeklyReview";
 import { DASHBOARD_CONTENT, DASHBOARD_FILENAME } from "./dashboard";
 import { TodayView, TODAY_VIEW, type NoteAction } from "./todayView";
 import { currentOrNextMeeting, meetingToJoin, statusText } from "./meetingStatus";
@@ -58,6 +59,7 @@ import {
   createNoteFile,
   findNotesByEventId,
   joinUrl,
+  doneTasks,
   markNoteRemoved,
   openTasks,
   resolveNoteFilePath,
@@ -139,6 +141,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     this.addRibbonIcon("list-checks", "Open meeting action items", () => this.openSidebarView(ACTION_ITEMS_VIEW));
     this.addRibbonIcon("layout-dashboard", "Open meetings dashboard", () => this.openDashboard());
     this.addRibbonIcon("gauge", "Open meeting tracker", () => this.openTracker());
+    this.addRibbonIcon("calendar-check", "Open this week's review", () => this.openWeeklyReview(0));
 
     this.addCommand({
       id: "create-note-from-event",
@@ -194,6 +197,18 @@ export default class GoogleCalendarPlugin extends Plugin {
       id: "open-meeting-tracker",
       name: "Open meeting tracker",
       callback: () => this.openTracker(),
+    });
+
+    this.addCommand({
+      id: "open-weekly-review",
+      name: "Open this week's review",
+      callback: () => this.openWeeklyReview(0),
+    });
+
+    this.addCommand({
+      id: "open-last-weekly-review",
+      name: "Open last week's review",
+      callback: () => this.openWeeklyReview(-1),
     });
 
     this.addCommand({
@@ -305,6 +320,7 @@ export default class GoogleCalendarPlugin extends Plugin {
         account: text(fm.account),
         category: text(fm.meeting_category),
         openItems: openTasks(content).map((t) => parseTaskMeta(t.text)),
+        doneItems: doneTasks(content).map((t) => parseTaskMeta(t.text)),
         decisions: sectionText(content, DECISIONS_SECTIONS)
           .split("\n")
           .map((l) => l.replace(/^\s*[-*+]\s+/, "").trim())
@@ -312,6 +328,43 @@ export default class GoogleCalendarPlugin extends Plugin {
       });
     }
     return meetings;
+  }
+
+  /** Create a folder and any missing folders above it. */
+  private async ensureFolder(path: string): Promise<void> {
+    let current = "";
+    for (const part of path.split("/").filter(Boolean)) {
+      current = current ? `${current}/${part}` : part;
+      if (!this.app.vault.getAbstractFileByPath(current)) await this.app.vault.createFolder(current);
+    }
+  }
+
+  /**
+   * Open the weekly review for this week (`weeksAgo` 0) or an earlier one,
+   * creating it — and its folder — if needed. An existing review has only
+   * the plugin's part refreshed; the user's own writing is kept.
+   */
+  async openWeeklyReview(weeksAgo: number): Promise<void> {
+    const now = this.now();
+    const today = localDate(now);
+    const week = isoWeek(addDays(today, weeksAgo * 7));
+    const body = reviewBody(
+      await this.trackerMeetings(),
+      week,
+      today,
+      `${today} ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+    );
+    const base = this.settings.noteFolder.trim() ? normalizePath(this.settings.noteFolder.trim()) : "";
+    const folder = normalizePath(base ? `${base}/${REVIEW_FOLDER}` : REVIEW_FOLDER);
+    const path = normalizePath(`${folder}/${reviewFilename(week)}`);
+    let file = this.app.vault.getAbstractFileByPath(path);
+    if (file instanceof TFile) {
+      await this.app.vault.process(file, (content) => refreshReview(content, body));
+    } else {
+      await this.ensureFolder(folder);
+      file = await this.app.vault.create(path, newReview(body, week));
+    }
+    await this.app.workspace.getLeaf(false).openFile(file as TFile);
   }
 
   /** Rebuild the Meeting Tracker note in the note folder and open it. */
@@ -328,7 +381,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     if (file instanceof TFile) {
       await this.app.vault.process(file, () => content);
     } else {
-      if (folder && !this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
+      if (folder) await this.ensureFolder(folder);
       file = await this.app.vault.create(path, content);
     }
     await this.app.workspace.getLeaf(false).openFile(file as TFile);
