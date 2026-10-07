@@ -5,6 +5,7 @@ import {
   builtInTemplate,
   createNoteContent,
   createNoteFile,
+  findNotesByEventId,
   generateNoteFilename,
   openTasks,
   previousNoteInSeries,
@@ -423,4 +424,19 @@ test("addFrontmatterTags merges into list, inline and missing tags, ignoring cas
   assert.equal(addFrontmatterTags("---\ntags: [a, b]\n---\n", ["c"]), "---\ntags:\n  - a\n  - b\n  - c\n---\n");
   assert.equal(addFrontmatterTags("---\ntitle: \"x\"\n---\n", ["new"]), "---\ntitle: \"x\"\ntags:\n  - new\n---\n");
   assert.equal(addFrontmatterTags("---\ntags:\n  - a\n---\n", ["A"]), "---\ntags:\n  - a\n---\n");
+});
+
+test("findNotesByEventId indexes /RID ids without the suffix and prefers a note whose saved id already matches", () => {
+  const note = (path: string, id: string) => ({ path, content: `---\ncalendar_event_id: "${id}"\n---\n` });
+  const app = createMemoryApp([
+    note("Moved copy.md", "S@google.com/RID=1::2026-10-07T13:30:00.000Z"),
+    note("Original.md", "S@google.com::2026-10-07T13:30:00.000Z"),
+    note("Moved only.md", "T@google.com/RID=1::2026-10-07T13:30:00.000Z"),
+  ]);
+
+  const byId = findNotesByEventId(app as never);
+
+  assert.equal(byId.get("S@google.com::2026-10-07T13:30:00.000Z")?.path, "Original.md");
+  assert.equal(byId.get("T@google.com::2026-10-07T13:30:00.000Z")?.path, "Moved only.md");
+  assert.equal(byId.size, 2);
 });

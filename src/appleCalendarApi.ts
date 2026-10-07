@@ -156,6 +156,15 @@ const JXA_SERIALIZE_EK_EVENT = `
       } catch (e) {}`.trimStart();
 
 /**
+ * An event id without the "/RID=<original start>" that Calendar.app appends
+ * to the identifier of a moved occurrence of a Google recurring event, so the
+ * occurrence keeps the id (and note) it had before it moved.
+ */
+export function canonicalEventId(id: string): string {
+  return id.replace(/\/RID=\d+(?=::|$)/, "");
+}
+
+/**
  * Reads events from the local EventKit store in one call.
  *
  * If calendarFilter is non-empty only those calendars are queried; otherwise
@@ -393,10 +402,8 @@ export function parseJxaEvents(json: string, calendarFilter: string[]): Calendar
 
     // Every occurrence of a recurring event shares one identifier, so the
     // occurrence's original start date distinguishes them. occurrenceDate stays
-    // fixed when a single occurrence is moved, keeping its note matched. A moved
-    // occurrence of a Google recurring event also gets "/RID=<original start>"
-    // appended to its identifier, which is dropped so the id doesn't change.
-    const uid = safeStr(r.uid, 500).replace(/\/RID=\d+$/, "") || `apple-${startMs}-${summary ?? ""}`;
+    // fixed when a single occurrence is moved, keeping its note matched.
+    const uid = canonicalEventId(safeStr(r.uid, 500)) || `apple-${startMs}-${summary ?? ""}`;
     const occurrence = safeStr(r.occurrenceDate) || new Date(startMs).toISOString();
     const id = r.recurring === true ? `${uid}::${occurrence}` : uid;
 

@@ -12,7 +12,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 **Moving one occurrence of a Google recurring meeting no longer creates a second note**
-When a single occurrence of a recurring meeting from a Google account was moved, Calendar.app gave it a new identifier, so the plugin made a new note for the new date and left the old one behind. The moved occurrence now keeps matching its existing note, which is renamed to the new date.
+When a single occurrence of a recurring meeting from a Google account was moved, Calendar.app gave it a new identifier, so the plugin made a new note for the new date and left the old one behind. The moved occurrence now keeps matching its existing note, which is renamed to the new date. A note already created this way for the moved occurrence is recognised too and becomes the meeting's note; if both notes exist, the original is kept in sync, so delete the one you don't want.
 
 ---
 

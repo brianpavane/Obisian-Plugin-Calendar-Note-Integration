@@ -16,6 +16,7 @@
 
 import { App, moment, normalizePath, TFile } from "obsidian";
 import { CalendarEvent, ResponseStatus } from "./calendarApi";
+import { canonicalEventId } from "./appleCalendarApi";
 
 // ---------------------------------------------------------------------------
 // Public options interface
@@ -860,13 +861,20 @@ export async function createNoteFile(
 
 /**
  * Index every note in the vault by its `calendar_event_id` property, so notes
- * filed away from the note folder are still found.
+ * filed away from the note folder are still found. Ids saved with a moved
+ * occurrence's "/RID=…" are indexed without it; if two notes end up with the
+ * same id, the one whose saved id already matches wins.
  */
 export function findNotesByEventId(app: App): Map<string, TFile> {
   const byId = new Map<string, TFile>();
+  const exact = new Set<string>();
   for (const file of app.vault.getMarkdownFiles()) {
-    const id = app.metadataCache.getFileCache(file)?.frontmatter?.calendar_event_id;
-    if (typeof id === "string" && id && !byId.has(id)) byId.set(id, file);
+    const stored = app.metadataCache.getFileCache(file)?.frontmatter?.calendar_event_id;
+    if (typeof stored !== "string" || !stored) continue;
+    const id = canonicalEventId(stored);
+    if (exact.has(id) || (byId.has(id) && stored !== id)) continue;
+    byId.set(id, file);
+    if (stored === id) exact.add(id);
   }
   return byId;
 }

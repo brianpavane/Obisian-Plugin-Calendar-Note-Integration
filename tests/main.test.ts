@@ -885,3 +885,33 @@ test("Move existing files does nothing when the Meeting Hub folder is the note f
   assert.deepEqual(app.renamed, []);
   assert.match(getNotices().at(-1)?.message ?? "", /set a different folder first/);
 });
+
+test("refreshNotes adopts a note saved with a moved occurrence's /RID id and renames it", async () => {
+  const series = "CAL:49mmnr4iccm5fqud5h5osvlb12@google.com";
+  const app = createMemoryApp([
+    { path: "Meeting Notes", content: "" },
+    {
+      path: "Meeting Notes/2026-04-03 - Standup.md",
+      content: `---\ntitle: "Standup"\ndate: 2026-04-03\nstart: 2026-04-03T10:00\ncalendar: "Work"\ncalendar_event_id: "${series}/RID=797000000::2026-04-03T14:00:00.000Z"\n---\n\n## Notes\n\n- Mine\n`,
+    },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+  const moved = buildEvent({
+    id: `${series}::2026-04-03T14:00:00.000Z`,
+    summary: "Standup",
+    calendarName: "Work",
+    start: { dateTime: "2026-04-03T15:00:00-04:00" },
+    end: { dateTime: "2026-04-03T15:30:00-04:00" },
+  });
+  const friday = { ...moved, start: { dateTime: "2026-04-10T10:00:00-04:00" }, end: { dateTime: "2026-04-10T10:30:00-04:00" } };
+  plugin.getCalendarService = appleService([], ["Work"], [friday]);
+
+  await plugin.refreshNotes(false);
+
+  assert.deepEqual(app.createdPaths, []);
+  assert.deepEqual(app.renamed, [["Meeting Notes/2026-04-03 - Standup.md", "Meeting Notes/2026-04-10 - Standup.md"]]);
+  const content = (app.files.get("Meeting Notes/2026-04-10 - Standup.md") as TFile).content ?? "";
+  assert.match(content, new RegExp(`^calendar_event_id: "${series}::2026-04-03T14:00:00\\.000Z"$`, "m"));
+  assert.match(content, /- Mine/);
+});

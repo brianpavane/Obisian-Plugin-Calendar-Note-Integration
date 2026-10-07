@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseJxaEvents } from "../src/appleCalendarApi";
+import { canonicalEventId, parseJxaEvents } from "../src/appleCalendarApi";
 
 function raw(overrides: Record<string, unknown>) {
   return {
@@ -69,6 +69,13 @@ test("parseJxaEvents ignores the /RID suffix Google adds to a moved occurrence's
   );
 
   assert.equal(event.id, `${series}::2026-10-07T13:30:00.000Z`);
+});
+
+test("canonicalEventId drops /RID from saved occurrence ids and leaves other ids alone", () => {
+  assert.equal(canonicalEventId("A@google.com/RID=813072600::2026-10-07T13:30:00.000Z"), "A@google.com::2026-10-07T13:30:00.000Z");
+  assert.equal(canonicalEventId("A@google.com/RID=813072600"), "A@google.com");
+  assert.equal(canonicalEventId("A@google.com::2026-10-07T13:30:00.000Z"), "A@google.com::2026-10-07T13:30:00.000Z");
+  assert.equal(canonicalEventId("odd/RID=12/x"), "odd/RID=12/x");
 });
 
 test("parseJxaEvents keeps plain ids for one-off events and reads calendar details", () => {
