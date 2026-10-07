@@ -10,6 +10,7 @@ import {
   previousNoteInSeries,
   resolveNoteFilePath,
   setFrontmatterValue,
+  addFrontmatterTags,
   updateNoteContent,
 } from "../src/noteCreator";
 import type { CalendarEvent } from "../src/calendarApi";
@@ -415,4 +416,11 @@ test("setFrontmatterValue adds or replaces one property", () => {
   const out = setFrontmatterValue("---\ntitle: \"Sync\"\n---\nBody", "krisp_recording", "Sync 2026");
   assert.equal(out, "---\ntitle: \"Sync\"\nkrisp_recording: \"Sync 2026\"\n---\nBody");
   assert.equal(setFrontmatterValue("No frontmatter", "a", "b"), "No frontmatter");
+});
+
+test("addFrontmatterTags merges into list, inline and missing tags, ignoring case and #", () => {
+  assert.equal(addFrontmatterTags("---\ntags:\n  - meeting\n---\nBody", ["#Acme", "MEETING"]), "---\ntags:\n  - meeting\n  - Acme\n---\nBody");
+  assert.equal(addFrontmatterTags("---\ntags: [a, b]\n---\n", ["c"]), "---\ntags:\n  - a\n  - b\n  - c\n---\n");
+  assert.equal(addFrontmatterTags("---\ntitle: \"x\"\n---\n", ["new"]), "---\ntitle: \"x\"\ntags:\n  - new\n---\n");
+  assert.equal(addFrontmatterTags("---\ntags:\n  - a\n---\n", ["A"]), "---\ntags:\n  - a\n---\n");
 });

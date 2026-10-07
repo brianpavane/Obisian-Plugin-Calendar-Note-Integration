@@ -16,6 +16,7 @@ import {
   Notice,
   PluginSettingTab,
   Setting,
+  TextAreaComponent,
   TFile,
   TFolder,
   ToggleComponent,
@@ -26,6 +27,7 @@ import { GoogleAuth } from "./googleAuth";
 import { encrypt, decrypt } from "./secureStorage";
 import { listAppleCalendars, runAppleCalendarDiagnostic } from "./appleCalendarApi";
 import { ALL_SECTIONS, NoteSections } from "./noteCreator";
+import { DEFAULT_INSTRUCTIONS } from "./assistant";
 
 // ---------------------------------------------------------------------------
 // Settings interface & defaults
@@ -68,8 +70,14 @@ export interface GoogleCalendarSettings {
   skipSolo: boolean;
   /** Folder Krisp saves recordings in (one subfolder per recording). */
   krispFolder: string;
-  /** Fill empty Transcript sections from Krisp on every sync. */
+  /** Offer Krisp transcripts for recent meetings after every sync (always confirmed). */
   krispAutoImport: boolean;
+  /** Put the instructions in front of the meeting when copying it for an AI assistant. */
+  aiIncludeInstructions: boolean;
+  /** Instructions for the AI assistant; empty = the built-in instructions. */
+  aiInstructions: string;
+  /** Save the category, account and tags from an AI reply as note properties. */
+  aiSaveProperties: boolean;
 }
 
 export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
@@ -103,6 +111,9 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   skipSolo: false,
   krispFolder: "~/Documents/Transcripts/Krisp Meetings",
   krispAutoImport: false,
+  aiIncludeInstructions: true,
+  aiInstructions: "",
+  aiSaveProperties: true,
 };
 
 // ---------------------------------------------------------------------------
@@ -909,6 +920,77 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.krispAutoImport)
           .onChange(async (value) => {
             this.plugin.settings.krispAutoImport = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // ----- AI Assistant ----------------------------------------------------
+    containerEl.createEl("h3", { text: "AI Assistant (copy and paste)" });
+    containerEl.createEl("p", {
+      text: "Copy meeting for AI assistant copies a meeting's details, notes and transcript for " +
+        "pasting into Gemini, Claude, ChatGPT, Copilot or another assistant your organization " +
+        "approves; Add AI reply to this meeting files the assistant's reply into the note. The " +
+        "plugin never contacts any AI service itself.",
+    });
+
+    new Setting(containerEl)
+      .setName("Include instructions when copying")
+      .setDesc(
+        "Put the instructions below in front of the meeting. Turn off if your assistant (a Gem, " +
+          "custom GPT, Claude Project or Copilot agent) already has its own instructions."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.aiIncludeInstructions)
+          .onChange(async (value) => {
+            this.plugin.settings.aiIncludeInstructions = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    let instructionsArea: TextAreaComponent | undefined;
+    new Setting(containerEl)
+      .setName("Instructions")
+      .setDesc(
+        "What the assistant is asked to do. Keep the Summary, Decisions and Action items headings " +
+          "so the reply can be filed. For a custom agent, see docs/AGENT_INSTRUCTIONS.md."
+      )
+      .addButton((button) =>
+        button.setButtonText("Copy").onClick(async () => {
+          await navigator.clipboard.writeText(this.plugin.settings.aiInstructions.trim() || DEFAULT_INSTRUCTIONS);
+          new Notice("Instructions copied to the clipboard.");
+        })
+      )
+      .addButton((button) =>
+        button.setButtonText("Reset to default").onClick(async () => {
+          this.plugin.settings.aiInstructions = "";
+          await this.plugin.saveSettings();
+          instructionsArea?.setValue(DEFAULT_INSTRUCTIONS);
+        })
+      );
+    new Setting(containerEl).setClass("cal-notes-wide-setting").addTextArea((text) => {
+      instructionsArea = text;
+      text.inputEl.rows = 14;
+      text.inputEl.style.width = "100%";
+      text
+        .setValue(this.plugin.settings.aiInstructions.trim() || DEFAULT_INSTRUCTIONS)
+        .onChange(async (value) => {
+          this.plugin.settings.aiInstructions = value.trim() === DEFAULT_INSTRUCTIONS ? "" : value;
+          await this.plugin.saveSettings();
+        });
+    });
+
+    new Setting(containerEl)
+      .setName("Save category, account and tags as properties")
+      .setDesc(
+        "When a reply includes a Category, Primary Account / Project or Search Tags line, save them " +
+          "as the note's meeting_category, account and tags properties, for the Meetings dashboard."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.aiSaveProperties)
+          .onChange(async (value) => {
+            this.plugin.settings.aiSaveProperties = value;
             await this.plugin.saveSettings();
           })
       );

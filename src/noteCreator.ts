@@ -706,6 +706,35 @@ export function setFrontmatterValue(content: string, key: string, value: string)
   return `---\n${parsed.blocks.flatMap((b) => b.lines).join("\n")}\n---${parsed.end}${parsed.rest}`;
 }
 
+/**
+ * Add tags to a note's `tags` property (skipping ones it already has, in any
+ * case), writing it as a list. A note without frontmatter is returned unchanged.
+ */
+export function addFrontmatterTags(content: string, tags: string[]): string {
+  const parsed = parseFrontmatter(content);
+  if (!parsed) return content;
+  const block = parsed.blocks.find((b) => b.key === "tags");
+  const existing: string[] = [];
+  if (block) {
+    const inline = block.lines[0].replace(/^tags:\s*/, "").trim();
+    if (inline) existing.push(...inline.replace(/^\[|\]$/g, "").split(/[,\s]+/).filter(Boolean));
+    for (const line of block.lines.slice(1)) {
+      const item = line.match(/^\s*-\s*(.+?)\s*$/)?.[1];
+      if (item) existing.push(item);
+    }
+  }
+  const bare = (t: string) => t.replace(/^["']|["']$/g, "").replace(/^#/, "").toLowerCase();
+  const have = new Set(existing.map(bare));
+  const added = tags.map((t) => t.replace(/^#/, "")).filter((t) => {
+    if (!t || have.has(t.toLowerCase())) return false;
+    have.add(t.toLowerCase());
+    return true;
+  });
+  if (added.length === 0) return content;
+  applyManagedFrontmatter(parsed.blocks, [["tags", ["tags:", ...[...existing, ...added].map((t) => `  - ${t}`)]]]);
+  return `---\n${parsed.blocks.flatMap((b) => b.lines).join("\n")}\n---${parsed.end}${parsed.rest}`;
+}
+
 /** HTTPS join URL for the event's video meeting, if it has one. */
 export function joinUrl(event: CalendarEvent): string | undefined {
   return meetingLink(event)?.url;

@@ -23,7 +23,7 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 - **Meetings dashboard** — a ready-made Bases view of upcoming and recent meetings ([guide](docs/DASHBOARDS.md))
 - **Today's meetings** — a sidebar of today's meetings (arrows step to other days) with one-click **Open note**, **Join** and **New note** buttons ([guide](docs/DASHBOARDS.md))
 - **Krisp transcripts** — fill a meeting's Transcript section from its Krisp recording, by command or automatically
-- **Gemini summaries by copy and paste** — copy a ready-made prompt, paste Gemini's reply back into Meeting Summary, Decisions and Action items; the plugin itself never goes online
+- **AI summaries by copy and paste** — copy a meeting for Gemini, Claude, ChatGPT or Copilot (or your own agent), paste the reply back into Meeting Summary, Decisions and Action items; the plugin itself never goes online
 - **File notes anywhere** — move finished notes into your own folders; the plugin still finds them
 - **Skip rules** — no automatic notes for meetings titled Focus time, Lunch, etc., or with no one else invited
 - **Action items view** — every open action item across your meetings in one sidebar, grouped by meeting, owner (`@Bob`), or due date (`📅 2026-10-10`), ticked off in place ([guide](docs/DASHBOARDS.md))
@@ -145,6 +145,14 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 |---------|---------|-------------|
 | Krisp folder | `~/Documents/Transcripts/Krisp Meetings` | Where Krisp saves recordings on this Mac: one folder per meeting, each with a `transcript.txt` (or `transcript.md`) |
 | Import transcripts automatically | Off | After each sync, offer recordings for meetings that ended in the last 2 days with an empty **Transcript** section. You confirm every import. Off: only with the command |
+
+### AI Assistant (copy and paste)
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Include instructions when copying | On | Put the instructions in front of the copied meeting. Turn off if your assistant already has its own instructions (a Gem, custom GPT, Claude Project or Copilot agent) |
+| Instructions | *(built-in)* | What the assistant is asked to do. **Copy** puts them on the clipboard; **Reset to default** restores the built-in text |
+| Save category, account and tags as properties | On | Save a reply's Category, Primary Account / Project and Search Tags as `meeting_category`, `account` and `tags` |
 
 ### Manual Actions
 
@@ -332,13 +340,20 @@ If you record meetings with Krisp, the plugin can copy a recording's transcript 
 - The note records which recording it came from (`krisp_recording`), so the same recording isn't offered for another meeting.
 - Turn on **Import transcripts automatically** to be offered transcripts after every sync, for all meetings that ended in the last 2 days, in one window. Double-booked meetings never start with the same recording selected. Meetings you skip (or close the window on) aren't offered again until Obsidian restarts. It's off until you turn it on.
 
-### Gemini summaries (copy and paste)
+### AI summaries (copy and paste)
 
-The plugin never contacts Gemini or any other service. Instead it prepares a prompt for you to paste, then files the answer:
+Use any AI assistant your organization approves — Gemini, Claude, ChatGPT, Copilot, or a custom agent of your own. The plugin never contacts any of them; it copies text for you to paste and files the reply you copy back:
 
-1. Open the meeting note and run **Copy Gemini prompt for this meeting**. The prompt holds the meeting's title, time, attendees, your **Notes** section and the **Transcript**, and asks Gemini to reply with **Summary**, **Decisions** and **Action items** headings, with owners as `@Name` and due dates as `📅 YYYY-MM-DD`.
-2. Paste it into Gemini, then copy Gemini's whole reply.
-3. Back in the note, run **Add Gemini reply to this meeting**. The summary goes into **Meeting Summary**, decisions into **Decisions**, and action items into **Action items**, replacing the empty placeholder bullets and added after anything you already wrote.
+1. Open the meeting note and run **Copy meeting for AI assistant**. It copies a **MEETING DETAILS** block from your calendar (title, date, time, attendees), your **Notes** and the **Transcript** — with the plugin's instructions in front, unless you turned **Include instructions when copying** off.
+2. Paste it into your assistant, then copy its whole reply.
+3. Back in the note, run **Add AI reply to this meeting**.
+
+The plugin understands two kinds of reply:
+
+- **The short format** the built-in instructions ask for (**Summary**, **Decisions**, **Action items** headings): the summary goes into **Meeting Summary**, decisions into **Decisions**, action items into **Action items**.
+- **A full report from your own agent** (see **[AI agent instructions](docs/AGENT_INSTRUCTIONS.md)**): the whole report goes into **Meeting Summary**; bullets under **Key Decisions Made** go into **Decisions**; each row of the action items table becomes a checkbox in **Action items** — owners as `@[[Full Name]]` (or `(owner: Customer IT team)` for a role), due dates as `📅 YYYY-MM-DD`. The report's **Category**, **Primary Account / Project** and **Search Tags** become the note's `meeting_category`, `account` and `tags` properties, for the **By account** and **By category** dashboard views.
+
+Running it again with the same reply is safe: **Meeting Summary is replaced**, and decisions and action items already in the note (ticked or not) aren't added twice. Your own writing in Notes, Decisions and Action items is kept.
 
 Both steps are optional. The note's sections are there for you to write in by hand either way.
 
@@ -356,8 +371,8 @@ Both steps are optional. The note's sections are there for you to write in by ha
 | **Open today's meetings** | Shows today's meetings in the right sidebar, with Open note and Join buttons, arrows to other days, and a New note button |
 | **Open meeting action items** | Shows every open action item from your meeting notes in the right sidebar |
 | **Import Krisp transcript into this note** | Suggests the open note's Krisp recording and, once you confirm, fills its empty Transcript section — see [Krisp transcripts](#krisp-transcripts) |
-| **Copy Gemini prompt for this meeting** | Copies a summary prompt built from the open note's notes and transcript — see [Gemini summaries](#gemini-summaries-copy-and-paste) |
-| **Add Gemini reply to this meeting** | Puts the Gemini reply on the clipboard into the open note's Meeting Summary, Decisions and Action items |
+| **Copy meeting for AI assistant** | Copies the open note's meeting details, notes and transcript (and, if switched on, the instructions) — see [AI summaries](#ai-summaries-copy-and-paste) |
+| **Add AI reply to this meeting** | Files the AI reply on the clipboard into the open note's Meeting Summary, Decisions and Action items, and its properties |
 
 The plugin adds four buttons to the ribbon (the icon strip on the far left of the window):
 
@@ -378,7 +393,7 @@ The status bar at the bottom of the window shows the meeting in progress (*Now: 
 
 ## Dashboards
 
-New to these? **[Dashboards — a step-by-step guide](docs/DASHBOARDS.md)** explains what each one is, where to find it, and how to use it.
+New to these? **[Dashboards — a step-by-step guide](docs/DASHBOARDS.md)** explains what each one is, where to find it, and how to use it. Setting everything up for the first time? See **[Recommended setup](docs/SETUP.md)**.
 
 ### Today's meetings
 
@@ -386,7 +401,7 @@ Click the **calendar-with-clock** button in the left ribbon (or run **Open today
 
 ### Meetings dashboard
 
-Click the **dashboard** button in the left ribbon (or run **Open meetings dashboard**). It creates a [Bases](https://obsidian.md/help/bases) file (Obsidian 1.9 or later) listing every meeting note, with **Next 7 days**, **Last 7 days**, and **All meetings** views grouped by day. It is an ordinary `.base` file — edit its columns, filters, and views like any other base.
+Click the **dashboard** button in the left ribbon (or run **Open meetings dashboard**). It creates a [Bases](https://obsidian.md/help/bases) file (Obsidian 1.9 or later) listing every meeting note, with **Next 7 days**, **Last 7 days**, **By account**, **By category** and **All meetings** views. It is an ordinary `.base` file — edit its columns, filters, and views like any other base.
 
 ### Meeting action items
 
@@ -426,7 +441,7 @@ If the plugin can't read your calendar during a background check, it shows one n
 | Mode | Data handling |
 |------|--------------|
 | Apple Calendar | All data stays on-device. No network requests are made by the plugin; Calendar.app manages its own syncing independently. |
-| Krisp and Gemini | Krisp transcripts are read from a folder on this Mac. The Gemini prompt is only copied to your clipboard; you choose where to paste it. |
+| Krisp and AI assistants | Krisp transcripts are read from a folder on this Mac. Meetings are only copied to your clipboard for an AI assistant; you choose where to paste them. |
 | iCal URL | The plugin fetches your iCal URL directly from Obsidian. The URL is stored encrypted in your vault. |
 | OAuth | Access tokens are stored encrypted in your vault. The plugin requests read-only scope (`calendar.readonly`). No data is sent to any third-party server. |
 

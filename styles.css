@@ -180,3 +180,15 @@
   gap: 0.4em;
   margin-top: 0.3em;
 }
+
+/* ----------------------------------------------------------
+   Settings: full-width text box
+   ---------------------------------------------------------- */
+
+.cal-notes-wide-setting .setting-item-info {
+  display: none;
+}
+
+.cal-notes-wide-setting .setting-item-control {
+  width: 100%;
+}

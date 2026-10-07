@@ -657,4 +657,42 @@ test("loadSettings keeps every note section on unless switched off", async () =>
   assert.equal(plugin.settings.skipSolo, false);
   assert.equal(plugin.settings.krispFolder, "~/Documents/Transcripts/Krisp Meetings");
   assert.equal(plugin.settings.krispAutoImport, false);
+  assert.equal(plugin.settings.aiIncludeInstructions, true);
+  assert.equal(plugin.settings.aiInstructions, "");
+  assert.equal(plugin.settings.aiSaveProperties, true);
+});
+
+test("Copy meeting for AI assistant leaves out the instructions when switched off, and uses custom ones", async () => {
+  const app = createMemoryApp([
+    { path: "Clients/Acme/Sync.md", content: "---\ntitle: \"Sync\"\ndate: 2026-04-02\nstart: 2026-04-02T10:00\nend: 2026-04-02T10:30\ncalendar_event_id: \"sync\"\n---\n\n## Notes\n\n- Mine\n\n## Transcript\n\n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+  const file = app.files.get("Clients/Acme/Sync.md") as never;
+
+  assert.match(await plugin.assistantCopyText(file) ?? "", /^Write up the meeting below[\s\S]*\n\nMEETING DETAILS\nTitle: Sync\nDate: 2026-04-02\nTime: /);
+  plugin.settings.aiInstructions = "Be brief.";
+  assert.match(await plugin.assistantCopyText(file) ?? "", /^Be brief\.\n\nMEETING DETAILS\n/);
+  plugin.settings.aiIncludeInstructions = false;
+  assert.match(await plugin.assistantCopyText(file) ?? "", /^MEETING DETAILS\n/);
+});
+
+test("Add AI reply files an agent report into a filed note and rejects unrelated text", async () => {
+  const app = createMemoryApp([
+    { path: "Clients/Acme/2026/Sync.md", content: "---\ntitle: \"Sync\"\ncalendar_event_id: \"sync\"\n---\n\n## Decisions\n\n- \n\n## Action items\n\n- [ ] \n\n## Meeting Summary\n\n\n\n## Transcript\n\n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+  const file = app.files.get("Clients/Acme/2026/Sync.md") as TFile;
+  const report = "**Category:** Team Sync\n**Primary Account / Project:** General\n**Key Decisions Made:**\n- Ship it\n### Action Items & Commitments\n| Action Item | Owner | Due |\n|---|---|---|\n| Write notes | Alice Smith | 2026-04-10 |";
+
+  assert.equal(await plugin.applyAssistantReply(file as never, report), true);
+  assert.match(file.content ?? "", /## Action items\n\n- \[ \] Write notes @\[\[Alice Smith\]\] 📅 2026-04-10\n/);
+  assert.match(file.content ?? "", /^meeting_category: "Team Sync"$/m);
+  assert.doesNotMatch(file.content ?? "", /^account:/m, "General is not an account");
+  assert.match(getNotices().at(-1)?.message ?? "", /Updated the summary; added 1 new decision and 1 new action item/);
+
+  const before = file.content;
+  assert.equal(await plugin.applyAssistantReply(file as never, "Hello there"), false);
+  assert.equal(file.content, before);
 });

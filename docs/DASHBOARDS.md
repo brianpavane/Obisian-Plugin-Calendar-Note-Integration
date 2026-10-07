@@ -197,7 +197,7 @@ When grouped by person or due date, each item shows which meeting it came from. 
 
 ### What it is
 
-A table of all your meeting notes, with tabs for **Next 7 days**, **Last 7 days**, and **All meetings**, grouped by day. It is an Obsidian **Bases** file named `Meetings.base`, saved in your meeting-notes folder.
+A table of all your meeting notes, with tabs for **Next 7 days**, **Last 7 days**, **By account**, **By category** and **All meetings**. It is an Obsidian **Bases** file named `Meetings.base`, saved in your meeting-notes folder.
 
 **Requires Obsidian 1.9 or later** (Bases was added in 1.9). Check your version under **Settings → About**.
 
@@ -217,9 +217,13 @@ At the top left of the table is a **view menu** showing the current view's name.
 |---|---|---|
 | **Next 7 days** | Meetings starting from today through the next 7 days | Note, start, location, attendees, calendar |
 | **Last 7 days** | Meetings from the past 7 days, up to now | Note, start, attendees, calendar |
+| **By account** | Meetings with an `account` property, grouped by account | Note, start, category, attendees |
+| **By category** | Meetings with a `meeting_category` property, grouped by category | Note, start, account, attendees |
 | **All meetings** | Every meeting note, newest day first | Note, start, organizer, attendees, calendar, status |
 
-Each view is grouped by day. **Click a note name** to open that meeting's note. The **status** column shows `cancelled` or `removed` for meetings that were cancelled or deleted from your calendar.
+The day views are grouped by day. **By account** and **By category** fill in as you add AI replies that include a Category and Primary Account / Project (see [AI agent instructions](AGENT_INSTRUCTIONS.md)); you can also type the `account` and `meeting_category` properties yourself.
+
+> **Already have `Meetings.base`?** The plugin never changes your copy, so it won't get the two new views by itself. Delete `Meetings.base` and run **Open meetings dashboard** to get a fresh one (any changes you made to it are lost), or add the views yourself. **Click a note name** to open that meeting's note. The **status** column shows `cancelled` or `removed` for meetings that were cancelled or deleted from your calendar.
 
 ### Changing it
 

@@ -27,7 +27,15 @@ import {
   type MeetingTime,
   type TranscriptProposal,
 } from "./krisp";
-import { applyReply, buildPrompt, parseReply, TRANSCRIPT_SECTIONS } from "./gemini";
+import {
+  applyReply,
+  copyText,
+  DEFAULT_INSTRUCTIONS,
+  parseReply,
+  TRANSCRIPT_SECTIONS,
+  type ApplyResult,
+  type MeetingInfo,
+} from "./assistant";
 import { appendToSection, sectionText } from "./sections";
 import { isSkipped } from "./skipRules";
 import { ActionItemsView, ACTION_ITEMS_VIEW } from "./actionItems";
@@ -183,14 +191,14 @@ export default class GoogleCalendarPlugin extends Plugin {
 
     this.addCommand({
       id: "copy-gemini-prompt",
-      name: "Copy Gemini prompt for this meeting",
-      callback: () => this.withActiveNote((file) => this.copyGeminiPrompt(file)),
+      name: "Copy meeting for AI assistant",
+      callback: () => this.withActiveNote((file) => this.copyForAssistant(file)),
     });
 
     this.addCommand({
       id: "add-gemini-reply",
-      name: "Add Gemini reply to this meeting",
-      callback: () => this.withActiveNote((file) => this.addGeminiReply(file)),
+      name: "Add AI reply to this meeting",
+      callback: () => this.withActiveNote((file) => this.addAssistantReply(file)),
     });
 
     this.addSettingTab(new GoogleCalendarSettingTab(this.app, this));
@@ -391,10 +399,10 @@ export default class GoogleCalendarPlugin extends Plugin {
     for (const key of Object.keys(merged.noteSections) as Array<keyof typeof merged.noteSections>) {
       if (typeof sections[key] === "boolean") merged.noteSections[key] = sections[key] as boolean;
     }
-    for (const key of ["skipTitles", "krispFolder"] as const) {
+    for (const key of ["skipTitles", "krispFolder", "aiInstructions"] as const) {
       if (typeof merged[key] !== "string") merged[key] = DEFAULT_SETTINGS[key];
     }
-    for (const key of ["skipSolo", "krispAutoImport"] as const) {
+    for (const key of ["skipSolo", "krispAutoImport", "aiIncludeInstructions", "aiSaveProperties"] as const) {
       if (typeof merged[key] !== "boolean") merged[key] = DEFAULT_SETTINGS[key];
     }
 
@@ -853,7 +861,7 @@ export default class GoogleCalendarPlugin extends Plugin {
   }
 
   // ---------------------------------------------------------------------------
-  // Krisp transcripts and the Gemini round trip
+  // Krisp transcripts and the AI assistant round trip
   // ---------------------------------------------------------------------------
 
   private withActiveNote(run: (file: TFile) => Promise<void>): void {
@@ -1008,7 +1016,8 @@ export default class GoogleCalendarPlugin extends Plugin {
     ).open();
   }
 
-  async copyGeminiPrompt(file: TFile): Promise<void> {
+  /** The meeting's calendar details for the copied block, from the note's properties. */
+  private meetingInfo(file: TFile): MeetingInfo {
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
     const meeting = this.noteMeeting(file);
     const time = (d: Date) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
@@ -1020,38 +1029,60 @@ export default class GoogleCalendarPlugin extends Plugin {
     const attendees = (Array.isArray(listed) ? listed : [])
       .filter((a): a is string => typeof a === "string")
       .map((a) => a.replace(/\[\[|\]\]/g, "").replace(/\s*<[^>]*>$/, "").trim());
-    const prompt = buildPrompt(await this.app.vault.read(file), {
+    return {
       title: meeting?.title ?? file.basename,
-      when: meeting ? `${date}, ${time(meeting.start)} – ${time(meeting.end)}` : date,
       date,
+      time: meeting ? `${time(meeting.start)} – ${time(meeting.end)}` : "",
       attendees,
-    });
-    if (!prompt) {
+    };
+  }
+
+  /** What Copy meeting for AI assistant puts on the clipboard; undefined if there is nothing to send. */
+  async assistantCopyText(file: TFile): Promise<string | undefined> {
+    const instructions = this.settings.aiIncludeInstructions
+      ? this.settings.aiInstructions.trim() || DEFAULT_INSTRUCTIONS
+      : undefined;
+    return copyText(await this.app.vault.read(file), this.meetingInfo(file), instructions);
+  }
+
+  async copyForAssistant(file: TFile): Promise<void> {
+    const text = await this.assistantCopyText(file);
+    if (!text) {
       new Notice("Calendar Notes: Add notes or a transcript to this meeting first.");
       return;
     }
-    await navigator.clipboard.writeText(prompt);
+    await navigator.clipboard.writeText(text);
     new Notice(
-      "Calendar Notes: Prompt copied. Paste it into Gemini, copy Gemini's whole reply, " +
-        "then run Add Gemini reply to this meeting.",
+      "Calendar Notes: Meeting copied. Paste it into your AI assistant, copy its whole reply, " +
+        "then run Add AI reply to this meeting.",
       8_000
     );
   }
 
-  async addGeminiReply(file: TFile): Promise<void> {
-    const reply = parseReply(await navigator.clipboard.readText());
+  /** File an AI assistant's reply into the note; false if the text isn't a reply the plugin understands. */
+  async applyAssistantReply(file: TFile, text: string): Promise<boolean> {
+    const reply = parseReply(text);
     if (!reply) {
       new Notice(
-        "Calendar Notes: The clipboard doesn't hold a Gemini reply — expected Summary, " +
-          "Decisions and Action items headings. Copy Gemini's whole reply and try again."
+        "Calendar Notes: The clipboard doesn't hold an AI reply the plugin understands — it needs " +
+          "a summary, decisions or action items. Copy the assistant's whole reply and try again."
       );
-      return;
+      return false;
     }
-    await this.app.vault.process(file, (content) => applyReply(content, reply));
-    const items = reply.actionItems.length;
+    let result: ApplyResult | undefined;
+    await this.app.vault.process(file, (content) => {
+      result = applyReply(content, reply, this.settings.aiSaveProperties);
+      return result.content;
+    });
+    const plural = (n: number, word: string) => `${n} new ${word}${n !== 1 ? "s" : ""}`;
     new Notice(
-      `Calendar Notes: Added the summary, ${reply.decisions.length} decision${reply.decisions.length !== 1 ? "s" : ""} ` +
-        `and ${items} action item${items !== 1 ? "s" : ""}.`
+      `Calendar Notes: ${reply.summary.length > 0 ? "Updated the summary; added" : "Added"} ` +
+        `${plural(result?.decisions ?? 0, "decision")} and ${plural(result?.actionItems ?? 0, "action item")}.`
     );
+    return true;
+  }
+
+  async addAssistantReply(file: TFile): Promise<void> {
+    await this.applyAssistantReply(file, await navigator.clipboard.readText());
   }
 }

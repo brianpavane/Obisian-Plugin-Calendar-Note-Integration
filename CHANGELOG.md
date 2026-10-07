@@ -7,6 +7,32 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+**Works with any AI assistant**
+The copy and paste commands are now **Copy meeting for AI assistant** and **Add AI reply to this meeting**, for Gemini, Claude, ChatGPT, Copilot or your own agent. Existing hotkeys keep working.
+
+**Instructions are optional and editable**
+New **AI Assistant** settings: **Include instructions when copying** (turn off if your assistant has its own), an editable **Instructions** box with **Copy** and **Reset to default**, and **Save category, account and tags as properties**. The copied meeting now starts with a **MEETING DETAILS** block (title, date, time, attendees from your calendar).
+
+**Full agent reports**
+**Add AI reply to this meeting** now also understands a full report from a custom agent: the whole report goes into Meeting Summary, **Key Decisions Made** into Decisions, and each row of an action items table becomes a checkbox with its owner (`@[[Full Name]]`), priority and due date. Category, account and search tags become note properties. `docs/AGENT_INSTRUCTIONS.md` has ready-to-copy instructions for such an agent.
+
+**By account and By category dashboard views**
+New Meetings dashboards include **By account** and **By category** views built on those properties. Delete an existing `Meetings.base` and reopen the dashboard to get them.
+
+**Recommended setup guide**
+`docs/SETUP.md` walks through the settings, Obsidian features and add-ons that get the most out of the plugin.
+
+### Changed
+
+**Adding an AI reply twice is safe**
+Meeting Summary is now replaced rather than added to, and decisions and action items already in the note are not added again.
+
+---
+
 ## [6.13.0] – 2026-10-06
 
 ### Added

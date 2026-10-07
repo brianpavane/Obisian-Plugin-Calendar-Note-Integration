@@ -53,12 +53,28 @@ export function sectionText(content: string, names: string[]): string {
     .trim();
 }
 
+/** The section's non-blank lines (placeholders included); empty if the note has no such section. */
+export function sectionLines(content: string, names: string[]): string[] {
+  const lines = content.split("\n");
+  const section = findSection(lines, names);
+  return section ? lines.slice(section.start + 1, section.end).filter((l) => l.trim()) : [];
+}
+
+/** Replace a section's contents; a missing section is created as in {@link appendToSection}. */
+export function replaceSection(content: string, names: string[], body: string[], beforeNames: string[] = []): string {
+  return writeSection(content, names, body, beforeNames, true);
+}
+
 /**
  * Add lines to the end of a section, dropping its empty placeholder bullets.
  * A missing section is created as `## <first name>`, before the first
  * `beforeNames` section that exists, or at the end of the note.
  */
 export function appendToSection(content: string, names: string[], add: string[], beforeNames: string[] = []): string {
+  return writeSection(content, names, add, beforeNames, false);
+}
+
+function writeSection(content: string, names: string[], add: string[], beforeNames: string[], replace: boolean): string {
   const lines = content.split("\n");
   const section = findSection(lines, names);
   if (!section) {
@@ -69,7 +85,9 @@ export function appendToSection(content: string, names: string[], add: string[],
     while (end > 0 && !lines[end - 1].trim()) end--;
     return [...lines.slice(0, end), "", ...block].join("\n");
   }
-  const kept = trimBlank(lines.slice(section.start + 1, section.end).filter((l) => !l.trim() || !PLACEHOLDER_RE.test(l)));
+  const kept = replace
+    ? []
+    : trimBlank(lines.slice(section.start + 1, section.end).filter((l) => !l.trim() || !PLACEHOLDER_RE.test(l)));
   const gap = kept.length > 0 && !(LIST_RE.test(kept[kept.length - 1]) && LIST_RE.test(add[0] ?? "")) ? [""] : [];
   return [
     ...lines.slice(0, section.start + 1),
