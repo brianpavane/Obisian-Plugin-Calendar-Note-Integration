@@ -281,9 +281,9 @@ export class CalendarService {
     return this.appleApi?.queriedCalendars;
   }
 
-  /** IDs of every event the last fetch returned across its whole date range (Apple Calendar only). */
-  fetchedEventIds(): Set<string> | undefined {
-    return this.appleApi?.fetchedIds;
+  /** Every event the last fetch returned across its whole date range (Apple Calendar only). */
+  fetchedEvents(): CalendarEvent[] | undefined {
+    return this.appleApi?.fetched;
   }
 
   async fetchAllEvents(): Promise<CalendarEvent[]> {

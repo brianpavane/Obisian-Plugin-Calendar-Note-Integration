@@ -93,7 +93,7 @@ test("refreshNotes bootstraps existing files and only creates genuinely new note
   plugin.getCalendarService = async () =>
     ({
       queriedCalendars: () => undefined,
-      fetchedEventIds: () => undefined,
+      fetchedEvents: () => undefined,
       listEventsInTimeWindow: async () => [existingEvent, newEvent],
     } as never);
 
@@ -118,7 +118,7 @@ test("refreshNotes filters all-day and declined self events", async () => {
   plugin.getCalendarService = async () =>
     ({
       queriedCalendars: () => undefined,
-      fetchedEventIds: () => undefined,
+      fetchedEvents: () => undefined,
       listEventsInTimeWindow: async () => [
         buildEvent({ id: "all-day", start: { date: "2026-04-03" }, end: { date: "2026-04-04" } }),
         buildEvent({
@@ -153,7 +153,7 @@ test("refreshNotes filters events declined by the calendar's self attendee witho
   plugin.getCalendarService = async () =>
     ({
       queriedCalendars: () => undefined,
-      fetchedEventIds: () => undefined,
+      fetchedEvents: () => undefined,
       listEventsInTimeWindow: async () => [
         buildEvent({
           id: "declined",
@@ -186,7 +186,7 @@ test("rebuildNotes recreates deleted files even if the event was already process
   plugin.getCalendarService = async () =>
     ({
       queriedCalendars: () => undefined,
-      fetchedEventIds: () => undefined,
+      fetchedEvents: () => undefined,
       listEventsInTimeWindow: async () => [buildEvent()],
     } as never);
 
@@ -245,7 +245,7 @@ test("refreshNotes updates an existing note and renames it when the meeting move
 
   const original = buildEvent({ id: "moving", summary: "Planning", location: "Room B" });
   plugin.getCalendarService = async () =>
-    ({ queriedCalendars: () => undefined, fetchedEventIds: () => undefined, listEventsInTimeWindow: async () => [original] } as never);
+    ({ queriedCalendars: () => undefined, fetchedEvents: () => undefined, listEventsInTimeWindow: async () => [original] } as never);
   await plugin.refreshNotes(false);
 
   const file = app.files.get("Meeting Notes/2026-04-03 - Planning.md") as TFile;
@@ -258,7 +258,7 @@ test("refreshNotes updates an existing note and renames it when the meeting move
     end: { dateTime: "2026-04-06T09:30:00-04:00" },
   });
   plugin.getCalendarService = async () =>
-    ({ queriedCalendars: () => undefined, fetchedEventIds: () => undefined, listEventsInTimeWindow: async () => [moved] } as never);
+    ({ queriedCalendars: () => undefined, fetchedEvents: () => undefined, listEventsInTimeWindow: async () => [moved] } as never);
   await plugin.refreshNotes(true);
 
   assert.deepEqual(app.renamed, [
@@ -278,13 +278,13 @@ test("refreshNotes marks an existing note cancelled but never creates notes for 
   plugin.settings = appleSettings();
 
   plugin.getCalendarService = async () =>
-    ({ queriedCalendars: () => undefined, fetchedEventIds: () => undefined, listEventsInTimeWindow: async () => [buildEvent({ id: "a", summary: "Kept" })] } as never);
+    ({ queriedCalendars: () => undefined, fetchedEvents: () => undefined, listEventsInTimeWindow: async () => [buildEvent({ id: "a", summary: "Kept" })] } as never);
   await plugin.refreshNotes(false);
 
   plugin.getCalendarService = async () =>
     ({
       queriedCalendars: () => undefined,
-      fetchedEventIds: () => undefined,
+      fetchedEvents: () => undefined,
       listEventsInTimeWindow: async () => [
         buildEvent({ id: "a", summary: "Kept", cancelled: true }),
         buildEvent({ id: "b", summary: "Never", cancelled: true }),
@@ -303,7 +303,7 @@ test("runStartupSweep rebuilds once after an upgrade, then refreshes", async () 
   const plugin = createPlugin(app);
   plugin.settings = appleSettings({ processedEventIds: ["deleted"], lastRunVersion: "6.6.1" });
   plugin.getCalendarService = async () =>
-    ({ queriedCalendars: () => undefined, fetchedEventIds: () => undefined, listEventsInTimeWindow: async () => [buildEvent({ id: "deleted", summary: "Back" })] } as never);
+    ({ queriedCalendars: () => undefined, fetchedEvents: () => undefined, listEventsInTimeWindow: async () => [buildEvent({ id: "deleted", summary: "Back" })] } as never);
 
   await plugin.runStartupSweep();
   assert.deepEqual(app.createdPaths, ["Meeting Notes/2026-04-03 - Back.md"]);
@@ -331,7 +331,7 @@ test("refreshNotes leaves unchanged notes untouched", async () => {
   const plugin = createPlugin(app);
   plugin.settings = appleSettings();
   plugin.getCalendarService = async () =>
-    ({ queriedCalendars: () => undefined, fetchedEventIds: () => undefined, listEventsInTimeWindow: async () => [buildEvent({ id: "same", summary: "Same" })] } as never);
+    ({ queriedCalendars: () => undefined, fetchedEvents: () => undefined, listEventsInTimeWindow: async () => [buildEvent({ id: "same", summary: "Same" })] } as never);
   await plugin.refreshNotes(false);
 
   let writes = 0;
@@ -358,7 +358,7 @@ test("refreshNotes uses the template note and the Daily Notes format", async () 
   const plugin = createPlugin(app);
   plugin.settings = appleSettings({ templatePath: "Templates/Meeting" });
   plugin.getCalendarService = async () =>
-    ({ queriedCalendars: () => undefined, fetchedEventIds: () => undefined, listEventsInTimeWindow: async () => [buildEvent({ id: "t", summary: "Templated" })] } as never);
+    ({ queriedCalendars: () => undefined, fetchedEvents: () => undefined, listEventsInTimeWindow: async () => [buildEvent({ id: "t", summary: "Templated" })] } as never);
 
   await plugin.refreshNotes(false);
 
@@ -373,7 +373,7 @@ test("refreshNotes falls back to the built-in format when the template is missin
   const plugin = createPlugin(app);
   plugin.settings = appleSettings({ templatePath: "Templates/Missing.md", dailyNoteLink: false });
   plugin.getCalendarService = async () =>
-    ({ queriedCalendars: () => undefined, fetchedEventIds: () => undefined, listEventsInTimeWindow: async () => [buildEvent({ id: "m", summary: "Fallback" })] } as never);
+    ({ queriedCalendars: () => undefined, fetchedEvents: () => undefined, listEventsInTimeWindow: async () => [buildEvent({ id: "m", summary: "Fallback" })] } as never);
 
   await plugin.refreshNotes(true);
 
@@ -383,11 +383,11 @@ test("refreshNotes falls back to the built-in format when the template is missin
   assert.ok(getNotices().some((n) => /template "Templates\/Missing\.md" not found/.test(n.message)));
 });
 
-function appleService(events: ReturnType<typeof buildEvent>[], calendars: string[], allIds?: string[]) {
+function appleService(events: ReturnType<typeof buildEvent>[], calendars: string[], all?: ReturnType<typeof buildEvent>[]) {
   return async () =>
     ({
       queriedCalendars: () => calendars,
-      fetchedEventIds: () => new Set(allIds ?? events.map((e) => e.id)),
+      fetchedEvents: () => all ?? events,
       listEventsInTimeWindow: async () => events,
     } as never);
 }
@@ -419,7 +419,7 @@ test("refreshNotes marks notes of meetings deleted from the calendar, and restor
   assert.match(workNote(), /^> \[!info\] Meeting details$/m);
 });
 
-test("refreshNotes does not mark a meeting removed when it moved outside the window", async () => {
+test("refreshNotes renames the note of a meeting moved outside the window, without marking it removed", async () => {
   const app = createMemoryApp([{ path: "Meeting Notes", content: "" }]);
   const plugin = createPlugin(app);
   plugin.settings = appleSettings();
@@ -427,11 +427,40 @@ test("refreshNotes does not mark a meeting removed when it moved outside the win
   plugin.getCalendarService = appleService([meeting], ["Work"]);
   await plugin.refreshNotes(false);
 
-  plugin.getCalendarService = appleService([], ["Work"], ["moved"]);
+  const later = buildEvent({
+    id: "moved",
+    summary: "Moved",
+    calendarName: "Work",
+    start: { dateTime: "2026-04-09T10:00:00-04:00" },
+    end: { dateTime: "2026-04-09T11:00:00-04:00" },
+  });
+  plugin.getCalendarService = appleService([], ["Work"], [later]);
   await plugin.refreshNotes(false);
 
-  const content = (app.files.get("Meeting Notes/2026-04-03 - Moved.md") as TFile).content ?? "";
+  assert.deepEqual(app.renamed, [
+    ["Meeting Notes/2026-04-03 - Moved.md", "Meeting Notes/2026-04-09 - Moved.md"],
+  ]);
+  const content = (app.files.get("Meeting Notes/2026-04-09 - Moved.md") as TFile).content ?? "";
+  assert.match(content, /^start: 2026-04-09T10:00$/m);
   assert.doesNotMatch(content, /status:/);
+  assert.equal(app.createdPaths.length, 1);
+});
+
+test("refreshNotes does not create notes for meetings outside the window", async () => {
+  const app = createMemoryApp([{ path: "Meeting Notes", content: "" }]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+  const later = buildEvent({
+    id: "later",
+    summary: "Later",
+    calendarName: "Work",
+    start: { dateTime: "2026-04-09T10:00:00-04:00" },
+    end: { dateTime: "2026-04-09T11:00:00-04:00" },
+  });
+  plugin.getCalendarService = appleService([], ["Work"], [later]);
+  await plugin.refreshNotes(false);
+
+  assert.deepEqual(app.createdPaths, []);
 });
 
 test("a failed background sync shows one notice until a sync succeeds", async () => {
@@ -518,14 +547,14 @@ test("refreshNotes links each recurring meeting to the previous one and carries 
     end: { dateTime: `2026-04-0${day}T10:30:00-04:00` },
   });
   plugin.getCalendarService = async () =>
-    ({ queriedCalendars: () => undefined, fetchedEventIds: () => undefined, listEventsInTimeWindow: async () => [occurrence("3")] } as never);
+    ({ queriedCalendars: () => undefined, fetchedEvents: () => undefined, listEventsInTimeWindow: async () => [occurrence("3")] } as never);
   await plugin.refreshNotes(false);
 
   const first = app.files.get("Meeting Notes/2026-04-03 - Weekly Sync.md") as TFile;
   first.content = (first.content ?? "").replace("## Action items\n\n- [ ] ", "## Action items\n\n- [ ] Send deck\n- [x] Book room\n- [ ] ");
 
   plugin.getCalendarService = async () =>
-    ({ queriedCalendars: () => undefined, fetchedEventIds: () => undefined, listEventsInTimeWindow: async () => [occurrence("3"), occurrence("4")] } as never);
+    ({ queriedCalendars: () => undefined, fetchedEvents: () => undefined, listEventsInTimeWindow: async () => [occurrence("3"), occurrence("4")] } as never);
   await plugin.refreshNotes(false);
 
   const second = (app.files.get("Meeting Notes/2026-04-04 - Weekly Sync.md") as TFile).content ?? "";
@@ -542,7 +571,7 @@ test("loadDayEvents reads the given day midnight to midnight and drops all-day a
   plugin.getCalendarService = async () =>
     ({
       queriedCalendars: () => undefined,
-      fetchedEventIds: () => undefined,
+      fetchedEvents: () => undefined,
       listEventsInTimeWindow: async (min: Date, max: Date) => {
         window = [min, max];
         return [
@@ -564,7 +593,7 @@ test("loadDayEvents reads the given day midnight to midnight and drops all-day a
 const serviceFor = (events: ReturnType<typeof buildEvent>[]) => async () =>
   ({
     queriedCalendars: () => undefined,
-    fetchedEventIds: () => undefined,
+    fetchedEvents: () => undefined,
     listEventsInTimeWindow: async () => events,
   } as never);
 

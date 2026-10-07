@@ -500,8 +500,8 @@ export async function runAppleCalendarDiagnostic(calendarFilter: string[] = []):
 export class AppleCalendarApi {
   /** Calendars covered by the most recent successful fetch. */
   queriedCalendars: string[] = [];
-  /** IDs of every event in the most recent successful fetch (whole date range). */
-  fetchedIds = new Set<string>();
+  /** Every event in the most recent successful fetch (whole date range). */
+  fetched: CalendarEvent[] = [];
 
   constructor(
     private readonly calendarFilter: string[] = [],
@@ -521,7 +521,7 @@ export class AppleCalendarApi {
       ? result.calendars.map((n) => safeStr(n, 200)).filter(Boolean)
       : [];
     const events = parseJxaEvents(JSON.stringify(result.events), this.calendarFilter);
-    this.fetchedIds = new Set(events.map((e) => e.id));
+    this.fetched = events;
     console.debug(
       `[CalendarNoteIntegration] Apple Calendar: ${events.length} event(s) from ` +
       `${this.queriedCalendars.length} calendar(s) in ${Date.now() - t0}ms`

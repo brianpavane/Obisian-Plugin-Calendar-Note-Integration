@@ -324,7 +324,7 @@ The plugin never edits daily notes, and the link moves with the meeting if it is
 
 Every poll, Refresh, and Rebuild updates the notes of meetings in the time window. The plugin only rewrites the calendar properties listed above (title, date, daily note, previous meeting, start, end, calendar, organizer, attendees, location, meeting link, status, and event ID) and the **Meeting details** box. Everything else in the note — your writing, extra properties, and tags you add — is never changed.
 
-If a meeting moves to another day, its note is renamed to the new date (a title you edited in the filename is kept).
+If a meeting moves to another day, its note is renamed to the new date on the next sync (a title you edited in the filename is kept). This works for any new date in the look-ahead range, even if it's beyond the window in which new notes are created.
 
 If a meeting disappears from Apple Calendar (deleted rather than cancelled), its note is marked `status: removed` with a red **Meeting removed from calendar** box. This only happens for meetings in the time window and from calendars the plugin read, so turning a calendar off never marks its notes. If the meeting comes back — for example it was moved more than a week out and is now back in range — the next sync restores the note. Notes created by versions before 6.7 get their properties updated but keep their original layout.
 

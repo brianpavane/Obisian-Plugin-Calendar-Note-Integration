@@ -86,6 +86,8 @@ interface FetchResult {
   live: CalendarEvent[];
   /** IDs of every event the calendar returned across its whole date range, before any filtering. */
   seenIds: Set<string>;
+  /** Filtered events from the whole date range that start outside the window (e.g. a meeting moved to later in the week). */
+  outsideWindow: CalendarEvent[];
   /** Calendars the fetch covered; undefined when the source can't tell. */
   queriedCalendars?: string[];
   timeMin: Date;
@@ -762,12 +764,12 @@ export default class GoogleCalendarPlugin extends Plugin {
 
     let raw: CalendarEvent[];
     let queriedCalendars: string[] | undefined;
-    let fetchedIds: Set<string> | undefined;
+    let all: CalendarEvent[] | undefined;
     try {
       const svc = await this.getCalendarService();
       raw = await svc.listEventsInTimeWindow(fetchMin, timeMax);
       queriedCalendars = svc.queriedCalendars();
-      fetchedIds = svc.fetchedEventIds();
+      all = svc.fetchedEvents();
     } catch (err) {
       if (verbose) {
         new Notice(`Calendar Notes: ${safeErrorMessage(err)}`);
@@ -779,18 +781,21 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
     this.lastFetchFailed = false;
 
-    let filtered = this.filterOutAllDay(raw);
-    filtered = this.filterDeclinedEvents(filtered);
-    filtered = this.markSelfAttendee(filtered);
+    const filter = (events: CalendarEvent[]) =>
+      this.markSelfAttendee(this.filterDeclinedEvents(this.filterOutAllDay(events)));
+    const filtered = filter(raw);
 
     const live = filtered.filter((e) => !e.cancelled);
     this.liveEvents = live;
     this.updateStatusBar();
 
+    const events = filtered.filter((e) => new Date(e.start.dateTime ?? "") >= timeMin);
+    const inWindow = new Set(events.map((e) => e.id));
     return {
-      events: filtered.filter((e) => new Date(e.start.dateTime ?? "") >= timeMin),
+      events,
       live,
-      seenIds: fetchedIds ?? new Set(raw.map((e) => e.id)),
+      seenIds: new Set((all ?? raw).map((e) => e.id)),
+      outsideWindow: all ? filter(all).filter((e) => !inWindow.has(e.id)) : [],
       queriedCalendars,
       timeMin,
       timeMax,
@@ -837,7 +842,9 @@ export default class GoogleCalendarPlugin extends Plugin {
    *
    *  - A note whose `calendar_event_id` matches the event has its calendar
    *    details (managed properties and the "Meeting details" callout) updated,
-   *    and is renamed if the meeting moved to another day.
+   *    and is renamed if the meeting moved to another day. This also covers
+   *    notes of meetings fetched outside the window, so a meeting moved to
+   *    later in the week is renamed straight away.
    *  - Otherwise a note is created, unless the event was already processed
    *    (its note was deliberately deleted) and `recreateDeleted` is false, or
    *    the event is cancelled.
@@ -883,6 +890,17 @@ export default class GoogleCalendarPlugin extends Plugin {
         notesById.set(event.id, result.file);
         if (result.wasCreated) created++;
         markProcessed(event.id);
+      } catch (err) {
+        console.warn("[CalendarNoteIntegration] Failed to sync note for event:", err);
+      }
+    }
+
+    for (const event of fetched.outsideWindow) {
+      const existing = notesById.get(event.id);
+      if (!existing) continue;
+      try {
+        const series = await seriesOptions(this.app, notesById, event, false);
+        if (await syncNoteFile(this.app, existing, event, { ...options, ...series })) updated++;
       } catch (err) {
         console.warn("[CalendarNoteIntegration] Failed to sync note for event:", err);
       }

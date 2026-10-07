@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+**Notes of meetings moved to a later day are renamed right away**
+Moving a meeting from today to later in the week used to leave its note under the old date until the new day came within the creation window. The next sync now renames the note to the new date and updates its time, as long as the new date is within the look-ahead range (7 days by default).
+
+---
+
 ## [6.16.0] – 2026-10-07
 
 ### Added
