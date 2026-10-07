@@ -45,6 +45,8 @@ export interface GoogleCalendarSettings {
   appleCalendars: string;
   selfEmail: string;
   noteFolder: string;
+  /** Folder for the Meeting Tracker, dashboard and weekly reviews; empty = the note folder. */
+  hubFolder: string;
   hoursInAdvance: number;
   pollIntervalMinutes: number;
   includePastEvents: boolean;
@@ -92,6 +94,7 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   appleCalendars: "",
   selfEmail: "",
   noteFolder: "Meeting Notes",
+  hubFolder: "",
   hoursInAdvance: 12,
   pollIntervalMinutes: 30,
   includePastEvents: false,
@@ -611,6 +614,34 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           });
       });
+
+    new Setting(containerEl)
+      .setName("Meeting Hub folder")
+      .setDesc("Vault folder for the Meeting Tracker, the Meetings dashboard and Weekly Reviews. Leave empty to use the note folder.")
+      .addText((text) => {
+        new FolderSuggest(this.app, text.inputEl);
+        text
+          .setPlaceholder("Same as note folder")
+          .setValue(this.plugin.settings.hubFolder)
+          .onChange(async (value) => {
+            this.plugin.settings.hubFolder = value.trim();
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Move existing files")
+      .setDesc("Move the Meeting Tracker, the Meetings dashboard and Weekly Reviews from the note folder into the Meeting Hub folder. Links to them keep working.")
+      .addButton((button) =>
+        button.setButtonText("Move existing files").onClick(async () => {
+          button.setDisabled(true);
+          try {
+            await this.plugin.moveHubFiles();
+          } finally {
+            button.setDisabled(false);
+          }
+        })
+      );
 
     new Setting(containerEl)
       .setName("Hours in advance")

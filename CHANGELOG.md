@@ -9,6 +9,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+**Meeting Hub folder**
+A new **Meeting Hub folder** setting keeps the Meeting Tracker, the Meetings dashboard and Weekly Reviews out of your meeting-notes folder. Leave it empty to keep them in the note folder as before. A **Move existing files** button moves the ones you already have, keeping links to them and your writing in weekly reviews.
+
 ### Fixed
 
 **Notes of meetings moved to a later day are renamed right away**

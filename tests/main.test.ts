@@ -833,3 +833,55 @@ test("Open this week's review creates the Weekly Reviews folder and keeps the us
   await plugin.openWeeklyReview(-1);
   assert.ok(app.files.has("Work/Meeting Notes/Weekly Reviews/2026-W13 Weekly Review.md"));
 });
+
+test("the tracker, dashboard and weekly reviews go in the Meeting Hub folder when one is set", async () => {
+  const app = createMemoryApp();
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ hubFolder: "Meeting Hub" });
+
+  await plugin.openTracker();
+  await plugin.openDashboard();
+  await plugin.openWeeklyReview(0);
+
+  assert.deepEqual(app.createdPaths, [
+    "Meeting Hub/Meeting Tracker.md",
+    "Meeting Hub/Meetings.base",
+    "Meeting Hub/Weekly Reviews/2026-W14 Weekly Review.md",
+  ]);
+});
+
+test("Move existing files moves the tracker, dashboard and weekly reviews into the Meeting Hub folder", async () => {
+  const app = createMemoryApp([
+    { path: "Meeting Notes", content: "" },
+    { path: "Meeting Notes/Meeting Tracker.md", content: "old tracker" },
+    { path: "Meeting Notes/Meetings.base", content: "base" },
+    { path: "Meeting Notes/Weekly Reviews/2026-W13 Weekly Review.md", content: "### Wins\n\n- Kept" },
+    { path: "Meeting Notes/Weekly Reviews/2026-W14 Weekly Review.md", content: "older copy" },
+    { path: "Meeting Notes/2026-04-03 - Planning.md", content: "meeting" },
+    { path: "Meeting Hub/Weekly Reviews/2026-W14 Weekly Review.md", content: "newer copy" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ hubFolder: "Meeting Hub" });
+
+  await plugin.moveHubFiles();
+
+  assert.deepEqual(app.renamed, [
+    ["Meeting Notes/Meeting Tracker.md", "Meeting Hub/Meeting Tracker.md"],
+    ["Meeting Notes/Meetings.base", "Meeting Hub/Meetings.base"],
+    ["Meeting Notes/Weekly Reviews/2026-W13 Weekly Review.md", "Meeting Hub/Weekly Reviews/2026-W13 Weekly Review.md"],
+  ]);
+  assert.equal((app.files.get("Meeting Hub/Weekly Reviews/2026-W14 Weekly Review.md") as TFile).content, "newer copy");
+  assert.ok(app.files.has("Meeting Notes/2026-04-03 - Planning.md"));
+  assert.match(getNotices().at(-1)?.message ?? "", /Moved 3 files to Meeting Hub\. Left 2026-W14 Weekly Review\.md in place/);
+});
+
+test("Move existing files does nothing when the Meeting Hub folder is the note folder", async () => {
+  const app = createMemoryApp([{ path: "Meeting Notes/Meeting Tracker.md", content: "tracker" }]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+
+  await plugin.moveHubFiles();
+
+  assert.deepEqual(app.renamed, []);
+  assert.match(getNotices().at(-1)?.message ?? "", /set a different folder first/);
+});

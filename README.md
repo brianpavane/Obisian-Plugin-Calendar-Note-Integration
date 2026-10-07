@@ -121,6 +121,7 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Note folder | Meeting Notes | Vault-relative folder for created notes. You can move notes anywhere in the vault afterwards — the plugin finds them by their `calendar_event_id` property |
+| Meeting Hub folder | *(empty — same as note folder)* | Folder for the Meeting Tracker, the `Meetings.base` dashboard and `Weekly Reviews`, e.g. `Meeting Hub`. After changing it, click **Move existing files** to move the ones you already have (links to them keep working; a file already in the new folder is left in place) |
 | Hours in advance | 12 | Create notes for events starting within this many hours (1–48) |
 | Poll interval | 30 min | How often to check for new upcoming events (5–120) |
 | Include past events | Off | Also create notes for events that have already started |
@@ -372,11 +373,11 @@ Both steps are optional. The note's sections are there for you to write in by ha
 | **Create note for next upcoming event** | Immediately creates and opens a note for the next upcoming event |
 | **Auto-create notes for events in the next N hours** | Runs the same sweep as the background poll right away (N = **Hours in advance**) |
 | **Join current or next meeting** | Opens the note for the meeting in progress (or starting within 30 minutes), creating it if needed, and opens its join link |
-| **Open meetings dashboard** | Opens `Meetings.base` in your meeting-notes folder (created on first use) |
+| **Open meetings dashboard** | Opens `Meetings.base` in your Meeting Hub folder (created on first use) |
 | **Open today's meetings** | Shows today's meetings in the right sidebar, with Open note and Join buttons, arrows to other days, and a New note button |
 | **Open meeting action items** | Shows every open action item from your meeting notes in the right sidebar |
-| **Open this week's review** / **Open last week's review** | Creates (or refreshes) the week's review note in `Weekly Reviews` inside your meeting-notes folder — see [Weekly review](docs/DASHBOARDS.md#5-weekly-review) |
-| **Open meeting tracker** | Rebuilds and opens `Meeting Tracker.md` in your meeting-notes folder: overdue, due soon, high priority, by account, by person, recent decisions, this week's meetings |
+| **Open this week's review** / **Open last week's review** | Creates (or refreshes) the week's review note in `Weekly Reviews` inside your Meeting Hub folder — see [Weekly review](docs/DASHBOARDS.md#5-weekly-review) |
+| **Open meeting tracker** | Rebuilds and opens `Meeting Tracker.md` in your Meeting Hub folder: overdue, due soon, high priority, by account, by person, recent decisions, this week's meetings |
 | **Import Krisp transcript into this note** | Suggests the open note's Krisp recording and, once you confirm, fills its empty Transcript section — see [Krisp transcripts](#krisp-transcripts) |
 | **Copy meeting for AI assistant** | Copies the open note's meeting details, notes and transcript (and, if switched on, the instructions) — see [AI summaries](#ai-summaries-copy-and-paste) |
 | **Add AI reply to this meeting** | Files the AI reply on the clipboard into the open note's Meeting Summary, Decisions and Action items, and its properties |

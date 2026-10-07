@@ -332,6 +332,56 @@ export default class GoogleCalendarPlugin extends Plugin {
     return meetings;
   }
 
+  /** The note folder, normalized; "" = vault root. */
+  private noteFolderPath(): string {
+    return this.settings.noteFolder.trim() ? normalizePath(this.settings.noteFolder.trim()) : "";
+  }
+
+  /** Folder for the tracker, dashboard and weekly reviews; an empty setting means the note folder. */
+  private hubFolderPath(): string {
+    return this.settings.hubFolder.trim() ? normalizePath(this.settings.hubFolder.trim()) : this.noteFolderPath();
+  }
+
+  /**
+   * Move the tracker, dashboard and weekly reviews from the note folder into
+   * the Meeting Hub folder, keeping links to them. A file already at its
+   * destination is left where it is.
+   */
+  async moveHubFiles(): Promise<void> {
+    const from = this.noteFolderPath();
+    const to = this.hubFolderPath();
+    if (from === to) {
+      new Notice("Calendar Notes: The Meeting Hub folder is the note folder — set a different folder first.");
+      return;
+    }
+    const inFolder = (folder: string, name: string) => normalizePath(folder ? `${folder}/${name}` : name);
+    const reviews = `${inFolder(from, REVIEW_FOLDER)}/`;
+    const sources = this.app.vault.getAllLoadedFiles().filter(
+      (f): f is TFile =>
+        f instanceof TFile &&
+        (f.path === inFolder(from, TRACKER_FILENAME) || f.path === inFolder(from, DASHBOARD_FILENAME) || f.path.startsWith(reviews))
+    );
+
+    let moved = 0;
+    const skipped: string[] = [];
+    for (const file of sources) {
+      const dest = inFolder(to, from ? file.path.slice(from.length + 1) : file.path);
+      if (this.app.vault.getAbstractFileByPath(dest)) {
+        skipped.push(file.name);
+        continue;
+      }
+      await this.ensureFolder(dest.slice(0, dest.lastIndexOf("/")));
+      await this.app.fileManager.renameFile(file, dest);
+      moved++;
+    }
+
+    const parts = [
+      moved > 0 ? `Moved ${moved} file${moved !== 1 ? "s" : ""} to ${to || "the vault root"}.` : "Nothing to move.",
+      ...(skipped.length > 0 ? [`Left ${skipped.join(", ")} in place — already in the Meeting Hub folder.`] : []),
+    ];
+    new Notice(`Calendar Notes: ${parts.join(" ")}`);
+  }
+
   /** Create a folder and any missing folders above it. */
   private async ensureFolder(path: string): Promise<void> {
     let current = "";
@@ -356,7 +406,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       today,
       `${today} ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
     );
-    const base = this.settings.noteFolder.trim() ? normalizePath(this.settings.noteFolder.trim()) : "";
+    const base = this.hubFolderPath();
     const folder = normalizePath(base ? `${base}/${REVIEW_FOLDER}` : REVIEW_FOLDER);
     const path = normalizePath(`${folder}/${reviewFilename(week)}`);
     let file = this.app.vault.getAbstractFileByPath(path);
@@ -369,7 +419,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     await this.app.workspace.getLeaf(false).openFile(file as TFile);
   }
 
-  /** Rebuild the Meeting Tracker note in the note folder and open it. */
+  /** Rebuild the Meeting Tracker note in the Meeting Hub folder and open it. */
   async openTracker(): Promise<void> {
     const now = this.now();
     const content = buildTracker(
@@ -377,7 +427,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       localDate(now),
       `${localDate(now)} ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
     );
-    const folder = this.settings.noteFolder.trim() ? normalizePath(this.settings.noteFolder.trim()) : "";
+    const folder = this.hubFolderPath();
     const path = normalizePath(folder ? `${folder}/${TRACKER_FILENAME}` : TRACKER_FILENAME);
     let file = this.app.vault.getAbstractFileByPath(path);
     if (file instanceof TFile) {
@@ -391,13 +441,11 @@ export default class GoogleCalendarPlugin extends Plugin {
 
   /** Open the meetings dashboard (a Bases file), creating it on first use. */
   async openDashboard(): Promise<void> {
-    const folder = this.settings.noteFolder.trim() ? normalizePath(this.settings.noteFolder.trim()) : "";
+    const folder = this.hubFolderPath();
     const path = normalizePath(folder ? `${folder}/${DASHBOARD_FILENAME}` : DASHBOARD_FILENAME);
     let file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) {
-      if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
-        await this.app.vault.createFolder(folder);
-      }
+      if (folder) await this.ensureFolder(folder);
       file = await this.app.vault.create(path, DASHBOARD_CONTENT);
     }
     await this.app.workspace.getLeaf(false).openFile(file as TFile);
@@ -551,6 +599,9 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
     if (typeof merged.dailyNoteLink !== "boolean") {
       merged.dailyNoteLink = DEFAULT_SETTINGS.dailyNoteLink;
+    }
+    if (typeof merged.hubFolder !== "string") {
+      merged.hubFolder = DEFAULT_SETTINGS.hubFolder;
     }
     if (typeof merged.templatePath !== "string") {
       merged.templatePath = DEFAULT_SETTINGS.templatePath;

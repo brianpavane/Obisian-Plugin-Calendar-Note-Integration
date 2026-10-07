@@ -208,7 +208,7 @@ When grouped by person or due date, each item shows which meeting it came from. 
 
 ### What it is
 
-A table of all your meeting notes, with tabs for **Next 7 days**, **Last 7 days**, **By account**, **By category** and **All meetings**. It is an Obsidian **Bases** file named `Meetings.base`, saved in your meeting-notes folder.
+A table of all your meeting notes, with tabs for **Next 7 days**, **Last 7 days**, **By account**, **By category** and **All meetings**. It is an Obsidian **Bases** file named `Meetings.base`, saved in your Meeting Hub folder (the meeting-notes folder unless you set one in settings).
 
 **Requires Obsidian 1.9 or later** (Bases was added in 1.9). Check your version under **Settings → About**.
 
@@ -218,7 +218,7 @@ Click the **dashboard** button (four squares) in the left ribbon.
 
 Or: press **Cmd + P**, type `meetings dashboard`, and choose **Open meetings dashboard**.
 
-The first time, the plugin creates `Meetings.base` in your meeting-notes folder and opens it. After that you can also open it by clicking **Meetings.base** in the file list on the left, like any note.
+The first time, the plugin creates `Meetings.base` in your Meeting Hub folder and opens it. After that you can also open it by clicking **Meetings.base** in the file list on the left, like any note.
 
 ### What you see
 
@@ -254,7 +254,7 @@ It needs no other plugins. Accounts and categories come from the `account` and `
 
 Click the **gauge** button in the left ribbon, or press **Cmd + P** and run **Open meeting tracker**.
 
-It's a snapshot: each time you open it this way, the plugin rebuilds `Meeting Tracker.md` in your meeting-notes folder with the latest numbers. Don't write in it — your edits are replaced the next time. To tick an item off, use the **Meeting action items** panel or the meeting's own note, then reopen the tracker.
+It's a snapshot: each time you open it this way, the plugin rebuilds `Meeting Tracker.md` in your Meeting Hub folder with the latest numbers. Don't write in it — your edits are replaced the next time. To tick an item off, use the **Meeting action items** panel or the meeting's own note, then reopen the tracker.
 
 The items are plain bullets, not checkboxes, so the action items panel and the Tasks plugin never count them twice.
 
@@ -264,7 +264,7 @@ The items are plain bullets, not checkboxes, so the action items panel and the T
 
 ### What it is
 
-One note per week (Monday to Sunday), named like `2026-W41 Weekly Review.md`, in a **Weekly Reviews** folder inside your meeting-notes folder. The plugin creates the folder the first time.
+One note per week (Monday to Sunday), named like `2026-W41 Weekly Review.md`, in a **Weekly Reviews** folder inside your Meeting Hub folder. The plugin creates the folder the first time.
 
 The top part is filled in for you:
 
