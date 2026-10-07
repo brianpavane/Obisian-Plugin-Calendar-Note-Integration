@@ -11,7 +11,7 @@
  *   30m 9s
  */
 
-import { App, FuzzySuggestModal } from "obsidian";
+import { App, FuzzySuggestModal, Modal, Setting } from "obsidian";
 import { promises as fs, Stats } from "fs";
 import { homedir } from "os";
 import { join } from "path";
@@ -20,8 +20,13 @@ const TRANSCRIPT_FILES = ["transcript.txt", "transcript.md"];
 /** The " - October 6, 2026 2-30-24 PM" Krisp adds to titles and folder names. */
 const STAMP_RE = /\s+-\s+([A-Za-z]+ \d{1,2}, \d{4}) (\d{1,2})-(\d{2})-(\d{2}) ([AP]M)\s*$/i;
 const HEADER_BYTES = 2_048;
-const MATCH_BEFORE_MS = 20 * 60_000;
-const MATCH_AFTER_MS = 30 * 60_000;
+/** Earliest a recording can start before the meeting and still be offered. */
+const EARLIEST_MS = 10 * 60_000;
+/** The usual join window: 2 minutes early to 7 minutes late. */
+const JOIN_EARLY_MS = 2 * 60_000;
+const JOIN_LATE_MS = 7 * 60_000;
+/** Length assumed for a meeting note without an end time. */
+const DEFAULT_LENGTH_MS = 30 * 60_000;
 
 export interface KrispHeader {
   title: string;
@@ -130,32 +135,64 @@ export async function listRecordings(folder: string, since?: Date): Promise<Reco
 const normalize = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 /**
- * The recording of a meeting: one made from 20 minutes before it starts to 30
- * minutes after it ends, preferring a matching title, then the closest start.
+ * Recordings that could be the meeting's, best first: started from 10 minutes
+ * before the meeting until it ends, ranked by matching title, then a start
+ * from 2 minutes before to 7 minutes after the meeting's (the usual join
+ * time), then the closest start.
  */
-export function matchRecording(recordings: Recording[], meeting: MeetingTime): Recording | undefined {
-  const from = meeting.start.getTime() - MATCH_BEFORE_MS;
-  const to = meeting.end.getTime() + MATCH_AFTER_MS;
+export function candidateRecordings(recordings: Recording[], meeting: MeetingTime): Recording[] {
+  const start = meeting.start.getTime();
+  const end = Math.max(meeting.end.getTime(), start + DEFAULT_LENGTH_MS);
   const title = normalize(meeting.title);
   const titleMatches = (r: Recording) => {
     const other = normalize(r.title);
     return !!title && !!other && (other.includes(title) || title.includes(other));
   };
-  const distance = (r: Recording) => Math.abs(r.time.getTime() - meeting.start.getTime());
+  const offset = (r: Recording) => r.time.getTime() - start;
+  const onTime = (r: Recording) => offset(r) >= -JOIN_EARLY_MS && offset(r) <= JOIN_LATE_MS;
   return recordings
-    .filter((r) => r.time.getTime() >= from && r.time.getTime() <= to)
-    .sort((a, b) => Number(titleMatches(b)) - Number(titleMatches(a)) || distance(a) - distance(b))[0];
+    .filter((r) => offset(r) >= -EARLIEST_MS && r.time.getTime() < end)
+    .sort((a, b) =>
+      Number(titleMatches(b)) - Number(titleMatches(a)) ||
+      Number(onTime(b)) - Number(onTime(a)) ||
+      Math.abs(offset(a)) - Math.abs(offset(b)));
 }
 
 export async function readTranscript(recording: Recording): Promise<string[]> {
   return transcriptBody(await fs.readFile(recording.path, "utf8"));
 }
 
-/** Pick a recording by hand when none matches the meeting. */
+export function recordingLabel(recording: Recording): string {
+  const when = recording.time.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+  return `${recording.title} — ${when}`;
+}
+
+/** A meeting note waiting for its transcript, and the recordings that could be it. */
+export interface TranscriptProposal<F> {
+  file: F;
+  meeting: MeetingTime;
+  candidates: Recording[];
+}
+
+/**
+ * The recording to preselect for each proposal: its best candidate not
+ * already preselected for an earlier one (so double-booked meetings don't
+ * both get the same recording), or undefined.
+ */
+export function preselect<F>(proposals: TranscriptProposal<F>[]): Array<Recording | undefined> {
+  const taken = new Set<string>();
+  return proposals.map((p) => {
+    const choice = p.candidates.find((r) => !taken.has(r.name));
+    if (choice) taken.add(choice.name);
+    return choice;
+  });
+}
+
+/** Pick any recording by hand. */
 export class RecordingSuggestModal extends FuzzySuggestModal<Recording> {
   constructor(app: App, private readonly recordings: Recording[], private readonly onChoose: (r: Recording) => void) {
     super(app);
-    this.setPlaceholder("No recording matches this meeting's time — choose one");
+    this.setPlaceholder("Choose the Krisp recording for this meeting");
   }
 
   getItems(): Recording[] {
@@ -163,11 +200,80 @@ export class RecordingSuggestModal extends FuzzySuggestModal<Recording> {
   }
 
   getItemText(recording: Recording): string {
-    const when = recording.time.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
-    return `${recording.title} — ${when}`;
+    return recordingLabel(recording);
   }
 
   onChooseItem(recording: Recording): void {
     this.onChoose(recording);
+  }
+}
+
+const SKIP = "";
+
+/**
+ * Ask before importing: each meeting with a dropdown of its candidate
+ * recordings (best preselected) or "Don't import". Nothing is written until
+ * Import is clicked.
+ */
+export class TranscriptConfirmModal<F> extends Modal {
+  private readonly choices: Array<string>;
+  private decided = false;
+
+  constructor(
+    app: App,
+    private readonly proposals: TranscriptProposal<F>[],
+    private readonly onImport: (picks: Array<{ file: F; recording: Recording }>) => void,
+    private readonly onDismiss: (files: F[]) => void,
+    private readonly onChooseOther?: () => void
+  ) {
+    super(app);
+    this.choices = preselect(proposals).map((r) => r?.name ?? SKIP);
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    this.titleEl.setText(this.proposals.length === 1 ? "Import Krisp transcript?" : "Import Krisp transcripts?");
+    contentEl.createEl("p", { text: "Check each meeting's recording. Nothing is imported until you click Import." });
+
+    this.proposals.forEach((proposal, i) => {
+      const when = `${proposal.meeting.start.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}`;
+      new Setting(contentEl)
+        .setName(proposal.meeting.title)
+        .setDesc(when)
+        .addDropdown((drop) => {
+          for (const r of proposal.candidates) drop.addOption(r.name, recordingLabel(r));
+          drop.addOption(SKIP, "Don't import");
+          drop.setValue(this.choices[i]).onChange((value) => (this.choices[i] = value));
+        });
+    });
+
+    const buttons = new Setting(contentEl);
+    if (this.onChooseOther) {
+      buttons.addButton((b) => b.setButtonText("Choose another recording…").onClick(() => {
+        this.decided = true;
+        this.close();
+        this.onChooseOther?.();
+      }));
+    }
+    buttons
+      .addButton((b) => b.setButtonText("Not now").onClick(() => this.close()))
+      .addButton((b) => b.setButtonText("Import").setCta().onClick(() => {
+        this.decided = true;
+        this.close();
+        const picks: Array<{ file: F; recording: Recording }> = [];
+        const skipped: F[] = [];
+        this.proposals.forEach((p, i) => {
+          const recording = p.candidates.find((r) => r.name === this.choices[i]);
+          if (recording) picks.push({ file: p.file, recording });
+          else skipped.push(p.file);
+        });
+        if (skipped.length > 0) this.onDismiss(skipped);
+        this.onImport(picks);
+      }));
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+    if (!this.decided) this.onDismiss(this.proposals.map((p) => p.file));
   }
 }

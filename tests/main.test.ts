@@ -589,7 +589,7 @@ test("refreshNotes skips listed titles and solo events for new notes but still u
 
 test("notes filed outside the note folder are still found, updated and opened", async () => {
   const app = createMemoryApp([
-    { path: "Projects/Acme/2026-04-03 - Sync.md", content: "---\ntitle: \"Sync\"\ncalendar_event_id: \"sync\"\n---\n\n## Notes\n\n- Mine\n" },
+    { path: "Clients/Acme/2026/Q2/Projects/Launch/2026-04-03 - Sync.md", content: "---\ntitle: \"Sync\"\ncalendar_event_id: \"sync\"\n---\n\n## Notes\n\n- Mine\n" },
   ]);
   const plugin = createPlugin(app);
   plugin.settings = appleSettings();
@@ -600,15 +600,24 @@ test("notes filed outside the note folder are still found, updated and opened", 
   await plugin.openNoteForEvent(event);
 
   assert.deepEqual(app.createdPaths, []);
-  assert.deepEqual(app.openedFiles, ["Projects/Acme/2026-04-03 - Sync.md"]);
-  assert.match((app.files.get("Projects/Acme/2026-04-03 - Sync.md") as TFile).content ?? "", /^location: "Room 4"$/m);
+  assert.deepEqual(app.openedFiles, ["Clients/Acme/2026/Q2/Projects/Launch/2026-04-03 - Sync.md"]);
+  assert.match((app.files.get("Clients/Acme/2026/Q2/Projects/Launch/2026-04-03 - Sync.md") as TFile).content ?? "", /^location: "Room 4"$/m);
+
+  plugin.getCalendarService = serviceFor([{ ...event, start: { dateTime: "2026-04-04T10:00:00-04:00" }, end: { dateTime: "2026-04-04T11:00:00-04:00" } }]);
+  plugin.now = () => new Date("2026-04-04T06:00:00-04:00");
+  await plugin.refreshNotes(false);
+  assert.deepEqual(app.renamed, [[
+    "Clients/Acme/2026/Q2/Projects/Launch/2026-04-03 - Sync.md",
+    "Clients/Acme/2026/Q2/Projects/Launch/2026-04-04 - Sync.md",
+  ]]);
 });
 
-test("autoImportTranscripts fills empty Transcript sections from matching Krisp recordings, once", async () => {
+test("Krisp transcripts are only proposed, never written, until an import is confirmed", async () => {
   const root = await mkdtemp(join(tmpdir(), "krisp-main-"));
   try {
-    await mkdir(join(root, "Weekly Sync"));
-    await writeFile(join(root, "Weekly Sync", "transcript.txt"), "Weekly Sync\n2026-04-02 10:00\n30:00\n\nAlice: hello\nBob: hi");
+    const folder = "Weekly Sync - April 2, 2026 10-01-30 AM";
+    await mkdir(join(root, folder));
+    await writeFile(join(root, folder, "transcript.txt"), "Weekly Sync - April 2, 2026 10-01-30 AM\nApril 2, 2026 10:01:30 AM\n30m 2s\n\n\nYou\n0:01 - hello");
     const noteText = (title: string, start: string, end: string) =>
       `---\ntitle: "${title}"\nstart: ${start}\nend: ${end}\ncalendar_event_id: "${title}"\n---\n\n## Notes\n\n- \n\n## Transcript\n\n`;
     const app = createMemoryApp([
@@ -616,18 +625,23 @@ test("autoImportTranscripts fills empty Transcript sections from matching Krisp 
       { path: "Meeting Notes/Later.md", content: noteText("Later", "2026-04-03T10:00", "2026-04-03T11:00") },
     ]);
     const plugin = createPlugin(app);
-    plugin.settings = appleSettings({ krispFolder: root });
+    plugin.settings = appleSettings({ krispFolder: root, krispAutoImport: true });
+    plugin.getCalendarService = serviceFor([]);
+    const note = app.files.get("Projects/Weekly Sync.md") as TFile;
+    const before = note.content;
 
-    assert.equal(await plugin.autoImportTranscripts(), 0, "off by default");
+    await plugin.refreshNotes(false);
+    assert.equal(note.content, before, "a sync only asks");
 
-    plugin.settings.krispAutoImport = true;
-    assert.equal(await plugin.autoImportTranscripts(), 1);
-    const content = (app.files.get("Projects/Weekly Sync.md") as TFile).content ?? "";
-    assert.match(content, /## Transcript\n\nAlice: hello\nBob: hi\n$/);
-    assert.match(content, /^krisp_recording: "Weekly Sync"$/m);
-    assert.match(content, /## Notes\n\n- \n/);
+    const proposals = await plugin.transcriptProposals();
+    assert.deepEqual(proposals.map((p) => [p.file.path, p.candidates.map((r) => r.name)]), [["Projects/Weekly Sync.md", [folder]]]);
 
-    assert.equal(await plugin.autoImportTranscripts(), 0);
+    assert.equal(await plugin.importTranscripts([{ file: note as never, recording: proposals[0].candidates[0] }]), 1);
+    assert.match(note.content ?? "", /## Transcript\n\nYou\n0:01 - hello\n$/);
+    assert.match(note.content ?? "", new RegExp(`^krisp_recording: "${folder}"$`, "m"));
+    assert.match(note.content ?? "", /## Notes\n\n- \n/);
+
+    assert.deepEqual(await plugin.transcriptProposals(), []);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

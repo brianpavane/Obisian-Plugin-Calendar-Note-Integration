@@ -144,7 +144,7 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Krisp folder | `~/Documents/Transcripts/Krisp Meetings` | Where Krisp saves recordings on this Mac: one folder per meeting, each with a `transcript.txt` (or `transcript.md`) |
-| Import transcripts automatically | Off | On every sync, fill the empty **Transcript** section of meetings that ended in the last 2 days. Off: import only with the command |
+| Import transcripts automatically | Off | After each sync, offer recordings for meetings that ended in the last 2 days with an empty **Transcript** section. You confirm every import. Off: only with the command |
 
 ### Manual Actions
 
@@ -319,17 +319,18 @@ If a meeting disappears from Apple Calendar (deleted rather than cancelled), its
 
 ### Filing notes into your own folders
 
-New notes are created in the **Note folder**, but you can move them anywhere in the vault once the meeting is done. The plugin finds meeting notes anywhere by their `calendar_event_id` property, so a filed note keeps its **Open note** button, its action items, its **Previous** link from the next meeting in the series, and its calendar updates. If a filed meeting moves to another day, the note is renamed in the folder you filed it in.
+New notes are created in the **Note folder**, but you can move them anywhere in the vault once the meeting is done, as many folder levels deep as you like. The plugin finds meeting notes anywhere by their `calendar_event_id` property, so a filed note keeps its **Open note** button, its action items, its **Previous** link from the next meeting in the series, and its calendar updates. If a filed meeting moves to another day, the note is renamed in the folder you filed it in.
 
 ### Krisp transcripts
 
 If you record meetings with Krisp, the plugin can copy a recording's transcript into the note's **Transcript** section. Set **Krisp folder** in settings (default `~/Documents/Transcripts/Krisp Meetings`), open the meeting note, and run **Import Krisp transcript into this note**.
 
-- The recording is matched by the start time in its transcript header (or folder name): one started from 20 minutes before the meeting to 30 minutes after it ends, preferring one whose title matches, then the closest start. Generic titles like "Zoom meeting" are fine — back-to-back meetings each get the recording that started nearest their own start. If none matches, you pick the recording from a list.
+- **Nothing is imported without your OK.** A window shows the meeting and the recording it found, with a dropdown of other likely recordings and **Don't import**. Click **Import** to go ahead, or **Choose another recording…** to pick from every recording.
+- Recordings are matched by the start time in the transcript header (or folder name). Any recording started from 10 minutes before the meeting until it ends is offered, best first: a matching title, then a start within the usual join window (2 minutes early to 7 minutes late), then the closest start. Generic titles like "Zoom meeting" are fine — back-to-back meetings each get the recording that started nearest their own start, and a recording that started after a meeting ended is never offered for it.
 - Only the transcript is copied; Krisp's header (title, time, length) is left out.
 - The transcript only goes into an empty Transcript section; clear the section to import again.
-- The note records which recording it came from (`krisp_recording`), so the same recording is never matched to a second meeting.
-- Turn on **Import transcripts automatically** to have every sync do this for meetings that ended in the last 2 days. It's off until you turn it on.
+- The note records which recording it came from (`krisp_recording`), so the same recording isn't offered for another meeting.
+- Turn on **Import transcripts automatically** to be offered transcripts after every sync, for all meetings that ended in the last 2 days, in one window. Double-booked meetings never start with the same recording selected. Meetings you skip (or close the window on) aren't offered again until Obsidian restarts. It's off until you turn it on.
 
 ### Gemini summaries (copy and paste)
 
@@ -354,7 +355,7 @@ Both steps are optional. The note's sections are there for you to write in by ha
 | **Open meetings dashboard** | Opens `Meetings.base` in your meeting-notes folder (created on first use) |
 | **Open today's meetings** | Shows today's meetings in the right sidebar, with Open note and Join buttons, arrows to other days, and a New note button |
 | **Open meeting action items** | Shows every open action item from your meeting notes in the right sidebar |
-| **Import Krisp transcript into this note** | Fills the open note's empty Transcript section from its Krisp recording — see [Krisp transcripts](#krisp-transcripts) |
+| **Import Krisp transcript into this note** | Suggests the open note's Krisp recording and, once you confirm, fills its empty Transcript section — see [Krisp transcripts](#krisp-transcripts) |
 | **Copy Gemini prompt for this meeting** | Copies a summary prompt built from the open note's notes and transcript — see [Gemini summaries](#gemini-summaries-copy-and-paste) |
 | **Add Gemini reply to this meeting** | Puts the Gemini reply on the clipboard into the open note's Meeting Summary, Decisions and Action items |
 

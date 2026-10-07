@@ -900,9 +900,9 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Import transcripts automatically")
       .setDesc(
-        "On every sync, fill the empty Transcript section of meetings that ended in the last " +
-          "2 days with their Krisp recording, matched by start time and title. Off: import " +
-          "only when you run the command."
+        "After each sync, offer the Krisp recordings of meetings that ended in the last 2 days " +
+          "and have an empty Transcript section. You always confirm (or change) each match " +
+          "before anything is imported. Off: only when you run the command."
       )
       .addToggle((toggle) =>
         toggle

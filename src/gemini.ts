@@ -93,7 +93,7 @@ export function parseReply(text: string): GeminiReply | undefined {
       current = heading[1].toLowerCase();
       parts[current] = [];
     } else if (current) {
-      parts[current].push(raw.replace(/\s+$/, ""));
+      parts[current].push(raw.replace(/\s+$/, "").replace(/^\s*#{1,6}\s+(.*)$/, "**$1**"));
     }
   }
   if (Object.keys(parts).length === 0) return undefined;

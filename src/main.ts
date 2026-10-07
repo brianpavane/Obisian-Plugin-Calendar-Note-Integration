@@ -17,7 +17,16 @@
  */
 
 import { normalizePath, Notice, Plugin, TFile } from "obsidian";
-import { listRecordings, matchRecording, readTranscript, Recording, RecordingSuggestModal, type MeetingTime } from "./krisp";
+import {
+  candidateRecordings,
+  listRecordings,
+  readTranscript,
+  Recording,
+  RecordingSuggestModal,
+  TranscriptConfirmModal,
+  type MeetingTime,
+  type TranscriptProposal,
+} from "./krisp";
 import { applyReply, buildPrompt, parseReply, TRANSCRIPT_SECTIONS } from "./gemini";
 import { appendToSection, sectionText } from "./sections";
 import { isSkipped } from "./skipRules";
@@ -101,6 +110,9 @@ export default class GoogleCalendarPlugin extends Plugin {
   private statusBarEl: HTMLElement | undefined;
   private liveEvents: CalendarEvent[] = [];
   private lastFetchFailed = false;
+  /** Notes whose transcript offer was declined; not offered again until Obsidian restarts. */
+  private readonly dismissedTranscripts = new Set<string>();
+  private transcriptOfferOpen = false;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -705,7 +717,6 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
 
     const removed = await this.markRemovedMeetings(fetched, notesById);
-    const transcripts = await this.autoImportTranscripts();
 
     await this.trimAndSaveProcessedIds();
 
@@ -714,7 +725,6 @@ export default class GoogleCalendarPlugin extends Plugin {
       ...(created > 0 ? [`created ${plural(created, "note")}`] : []),
       ...(updated > 0 ? [`updated ${plural(updated, "note")}`] : []),
       ...(removed > 0 ? [`marked ${plural(removed, "note")} removed from calendar`] : []),
-      ...(transcripts > 0 ? [`imported ${plural(transcripts, "Krisp transcript")}`] : []),
     ];
     if (parts.length > 0) {
       const message = parts.join(", ");
@@ -722,6 +732,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     } else if (verbose) {
       new Notice("Calendar Notes: All notes are up to date.");
     }
+    await this.offerTranscripts();
     return true;
   }
 
@@ -883,9 +894,34 @@ export default class GoogleCalendarPlugin extends Plugin {
     return true;
   }
 
-  async importKrispTranscript(file: TFile): Promise<void> {
+  /** Import the chosen recordings into their notes, skipping notes whose Transcript has text by now. */
+  async importTranscripts(picks: Array<{ file: TFile; recording: Recording }>): Promise<number> {
+    let imported = 0;
+    for (const { file, recording } of picks) {
+      try {
+        if (sectionText(await this.app.vault.read(file), TRANSCRIPT_SECTIONS)) continue;
+        if (await this.writeTranscript(file, recording)) imported++;
+        else new Notice(`Calendar Notes: The recording "${recording.title}" has no transcript text yet.`);
+      } catch (err) {
+        new Notice(`Calendar Notes: Couldn't import the transcript — ${safeErrorMessage(err)}`);
+      }
+    }
+    if (imported > 0) new Notice(`Calendar Notes: Imported ${imported} Krisp transcript${imported !== 1 ? "s" : ""}.`);
+    return imported;
+  }
+
+  private async readRecordings(): Promise<Recording[] | undefined> {
     const folder = this.settings.krispFolder.trim();
-    if (!folder) {
+    try {
+      return await listRecordings(folder);
+    } catch (err) {
+      new Notice(`Calendar Notes: Couldn't read the Krisp folder — ${safeErrorMessage(err)}`);
+      return undefined;
+    }
+  }
+
+  async importKrispTranscript(file: TFile): Promise<void> {
+    if (!this.settings.krispFolder.trim()) {
       new Notice("Calendar Notes: Set your Krisp folder in the plugin settings first.");
       return;
     }
@@ -893,78 +929,93 @@ export default class GoogleCalendarPlugin extends Plugin {
       new Notice("Calendar Notes: This note's Transcript section already has text. Clear it to import again.");
       return;
     }
-    let recordings: Recording[];
-    try {
-      recordings = await listRecordings(folder);
-    } catch (err) {
-      new Notice(`Calendar Notes: Couldn't read the Krisp folder — ${safeErrorMessage(err)}`);
-      return;
-    }
+    const recordings = await this.readRecordings();
+    if (!recordings) return;
     if (recordings.length === 0) {
-      new Notice(`Calendar Notes: No Krisp recordings found in ${folder}.`);
+      new Notice(`Calendar Notes: No Krisp recordings found in ${this.settings.krispFolder}.`);
       return;
     }
 
-    const write = async (recording: Recording) => {
-      try {
-        if (await this.writeTranscript(file, recording)) {
-          new Notice(`Calendar Notes: Imported the transcript of "${recording.title}".`);
-        } else {
-          new Notice(`Calendar Notes: The recording "${recording.title}" has no transcript text yet.`);
-        }
-      } catch (err) {
-        new Notice(`Calendar Notes: Couldn't import the transcript — ${safeErrorMessage(err)}`);
-      }
-    };
+    const pickAny = () =>
+      new RecordingSuggestModal(this.app, recordings, (recording) => void this.importTranscripts([{ file, recording }])).open();
     const meeting = this.noteMeeting(file);
     const used = this.usedRecordings();
-    const match = meeting && matchRecording(recordings.filter((r) => !used.has(r.name)), meeting);
-    if (match) await write(match);
-    else new RecordingSuggestModal(this.app, recordings, (r) => void write(r)).open();
+    const candidates = meeting ? candidateRecordings(recordings.filter((r) => !used.has(r.name)), meeting) : [];
+    if (!meeting || candidates.length === 0) {
+      pickAny();
+      return;
+    }
+    new TranscriptConfirmModal(
+      this.app,
+      [{ file, meeting, candidates }],
+      (picks) => void this.importTranscripts(picks),
+      () => undefined,
+      pickAny
+    ).open();
   }
 
-  /** Fill empty Transcript sections of meetings that ended recently; returns how many were filled. */
-  async autoImportTranscripts(): Promise<number> {
-    const folder = this.settings.krispFolder.trim();
-    if (!this.settings.krispAutoImport || !folder) return 0;
+  /**
+   * Meetings that ended in the last 2 days with an empty Transcript and at
+   * least one candidate recording, leaving out any dismissed this session.
+   */
+  async transcriptProposals(): Promise<TranscriptProposal<TFile>[]> {
     const now = this.now();
     const since = new Date(now.getTime() - KRISP_LOOKBACK_MS);
     const ended = [...findNotesByEventId(this.app).values()]
+      .filter((file) => !this.dismissedTranscripts.has(file.path))
       .map((file) => ({ file, meeting: this.noteMeeting(file) }))
       .filter((n): n is { file: TFile; meeting: MeetingTime } =>
-        !!n.meeting && n.meeting.end <= now && n.meeting.end >= since);
-    if (ended.length === 0) return 0;
+        !!n.meeting && n.meeting.end <= now && n.meeting.end >= since)
+      .sort((a, b) => a.meeting.start.getTime() - b.meeting.start.getTime());
+    if (ended.length === 0) return [];
 
     let recordings: Recording[];
     try {
-      recordings = await listRecordings(folder, since);
+      recordings = await listRecordings(this.settings.krispFolder, since);
     } catch (err) {
       console.warn("[CalendarNoteIntegration] Couldn't read the Krisp folder:", err);
-      return 0;
+      return [];
     }
     const used = this.usedRecordings();
-    let imported = 0;
+    const free = recordings.filter((r) => !used.has(r.name));
+    const proposals: TranscriptProposal<TFile>[] = [];
     for (const { file, meeting } of ended) {
-      const recording = matchRecording(recordings.filter((r) => !used.has(r.name)), meeting);
-      if (!recording) continue;
-      try {
-        if (sectionText(await this.app.vault.read(file), TRANSCRIPT_SECTIONS)) continue;
-        if (await this.writeTranscript(file, recording)) {
-          used.add(recording.name);
-          imported++;
-        }
-      } catch (err) {
-        console.warn("[CalendarNoteIntegration] Failed to import a Krisp transcript:", err);
-      }
+      const candidates = candidateRecordings(free, meeting);
+      if (candidates.length === 0) continue;
+      if (sectionText(await this.app.vault.read(file), TRANSCRIPT_SECTIONS)) continue;
+      proposals.push({ file, meeting, candidates });
     }
-    return imported;
+    return proposals;
+  }
+
+  /** With automatic import on, ask to import any transcripts found; never imports without confirmation. */
+  async offerTranscripts(): Promise<void> {
+    if (!this.settings.krispAutoImport || !this.settings.krispFolder.trim() || this.transcriptOfferOpen) return;
+    const proposals = await this.transcriptProposals();
+    if (proposals.length === 0) return;
+    this.transcriptOfferOpen = true;
+    new TranscriptConfirmModal(
+      this.app,
+      proposals,
+      (picks) => {
+        this.transcriptOfferOpen = false;
+        void this.importTranscripts(picks);
+      },
+      (files) => {
+        this.transcriptOfferOpen = false;
+        for (const file of files) this.dismissedTranscripts.add(file.path);
+      }
+    ).open();
   }
 
   async copyGeminiPrompt(file: TFile): Promise<void> {
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
     const meeting = this.noteMeeting(file);
     const time = (d: Date) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-    const date = typeof fm?.date === "string" ? fm.date : "";
+    const day = meeting?.start ?? frontmatterDate(fm?.date);
+    const date = typeof fm?.date === "string" ? fm.date : day
+      ? `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`
+      : "";
     const listed: unknown = fm?.attendees;
     const attendees = (Array.isArray(listed) ? listed : [])
       .filter((a): a is string => typeof a === "string")

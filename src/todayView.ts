@@ -76,7 +76,7 @@ class TitleModal extends Modal {
   }
 
   onOpen(): void {
-    this.setTitle("New meeting note");
+    this.titleEl.setText("New meeting note");
     let title = "";
     const submit = () => {
       if (!title.trim()) return;

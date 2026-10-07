@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
-import { listRecordings, matchRecording, parseKrispHeader, splitStamp, transcriptBody, type Recording } from "../src/krisp";
+import { candidateRecordings, listRecordings, parseKrispHeader, preselect, splitStamp, transcriptBody, type Recording } from "../src/krisp";
 
 const KRISP_SAMPLE = [
   "Zoom meeting - October 6, 2026 2-30-24 PM",
@@ -63,29 +63,48 @@ test("transcriptBody drops the header and escapes heading-like lines", () => {
 
 const rec = (name: string, title: string, time: Date): Recording => ({ name, path: name, title, time });
 
-test("matchRecording gives back-to-back meetings their own recordings", () => {
+const at = (h: number, m: number) => new Date(2026, 9, 6, h, m);
+const names = (rs: Recording[]) => rs.map((r) => r.name);
+
+test("candidateRecordings gives back-to-back meetings their own recording first", () => {
   const recordings = [
     rec("a", "Zoom meeting", new Date(2026, 9, 6, 14, 30, 24)),
     rec("b", "Zoom meeting", new Date(2026, 9, 6, 15, 0, 49)),
     rec("c", "Zoom meeting", new Date(2026, 9, 6, 15, 29, 58)),
   ];
-  const at = (h: number, m: number) => new Date(2026, 9, 6, h, m);
-  assert.equal(matchRecording(recordings, { title: "Budget", start: at(14, 30), end: at(15, 0) })?.name, "a");
-  assert.equal(matchRecording(recordings, { title: "Hiring", start: at(15, 0), end: at(15, 30) })?.name, "b");
-  assert.equal(matchRecording(recordings, { title: "Roadmap", start: at(15, 30), end: at(16, 0) })?.name, "c");
+  assert.deepEqual(names(candidateRecordings(recordings, { title: "Budget", start: at(14, 30), end: at(15, 0) })), ["a"]);
+  assert.deepEqual(names(candidateRecordings(recordings, { title: "Hiring", start: at(15, 0), end: at(15, 30) })), ["b", "c"]);
+  assert.deepEqual(names(candidateRecordings(recordings, { title: "Roadmap", start: at(15, 30), end: at(16, 0) })), ["c"]);
 });
 
-test("matchRecording picks the recording made around the meeting, preferring its title", () => {
-  const meeting = { title: "Design Review", start: new Date(2026, 9, 6, 11), end: new Date(2026, 9, 6, 12) };
+test("candidateRecordings prefers the usual join window but still offers late joins", () => {
+  const meeting = { title: "Review", start: at(11, 0), end: at(12, 0) };
   const recordings = [
-    rec("early", "Standup", new Date(2026, 9, 6, 9)),
-    rec("near", "Some call", new Date(2026, 9, 6, 11, 2)),
-    rec("titled", "Design Review", new Date(2026, 9, 6, 11, 10)),
-    rec("late", "Design Review", new Date(2026, 9, 6, 14)),
+    rec("too-early", "Call", at(10, 48)),
+    rec("early", "Call", at(10, 53)),
+    rec("on-time", "Call", at(11, 6)),
+    rec("late", "Call", at(11, 25)),
+    rec("after", "Call", at(12, 0)),
   ];
-  assert.equal(matchRecording(recordings, meeting)?.name, "titled");
-  assert.equal(matchRecording(recordings.slice(0, 2), meeting)?.name, "near");
-  assert.equal(matchRecording([recordings[0], recordings[3]], meeting), undefined);
+  assert.deepEqual(names(candidateRecordings(recordings, meeting)), ["on-time", "early", "late"]);
+});
+
+test("candidateRecordings ranks a matching title first", () => {
+  const meeting = { title: "Design Review", start: at(11, 0), end: at(12, 0) };
+  const recordings = [rec("near", "Zoom meeting", at(11, 1)), rec("titled", "Design Review", at(11, 20))];
+  assert.deepEqual(names(candidateRecordings(recordings, meeting)), ["titled", "near"]);
+});
+
+test("preselect never picks one recording for two double-booked meetings", () => {
+  const a = rec("a", "Zoom meeting", at(11, 1));
+  const b = rec("b", "Zoom meeting", at(11, 4));
+  const meeting = { title: "x", start: at(11, 0), end: at(12, 0) };
+  const picks = preselect([
+    { file: "one", meeting, candidates: [a, b] },
+    { file: "two", meeting, candidates: [a, b] },
+    { file: "three", meeting, candidates: [a] },
+  ]);
+  assert.deepEqual(picks.map((r) => r?.name), ["a", "b", undefined]);
 });
 
 test("listRecordings reads each recording folder's transcript header", async () => {

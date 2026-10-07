@@ -12,7 +12,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 **Krisp transcript import**
-Run **Import Krisp transcript into this note** to fill a meeting note's empty Transcript section from its Krisp recording, matched by start time and title (or picked from a list); works with Krisp's `transcript.txt` and `transcript.md` files. Set the folder under **Krisp Transcripts** in settings (default `~/Documents/Transcripts/Krisp Meetings`). **Import transcripts automatically** (off by default) does the same on every sync for meetings that ended in the last 2 days.
+Run **Import Krisp transcript into this note** to fill a meeting note's empty Transcript section from its Krisp recording (`transcript.txt` or `transcript.md`). The plugin suggests the recording that started closest to the meeting (allowing for joining a few minutes early or late) and always asks you to confirm or pick another before importing. Set the folder under **Krisp Transcripts** in settings (default `~/Documents/Transcripts/Krisp Meetings`). **Import transcripts automatically** (off by default) offers recordings for every meeting that ended in the last 2 days after each sync, still asking before anything is imported.
 
 **Gemini summaries by copy and paste**
 **Copy Gemini prompt for this meeting** copies a prompt built from the note's notes and transcript. Paste it into Gemini, copy the reply, and run **Add Gemini reply to this meeting** to put the summary, decisions and action items (with `@owner` and `📅` due dates) into their sections. The plugin never contacts Gemini itself.

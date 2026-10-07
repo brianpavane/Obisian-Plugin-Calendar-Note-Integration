@@ -130,6 +130,7 @@ export function debounce<T extends (...args: unknown[]) => unknown>(fn: T): T {
 
 export class Modal {
   app: App;
+  titleEl = createFakeEl();
   contentEl = createFakeEl();
 
   constructor(app: App) {

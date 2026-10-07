@@ -59,3 +59,8 @@ test("applyReply fills the built-in note's sections", () => {
   });
   assert.match(out, /## Decisions\n\n- Ship Friday\n\n## Action items\n\n- \[ \] Update docs @Bob\n\n## Meeting Summary\n\nShipped\.\n\n## Transcript/);
 });
+
+test("parseReply turns Gemini's extra headings into bold text so the note's sections stay intact", () => {
+  const reply = parseReply("## Summary\n### Key points\nShipped.\n## Decisions\n- None");
+  assert.deepEqual(reply?.summary, ["**Key points**", "Shipped."]);
+});
