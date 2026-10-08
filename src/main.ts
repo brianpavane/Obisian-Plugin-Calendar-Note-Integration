@@ -42,7 +42,9 @@ import { isSkipped } from "./skipRules";
 import { ActionItemsView, ACTION_ITEMS_VIEW, localDate, parseTaskMeta } from "./actionItems";
 import { addDays, buildTracker, TRACKER_FILENAME, type TrackerMeeting } from "./tracker";
 import { isoWeek, newReview, refreshReview, REVIEW_FOLDER, reviewBody, reviewFilename } from "./weeklyReview";
-import { DASHBOARD_CONTENT, DASHBOARD_FILENAME } from "./dashboard";
+import { addMissingViews, DASHBOARD_CONTENT, DASHBOARD_FILENAME, DASHBOARD_VIEW_NAMES } from "./dashboard";
+import { buildInsights, INSIGHTS_FILENAME } from "./insights";
+import { accountBody, ACCOUNTS_FOLDER, newAccountNote, refreshAccount } from "./accounts";
 import { newSeriesNote, refreshSeries, SERIES_FOLDER, seriesBody } from "./series";
 import { canonicalEventId } from "./appleCalendarApi";
 import { TodayView, TODAY_VIEW, type NoteAction } from "./todayView";
@@ -118,6 +120,19 @@ function frontmatterDate(value: unknown): Date | undefined {
   return isNaN(d.getTime()) ? undefined : d;
 }
 
+/** A frontmatter value as a list of non-empty strings (a single string counts as one). */
+function frontmatterList(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : value === undefined || value === null ? [] : [value];
+  return values.filter((v): v is string => typeof v === "string" && !!v.trim()).map((v) => v.trim());
+}
+
+/** A person's name from an attendee property: `[[Name]]`, `Name <email>` or a bare email. */
+function personName(value: string): { name: string; email?: string } {
+  const email = value.match(/<([^>]+)>/)?.[1]?.trim();
+  const name = value.replace(/<[^>]*>/, "").replace(/^\[\[|\]\]$/g, "").replace(/\|.*$/, "").trim();
+  return { name: name || email || value, email: email ?? (/^\S+@\S+$/.test(name) ? name : undefined) };
+}
+
 function safeErrorMessage(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   return msg.replace(/[\r\n]+/g, " ").slice(0, 200);
@@ -156,6 +171,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     this.addRibbonIcon("layout-dashboard", "Open meetings dashboard", () => this.openDashboard());
     this.addRibbonIcon("gauge", "Open meeting tracker", () => this.openTracker());
     this.addRibbonIcon("calendar-check", "Open this week's review", () => this.openWeeklyReview(0));
+    this.addRibbonIcon("trending-up", "Open meeting insights", () => this.openInsights());
 
     this.addCommand({
       id: "create-note-from-event",
@@ -223,6 +239,24 @@ export default class GoogleCalendarPlugin extends Plugin {
       id: "open-meeting-tracker",
       name: "Open meeting tracker",
       callback: () => this.openTracker(),
+    });
+
+    this.addCommand({
+      id: "open-meeting-insights",
+      name: "Open meeting insights",
+      callback: () => this.openInsights(),
+    });
+
+    this.addCommand({
+      id: "open-account-overview",
+      name: "Open account overview",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        const account = file ? this.app.metadataCache.getFileCache(file)?.frontmatter?.account : undefined;
+        if (typeof account !== "string" || !account.trim()) return false;
+        if (!checking) void this.openAccountOverview(account.trim());
+        return true;
+      },
     });
 
     this.addCommand({
@@ -331,14 +365,23 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
   }
 
-  /** Every meeting note's open items, decisions, account and category, for the tracker. */
+  /** Every meeting note's open items, decisions and AI metadata, for the tracker, insights and overviews. */
   async trackerMeetings(): Promise<TrackerMeeting[]> {
     const meetings: TrackerMeeting[] = [];
+    const selfEmail = this.settings.selfEmail.trim().toLowerCase();
     for (const [id, file] of findNotesByEventId(this.app)) {
       const fm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
       const content = await this.app.vault.cachedRead(file);
       const start = frontmatterDate(fm.start) ?? frontmatterDate(fm.date);
+      const end = frontmatterDate(fm.end);
       const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+      const attendees = frontmatterList(fm.attendees).map(personName);
+      const self = new Set(attendees.filter((a) => selfEmail && a.email?.toLowerCase() === selfEmail).map((a) => a.name.toLowerCase()));
+      const people = [...new Map(
+        [...attendees.map((a) => a.name), ...frontmatterList(fm.speakers)]
+          .filter((n) => !self.has(n.toLowerCase()) && !n.includes("@"))
+          .map((n) => [n.toLowerCase(), n])
+      ).values()];
       meetings.push({
         path: file.path.replace(/\.md$/, ""),
         title: text(fm.title) ?? file.basename,
@@ -354,6 +397,13 @@ export default class GoogleCalendarPlugin extends Plugin {
         skipped: isSkippedStatus(fm.status),
         status: text(fm.status),
         id,
+        minutes: start && end && end > start ? Math.round((end.getTime() - start.getTime()) / 60_000) : undefined,
+        sentiment: text(fm.sentiment),
+        outcome: text(fm.outcome),
+        keyTopics: frontmatterList(fm.key_topics),
+        organizations: frontmatterList(fm.organizations),
+        people,
+        summarized: fm.ai_summarized !== undefined && fm.ai_summarized !== null && fm.ai_summarized !== "",
       });
     }
     return meetings;
@@ -382,12 +432,13 @@ export default class GoogleCalendarPlugin extends Plugin {
       return;
     }
     const inFolder = (folder: string, name: string) => normalizePath(folder ? `${folder}/${name}` : name);
-    const subfolders = [REVIEW_FOLDER, SERIES_FOLDER].map((name) => `${inFolder(from, name)}/`);
+    const subfolders = [REVIEW_FOLDER, SERIES_FOLDER, ACCOUNTS_FOLDER].map((name) => `${inFolder(from, name)}/`);
     const sources = this.app.vault.getAllLoadedFiles().filter(
       (f): f is TFile =>
         f instanceof TFile &&
         (f.path === inFolder(from, TRACKER_FILENAME) ||
           f.path === inFolder(from, DASHBOARD_FILENAME) ||
+          f.path === inFolder(from, INSIGHTS_FILENAME) ||
           subfolders.some((folder) => f.path.startsWith(folder)))
     );
 
@@ -516,14 +567,108 @@ export default class GoogleCalendarPlugin extends Plugin {
     await this.openSeriesNote(id, typeof fm?.title === "string" && fm.title.trim() ? fm.title.trim() : file.basename);
   }
 
-  /** Open the meetings dashboard (a Bases file), creating it on first use. */
+  /** "YYYY-MM-DD h:mm AM", for a generated note's Updated line. */
+  private updatedStamp(): string {
+    const now = this.now();
+    return `${localDate(now)} ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+  }
+
+  /** Account overview notes in the vault, by account name (lower case). */
+  private findAccountNotes(): Map<string, TFile> {
+    const byName = new Map<string, TFile>();
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      if (fm?.type !== "meeting-account" || typeof fm.account !== "string" || !fm.account.trim()) continue;
+      const key = fm.account.trim().toLowerCase();
+      if (!byName.has(key)) byName.set(key, file);
+    }
+    return byName;
+  }
+
+  /**
+   * Rebuild the plugin's part of the overview note of each account in
+   * `accounts` (creating missing ones in the Meeting Hub's Accounts folder),
+   * and return each account's note path without `.md`, by lower-case name.
+   */
+  private async updateAccountNotes(meetings: TrackerMeeting[], accounts: string[]): Promise<Map<string, string>> {
+    const today = localDate(this.now());
+    const updated = this.updatedStamp();
+    const existing = this.findAccountNotes();
+    const paths = new Map<string, string>();
+    for (const account of accounts) {
+      const key = account.toLowerCase();
+      const body = accountBody(meetings.filter((m) => m.account?.trim().toLowerCase() === key), today, updated);
+      let file = existing.get(key);
+      if (file) {
+        await this.app.vault.process(file, (content) => refreshAccount(content, body));
+      } else {
+        const base = this.hubFolderPath();
+        const folder = normalizePath(base ? `${base}/${ACCOUNTS_FOLDER}` : ACCOUNTS_FOLDER);
+        await this.ensureFolder(folder);
+        const name = safeFilename(account);
+        let path = normalizePath(`${folder}/${name}.md`);
+        for (let n = 2; this.app.vault.getAbstractFileByPath(path); n++) path = normalizePath(`${folder}/${name} (${n}).md`);
+        file = await this.app.vault.create(path, newAccountNote(account, body));
+        existing.set(key, file);
+      }
+      paths.set(key, file.path.replace(/\.md$/, ""));
+    }
+    return paths;
+  }
+
+  /** Open an account's overview note, rebuilding it first. */
+  async openAccountOverview(account: string): Promise<void> {
+    const paths = await this.updateAccountNotes(await this.trackerMeetings(), [account]);
+    const file = this.app.vault.getAbstractFileByPath(`${paths.get(account.toLowerCase())}.md`);
+    if (file instanceof TFile) await this.app.workspace.getLeaf(false).openFile(file);
+  }
+
+  /**
+   * Rebuild the Meeting Insights note in the Meeting Hub folder, and the
+   * overview note of every account it lists, then open it.
+   */
+  async openInsights(): Promise<void> {
+    const meetings = await this.trackerMeetings();
+    const accounts = [...new Map(
+      meetings.filter((m) => m.account?.trim()).sort((a, b) => b.date.localeCompare(a.date))
+        .map((m) => [m.account!.trim().toLowerCase(), m.account!.trim()])
+    ).values()];
+    const paths = await this.updateAccountNotes(meetings, accounts);
+    const content = buildInsights(meetings, localDate(this.now()), this.updatedStamp(), (account) => {
+      const path = paths.get(account.toLowerCase());
+      return path ? `[[${path}|${account.replace(/[[\]|#^]/g, " ").trim()}]]` : account;
+    });
+    const folder = this.hubFolderPath();
+    const path = normalizePath(folder ? `${folder}/${INSIGHTS_FILENAME}` : INSIGHTS_FILENAME);
+    let file = this.app.vault.getAbstractFileByPath(path);
+    if (file instanceof TFile) {
+      await this.app.vault.process(file, () => content);
+    } else {
+      if (folder) await this.ensureFolder(folder);
+      file = await this.app.vault.create(path, content);
+    }
+    await this.app.workspace.getLeaf(false).openFile(file as TFile);
+  }
+
+  /**
+   * Open the meetings dashboard (a Bases file), creating it on first use.
+   * Built-in views added since the user's copy was made are added to it,
+   * each only once.
+   */
   async openDashboard(): Promise<void> {
     const folder = this.hubFolderPath();
     const path = normalizePath(folder ? `${folder}/${DASHBOARD_FILENAME}` : DASHBOARD_FILENAME);
     let file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) {
+    if (file instanceof TFile) {
+      const offered = this.settings.dashboardViewsAdded;
+      await this.app.vault.process(file, (content) => addMissingViews(content, offered));
+    } else {
       if (folder) await this.ensureFolder(folder);
       file = await this.app.vault.create(path, DASHBOARD_CONTENT);
+    }
+    if (DASHBOARD_VIEW_NAMES.some((name) => !this.settings.dashboardViewsAdded.includes(name))) {
+      this.settings.dashboardViewsAdded = [...DASHBOARD_VIEW_NAMES];
+      await this.saveSettings();
     }
     await this.app.workspace.getLeaf(false).openFile(file as TFile);
   }
@@ -700,6 +845,9 @@ export default class GoogleCalendarPlugin extends Plugin {
     if (typeof merged.lastRunVersion !== "string") {
       merged.lastRunVersion = DEFAULT_SETTINGS.lastRunVersion;
     }
+    merged.dashboardViewsAdded = Array.isArray(merged.dashboardViewsAdded)
+      ? merged.dashboardViewsAdded.filter((v): v is string => typeof v === "string")
+      : [];
 
     const sections = (typeof stored.noteSections === "object" && stored.noteSections !== null
       ? stored.noteSections : {}) as Record<string, unknown>;

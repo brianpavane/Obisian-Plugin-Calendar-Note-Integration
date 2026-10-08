@@ -1078,3 +1078,44 @@ test("Move existing files also moves series notes", async () => {
   await plugin.moveHubFiles();
   assert.deepEqual(app.renamed, [["Meeting Notes/Series/Weekly Sync.md", "Meeting Hub/Series/Weekly Sync.md"]]);
 });
+
+test("Open meeting insights builds the insights note and an overview note per account in the Meeting Hub", async () => {
+  const app = createMemoryApp([
+    { path: "Meeting Notes/Pilot.md", content: "---\ntitle: \"Pilot\"\nstart: 2026-04-02T10:00\nend: 2026-04-02T11:00\naccount: \"Acme\"\nmeeting_category: \"Customer\"\nsentiment: \"Negative\"\noutcome: \"Blocked\"\nkey_topics:\n  - \"TLS\"\nattendees:\n  - \"Me <me@example.com>\"\n  - \"Alice Smith <alice@example.com>\"\nspeakers:\n  - \"Bob Jones\"\nai_summarized: \"2026-04-02\"\ncalendar_event_id: \"p\"\n---\n\n## Next Steps\n\n- [ ] Fix certs @[[Bob Jones]]\n" },
+    { path: "Meeting Hub/Accounts/Acme.md", content: "---\ntype: meeting-account\naccount: \"ACME\"\n---\n\n## Overview\n\n- Mine\n\n<!-- meeting-account:start — the plugin rebuilds everything down to the end marker. Write above it. -->\nold\n<!-- meeting-account:end -->\n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ hubFolder: "Meeting Hub", selfEmail: "me@example.com" });
+
+  await plugin.openInsights();
+  const insights = (app.files.get("Meeting Hub/Meeting Insights.md") as TFile).content ?? "";
+  assert.match(insights, /\| \[\[Meeting Hub\/Accounts\/Acme\\\|Acme\]\] \| 1 \| 2026-04-02 \| 1 \| 0 \| 🔴 \| Blocked \|/);
+  assert.match(insights, /\| Alice Smith \| 1 \|[\s\S]*\| Bob Jones \| 1 \| 2026-04-02 \| 1 \|/);
+  assert.doesNotMatch(insights, /\| Me \|/, "the user isn't listed among the people they meet");
+  assert.match(insights, /\| Customer \| 1 \| 1 \| 100% \|/);
+  const account = (app.files.get("Meeting Hub/Accounts/Acme.md") as TFile).content ?? "";
+  assert.match(account, /- Mine\n/);
+  assert.match(account, /- 2026-04-02 · \[\[Meeting Notes\/Pilot\|Pilot\]\] · Customer · 🔴 Negative · Blocked/);
+  assert.doesNotMatch(account, /\nold\n/);
+  assert.deepEqual(app.createdPaths, ["Meeting Hub/Meeting Insights.md"], "the existing account note is reused");
+  assert.deepEqual(app.openedFiles, ["Meeting Hub/Meeting Insights.md"]);
+
+  await plugin.openAccountOverview("acme");
+  assert.deepEqual(app.openedFiles.at(-1), "Meeting Hub/Accounts/Acme.md");
+});
+
+test("openDashboard adds new built-in views to an existing dashboard", async () => {
+  const app = createMemoryApp([{ path: "Meeting Notes/Meetings.base", content: "views:\n  - type: table\n    name: All meetings\n" }]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+  await plugin.openDashboard();
+  const content = (app.files.get("Meeting Notes/Meetings.base") as TFile).content ?? "";
+  assert.match(content, /name: Needs AI summary/);
+  assert.equal(content.split("name: All meetings").length, 2);
+
+  const file = app.files.get("Meeting Notes/Meetings.base") as TFile;
+  file.content = content.replace(/ {2}- type: table\n {4}name: Needs AI summary\n(?: {4,}.*\n)*/, "");
+  assert.doesNotMatch(file.content ?? "", /Needs AI summary/);
+  await plugin.openDashboard();
+  assert.doesNotMatch(file.content ?? "", /Needs AI summary/, "a built-in view the user deleted isn't added back");
+});

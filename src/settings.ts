@@ -82,8 +82,10 @@ export interface GoogleCalendarSettings {
   aiIncludeInstructions: boolean;
   /** Instructions for the AI assistant; empty = the built-in instructions. */
   aiInstructions: string;
-  /** Save the category, account and tags from an AI reply as note properties. */
+  /** Save the Meeting Metadata, speakers and filing date of an AI reply as note properties. */
   aiSaveProperties: boolean;
+  /** Built-in dashboard views already offered in Meetings.base; never added again, so a deleted one stays deleted. */
+  dashboardViewsAdded: string[];
 }
 
 export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
@@ -123,6 +125,7 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   aiIncludeInstructions: true,
   aiInstructions: "",
   aiSaveProperties: true,
+  dashboardViewsAdded: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -637,7 +640,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Move existing files")
-      .setDesc("Move the Meeting Tracker, the Meetings dashboard, Weekly Reviews and series notes from the note folder into the Meeting Hub folder. Links to them keep working.")
+      .setDesc("Move the Meeting Tracker, Meeting Insights, the Meetings dashboard, Weekly Reviews, series notes and account overviews from the note folder into the Meeting Hub folder. Links to them keep working.")
       .addButton((button) =>
         button.setButtonText("Move existing files").onClick(async () => {
           button.setDisabled(true);
@@ -1061,10 +1064,10 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
     });
 
     new Setting(containerEl)
-      .setName("Save category, account and tags as properties")
+      .setName("Save the reply's details as properties")
       .setDesc(
-        "When a reply includes a Category, Primary Account / Project or Search Tags line, save them " +
-          "as the note's meeting_category, account and tags properties, for the Meetings dashboard."
+        "Save the reply's Meeting Metadata (category, account, organizations, key topics, sentiment, " +
+          "outcome, search tags), its speakers and the day it was filed as note properties, for the dashboards."
       )
       .addToggle((toggle) =>
         toggle

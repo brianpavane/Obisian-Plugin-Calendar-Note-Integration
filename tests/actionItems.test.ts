@@ -58,7 +58,7 @@ test("parseTaskMeta reads @owners and due dates in both Tasks formats", () => {
 
 test("parseTaskMeta reads Tasks priorities, role owners, and hides created and done dates", () => {
   assert.deepEqual(parseTaskMeta("Send scope @[[Bob Jones]] ⏫ ➕ 2026-10-07 📅 2026-10-09"), {
-    text: "Send scope @[[Bob Jones]]", owner: "Bob Jones", due: "2026-10-09", priority: "high",
+    text: "Send scope @[[Bob Jones]]", owner: "Bob Jones", due: "2026-10-09", priority: "high", created: "2026-10-07",
   });
   assert.deepEqual(parseTaskMeta("Confirm window (owner: Customer IT team) 🔽"), {
     text: "Confirm window (owner: Customer IT team)", owner: "Customer IT team", due: undefined, priority: "low",

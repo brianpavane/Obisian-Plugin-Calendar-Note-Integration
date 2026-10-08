@@ -15,7 +15,7 @@
  *     decisions from a "Key Decisions" list and action items from a table.
  */
 
-import { addFrontmatterTags, setFrontmatterValue } from "./noteCreator";
+import { addFrontmatterTags, hasFrontmatterKey, setFrontmatterList, setFrontmatterValue } from "./noteCreator";
 import { appendToSection, replaceSection, sectionLines, sectionText } from "./sections";
 
 export const SUMMARY_SECTIONS = ["Executive Summary", "Meeting Summary", "Summary"];
@@ -30,7 +30,16 @@ export const TRANSCRIPT_SECTIONS = ["Transcript"];
 export const DEFAULT_INSTRUCTIONS = [
   "Write up the meeting below from my notes and the transcript. MEETING DETAILS comes from my calendar and is correct; MY NOTES are my own notes and take priority over the transcript.",
   "Work out who each transcript speaker (Speaker 0, Speaker 1…) is from the dialogue and the attendee list, and use their full names throughout.",
-  "Reply in Markdown with exactly these six headings, in this order, and nothing before or after them:",
+  "Reply in Markdown with this metadata block and then exactly these six headings, in this order, and nothing before or after them:",
+  "",
+  "## Meeting Metadata",
+  "- **Category:** Customer | Partner | Internal Account | 1:1 | Team Sync | Misc (pick one)",
+  "- **Account / Project:** The customer or initiative, or General",
+  "- **Organizations:** Every organization represented, comma-separated",
+  "- **Key Topics:** 3–6 short topic names, comma-separated",
+  "- **Sentiment:** Positive | Neutral | Mixed | Negative (pick one)",
+  "- **Outcome:** Decision Made | Progress | Blocked | Informational (pick one)",
+  "- **Search Tags:** #Category #Account #Topic (no spaces inside a tag)",
   "",
   "## Executive Summary",
   "One or two short paragraphs: why the meeting was held, what was covered and the outcome.",
@@ -115,6 +124,13 @@ export interface AssistantReply {
   category?: string;
   account?: string;
   tags: string[];
+  /** From the Meeting Metadata block. */
+  organizations: string[];
+  keyTopics: string[];
+  sentiment?: string;
+  outcome?: string;
+  /** Identified names from the Speakers table. */
+  speakerNames: string[];
 }
 
 const HEADING_RE = /^\s*(#{1,6})\s+(.+?)\s*#*\s*$/;
@@ -281,7 +297,7 @@ const SIX_SECTIONS: Array<[ReplySection, RegExp]> = [
  * the topic subheadings stay inside Summary (by topic); headings below the
  * level of Executive Summary never start a section.
  */
-function parseSixSections(lines: string[]): AssistantReply | undefined {
+function parseSixSections(lines: string[]): Omit<AssistantReply, keyof Metadata | "speakerNames"> & { before: string[] } | undefined {
   const headings = lines.map(headingText);
   const anchor = headings.findIndex((h) => !!h && /^(executive summary|next steps)$/i.test(h.text));
   if (anchor === -1) return undefined;
@@ -314,15 +330,63 @@ function parseSixSections(lines: string[]): AssistantReply | undefined {
     decisions: bullets("decisions"),
     additional: block("additional"),
     speakers: block("speakers"),
-    tags: [],
+    before: lines.slice(0, Math.min(...starts.map(([i]) => i))),
   };
+}
+
+type Metadata = Pick<AssistantReply, "category" | "account" | "tags" | "organizations" | "keyTopics" | "sentiment" | "outcome">;
+
+/** A comma- or semicolon-separated field value as a list. */
+const listValue = (value?: string) =>
+  (value ?? "").split(/\s*[,;]\s*/).map((v) => v.replace(/^\[|\]$/g, "").trim()).filter((v) => v && !isNone(v) && !/^(tbd|general)$/i.test(v));
+
+/**
+ * The Meeting Metadata fields: "**Label:** value" lines, also inside a quote
+ * or several on one line split by " | ".
+ */
+function metadata(lines: string[]): Metadata {
+  const field = (re: RegExp) => {
+    for (const line of lines) {
+      for (const part of line.replace(QUOTE_RE, "").split(/\s+\|\s+/)) {
+        const m = part.match(FIELD_RE);
+        if (m && re.test(m[1].trim())) return m[2].trim() || undefined;
+      }
+    }
+    return undefined;
+  };
+  const single = (value?: string) => (value && !isNone(value) && !/^\[?tbd\]?$/i.test(value) ? value.replace(/^\[|\]$/g, "") : undefined);
+  const account = single(field(/^(primary )?(account|project)( \/ (project|account))?$/i));
+  return {
+    category: single(field(/^(meeting )?category$/i)),
+    account: account && !/^general$/i.test(account) ? account : undefined,
+    tags: [...(field(/^(search )?tags$/i) ?? "").matchAll(/#([\p{L}\p{N}_/-]+)/gu)].map((m) => m[1]).filter((t) => !/^\d+$/.test(t)),
+    organizations: listValue(field(/^organi[sz]ations?$/i)),
+    keyTopics: listValue(field(/^(key )?topics$/i)),
+    sentiment: single(field(/^sentiment$/i)),
+    outcome: single(field(/^outcome$/i)),
+  };
+}
+
+/** Names in the Speakers table's name column, leaving out speakers it couldn't identify. */
+function speakerNames(table: string[]): string[] {
+  const rows = table.filter((l) => l.trim().startsWith("|")).map(cells);
+  if (rows.length < 2) return [];
+  const col = rows[0].findIndex((h) => /name/i.test(h));
+  if (col === -1) return [];
+  const names = rows.slice(1)
+    .map((r) => (r[col] ?? "").replace(/`/g, "").replace(/\s*\(.*\)\s*$/, "").trim())
+    .filter((n) => n && !/^:?-+:?$/.test(n) && !/unidentified|unknown|unclear|tbd|^n\/a$/i.test(n));
+  return [...new Set(names)];
 }
 
 /** The parts of an assistant's reply, or undefined if it has neither a summary nor action items to file. */
 export function parseReply(text: string): AssistantReply | undefined {
   const lines = replyLines(text);
   const six = parseSixSections(lines);
-  if (six) return six;
+  if (six) {
+    const { before, ...sections } = six;
+    return { ...sections, ...metadata(before), speakerNames: speakerNames(six.speakers) };
+  }
   const headings = lines.map(headingText);
   const find = (test: (t: string) => boolean) => headings.findIndex((h) => !!h && test(h.text.toLowerCase()));
 
@@ -352,20 +416,6 @@ export function parseReply(text: string): AssistantReply | undefined {
 
   if (summary.length === 0 && actionItems.length === 0 && decisionsAt === -1) return undefined;
 
-  /** A "**Label:** value" field, also inside a quote or among several on one line split by " | ". */
-  const field = (re: RegExp) => {
-    for (const line of lines) {
-      for (const part of line.replace(QUOTE_RE, "").split(/\s+\|\s+/)) {
-        const m = part.match(FIELD_RE);
-        if (m && re.test(m[1].trim())) return m[2].trim();
-      }
-    }
-    return undefined;
-  };
-  const category = field(/^category$/i);
-  const account = field(/^(primary )?(account|project)( \/ (project|account))?$/i);
-  const tags = [...(field(/^(search )?tags$/i) ?? "").matchAll(/#([\p{L}\p{N}_/-]+)/gu)].map((m) => m[1]).filter((t) => !/^\d+$/.test(t));
-
   return {
     summary,
     decisions: decisionsAt !== -1 ? [...inlineDecisions, ...bulletsAfter(lines, decisionsAt)] : [],
@@ -373,9 +423,8 @@ export function parseReply(text: string): AssistantReply | undefined {
     topics: [],
     additional: [],
     speakers: [],
-    category: category || undefined,
-    account: account && !/^general$/i.test(account) ? account : undefined,
-    tags,
+    ...metadata(lines),
+    speakerNames: [],
   };
 }
 
@@ -427,7 +476,8 @@ const after = (names: string[]) => AFTER_SUMMARY.slice(AFTER_SUMMARY.indexOf(nam
  * speakers replace their sections; decisions and next steps not already in
  * their sections are added; the
  * category, account and tags become properties when `saveProperties` is set.
- * New action items are stamped with `today` as their created date.
+ * New action items are stamped with `today` as their created date, and
+ * `ai_summarized` records the day a reply was first filed.
  * Applying the same reply twice changes nothing the second time.
  */
 export function applyReply(content: string, reply: AssistantReply, saveProperties: boolean, today?: string): ApplyResult {
@@ -454,7 +504,13 @@ export function applyReply(content: string, reply: AssistantReply, savePropertie
   if (saveProperties) {
     if (reply.category) out = setFrontmatterValue(out, "meeting_category", reply.category);
     if (reply.account) out = setFrontmatterValue(out, "account", reply.account);
+    if (reply.sentiment) out = setFrontmatterValue(out, "sentiment", reply.sentiment);
+    if (reply.outcome) out = setFrontmatterValue(out, "outcome", reply.outcome);
+    if (reply.organizations.length > 0) out = setFrontmatterList(out, "organizations", reply.organizations);
+    if (reply.keyTopics.length > 0) out = setFrontmatterList(out, "key_topics", reply.keyTopics);
+    if (reply.speakerNames.length > 0) out = setFrontmatterList(out, "speakers", reply.speakerNames);
     if (reply.tags.length > 0) out = addFrontmatterTags(out, reply.tags);
+    if (today && !hasFrontmatterKey(out, "ai_summarized")) out = setFrontmatterValue(out, "ai_summarized", today);
   }
   return { content: out, decisions: decisions.length, actionItems: actions.length };
 }

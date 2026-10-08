@@ -1,6 +1,6 @@
 # Dashboards — a step-by-step guide
 
-The plugin gives you five dashboards. A dashboard is a page that pulls information together and shows it in one place, so you don't have to open each note or flip to Calendar.app.
+The plugin gives you seven dashboards. A dashboard is a page that pulls information together and shows it in one place, so you don't have to open each note or flip to Calendar.app.
 
 | Dashboard | What it answers | Where it appears |
 |---|---|---|
@@ -9,8 +9,10 @@ The plugin gives you five dashboards. A dashboard is a page that pulls informati
 | **Meetings dashboard** | "What meetings do I have coming up, and what did I have last week?" | A table that opens in the **main editor area**, like a note |
 | **Meeting tracker** | "Across everything: what's overdue, what's due this week, what's open per customer and per person, what did we decide?" | A note, `Meeting Tracker.md`, in the **main editor area** |
 | **Weekly review** | "How did this week go, and what carries into next week?" | A note per week in `Weekly Reviews`, in the **main editor area** |
+| **Meeting insights** | "Where does my time go? Which accounts need attention? What topics keep coming up? Who do I meet most, and are action items getting done?" | A note, `Meeting Insights.md`, in the **main editor area** |
+| **Account overviews** | "Everything about one customer: every meeting, its sentiment, open items, decisions, topics and people" | A note per account in `Accounts`, in the **main editor area** |
 
-**Today's meetings** reads your Apple Calendar. The other four are built from the meeting notes the plugin created (notes with a `calendar_event_id` property, wherever in the vault you've filed them). None of them ever change your calendar.
+**Today's meetings** reads your Apple Calendar. The other six are built from the meeting notes the plugin created (notes with a `calendar_event_id` property, wherever in the vault you've filed them). None of them ever change your calendar.
 
 ---
 
@@ -25,6 +27,7 @@ The **ribbon** is the thin strip of icons down the far-left edge of the Obsidian
 | **Dashboard** icon (four squares) | **Meetings dashboard** |
 | **Gauge** icon (a dial) | **Meeting tracker** |
 | **Calendar with a check mark** | **This week's review** |
+| **Trending-up arrow** icon (a zigzag line going up) | **Meeting insights** |
 
 (The plain **calendar** icon next to them is the older "create a note from an event" button.)
 
@@ -208,7 +211,7 @@ When grouped by person or due date, each item shows which meeting it came from. 
 
 ### What it is
 
-A table of all your meeting notes, with tabs for **Next 7 days**, **Last 7 days**, **By account**, **By category** and **All meetings**. It is an Obsidian **Bases** file named `Meetings.base`, saved in your Meeting Hub folder (the meeting-notes folder unless you set one in settings).
+A table of all your meeting notes, with views for upcoming and recent meetings, accounts, categories, customer meetings, sentiment, outcome and AI summaries. It is an Obsidian **Bases** file named `Meetings.base`, saved in your Meeting Hub folder (the meeting-notes folder unless you set one in settings).
 
 **Requires Obsidian 1.9 or later** (Bases was added in 1.9). Check your version under **Settings → About**.
 
@@ -230,15 +233,20 @@ At the top left of the table is a **view menu** showing the current view's name.
 | **Last 7 days** | Meetings from the past 7 days, up to now | Note, start, attendees, calendar |
 | **By account** | Meetings with an `account` property, grouped by account | Note, start, category, attendees |
 | **By category** | Meetings with a `meeting_category` property, grouped by category | Note, start, account, attendees |
+| **Customer meetings** | Meetings whose category is `Customer`, grouped by account | Note, start, sentiment, outcome, key topics |
+| **By sentiment** | Meetings with a `sentiment` (Positive, Neutral, Mixed, Negative), grouped by it | Note, start, account, outcome, key topics |
+| **By outcome** | Meetings with an `outcome` (Decision Made, Progress, Blocked, Informational), grouped by it | Note, start, account, sentiment, key topics |
+| **Needs AI summary** | Meetings in the last 14 days that took place and have no AI reply filed yet | Note, start, Krisp recording, attendees |
+| **AI-summarized** | Meetings with an AI reply filed, with everything it recorded | Note, start, account, category, sentiment, outcome, key topics, organizations, speakers |
 | **All meetings** | Every meeting note, newest day first | Note, start, organizer, attendees, calendar, status |
 
-The day views are grouped by day. **By account** and **By category** fill in as you add AI replies that include a Category and Primary Account / Project (see [AI agent instructions](AGENT_INSTRUCTIONS.md)); you can also type the `account` and `meeting_category` properties yourself.
+The day views are grouped by day. The account, category, sentiment, outcome and topic views fill in as you file AI replies that start with a **Meeting Metadata** block (see [AI agent instructions](AGENT_INSTRUCTIONS.md)); you can also type those properties yourself.
 
-> **Already have `Meetings.base`?** The plugin never changes your copy, so it won't get the two new views by itself. Delete `Meetings.base` and run **Open meetings dashboard** to get a fresh one (any changes you made to it are lost), or add the views yourself. **Click a note name** to open that meeting's note. The **status** column shows `cancelled`, `removed` or `declined` for meetings that were cancelled, deleted from your calendar or declined.
+> **Already have `Meetings.base`?** When you open it after an update, the plugin adds the new built-in views to the end of its view list, once, and changes nothing else. A built-in view you delete or rename stays that way. If you've rearranged the file so that `views:` isn't its last section, it's left alone. **Click a note name** to open that meeting's note. The **status** column shows `cancelled`, `removed` or `declined` for meetings that were cancelled, deleted from your calendar or declined.
 
 ### Changing it
 
-`Meetings.base` is yours to edit. Add or remove columns, change sorting, or add views from the toolbar above the table. See Obsidian's [Bases help](https://obsidian.md/help/bases). The plugin only creates the file if it's missing and never overwrites your changes. To get the original back, delete `Meetings.base` and run **Open meetings dashboard** again.
+`Meetings.base` is yours to edit. Add or remove columns, change sorting, or add views from the toolbar above the table. See Obsidian's [Bases help](https://obsidian.md/help/bases). The plugin never overwrites your changes; it only adds built-in views that are new in an update, once each. To get the original back, delete `Meetings.base` and run **Open meetings dashboard** again.
 
 ---
 
@@ -288,6 +296,58 @@ Click the **calendar with a check mark** in the left ribbon, or press **Cmd + P*
 Open the review again any time during the week: the plugin refreshes the top part with the latest numbers and leaves everything else — your Wins, Concerns, Next week's focus, and anything you add — exactly as you wrote it. The top part sits between two hidden markers; don't delete them, or the review can no longer be refreshed (your writing is still kept).
 
 Each week keeps its own note, so the folder becomes a history of your weeks.
+
+---
+
+## 6. Meeting insights
+
+### What it is
+
+One page of analytics across every meeting note, in `Meeting Insights.md` in your Meeting Hub folder:
+
+| Section | Shows |
+|---|---|
+| **Last 30 days at a glance** | Meetings held, hours in meetings, how many have an AI summary, next steps added and done, items overdue now |
+| **Needs attention** | Accounts whose latest meeting was **Negative** or **Mixed**, or **Blocked**; blocked meetings in the last 30 days; accounts you haven't met in over 30 days ("gone quiet") |
+| **Meetings per week** | The last 12 weeks, with hours and a bar for each week |
+| **Where the time goes** | Meetings and hours by category over the last 30 days, with a pie chart |
+| **Accounts** | Each account met in the last 90 days: meetings, last met, open and overdue items, sentiment over its last five meetings (🟢 Positive · ⚪ Neutral · 🟡 Mixed · 🔴 Negative) and latest outcome. Each account links to its overview note |
+| **Sentiment** and **Outcomes** | How many meetings had each sentiment (90 days) and outcome (30 days) |
+| **Trending topics** | Key topics of the last 30 days, compared with the 30 days before (↑ ↓ → or 🆕) |
+| **People you meet most** | Attendees and identified speakers over the last 30 days, with the items each owns |
+| **Action items by owner** | Open, overdue, and done in the last 30 days, per owner |
+| **Oldest open items** | The ten items open longest |
+| **Meetings without an AI summary** | Meetings in the last 14 days with no AI reply filed yet |
+| **Busiest days** | Meetings per weekday over 90 days |
+
+Category, account, sentiment, outcome, topics and speakers come from the properties **Add AI reply** saves from the reply's **Meeting Metadata** block (see [AI agent instructions](AGENT_INSTRUCTIONS.md)); hours come from each note's start and end. Meetings that were cancelled, removed or declined aren't counted. To leave yourself out of **People you meet most**, set **Your email address** in the plugin's settings.
+
+### How to open it
+
+Click the **trending-up arrow** button in the left ribbon, or press **Cmd + P** and run **Open meeting insights**.
+
+Like the tracker, it's rebuilt each time you open it — don't write in it. Opening it also refreshes every account overview note.
+
+---
+
+## 7. Account overviews
+
+### What it is
+
+One note per account, in an **Accounts** folder inside your Meeting Hub folder, named after the account (for example `Accounts/Acme Corp.md`). The plugin's part shows:
+
+- **At a glance**: meetings held, last met, the next meeting on the calendar, open and overdue items, and the sentiment trend
+- **Meetings**: every meeting with the account, newest first, with its category, sentiment and outcome
+- **Open items**, **Recent decisions** (the last five meetings with decisions), **Key topics** and **People** (with how many meetings each was in), and the organizations involved
+
+Above it are **Overview** and **Key contacts** sections for your own notes; they're never changed. An account is the `account` property of meeting notes; different capitalizations (`Acme`, `ACME`) count as one account.
+
+### How to open it
+
+- Run **Open meeting insights**: it creates or refreshes the note of every account met in the last 90 days, and links each one from its **Accounts** table.
+- Or, in any meeting note with an `account`, press **Cmd + P** and run **Open account overview**.
+
+The plugin's part sits between two hidden markers and is rebuilt each time; write above it.
 
 ---
 

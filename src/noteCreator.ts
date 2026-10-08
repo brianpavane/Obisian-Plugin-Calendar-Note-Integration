@@ -743,6 +743,19 @@ export function setFrontmatterValue(content: string, key: string, value: string)
   return `---\n${parsed.blocks.flatMap((b) => b.lines).join("\n")}\n---${parsed.end}${parsed.rest}`;
 }
 
+/** Set a list property in a note's frontmatter, replacing any value it had; a note without frontmatter is returned unchanged. */
+export function setFrontmatterList(content: string, key: string, values: string[]): string {
+  const parsed = parseFrontmatter(content);
+  if (!parsed) return content;
+  applyManagedFrontmatter(parsed.blocks, [[key, [`${key}:`, ...values.map((v) => `  - "${escapeYaml(sanitizeInline(v))}"`)]]]);
+  return `---\n${parsed.blocks.flatMap((b) => b.lines).join("\n")}\n---${parsed.end}${parsed.rest}`;
+}
+
+/** Whether a note's frontmatter has the property `key`. */
+export function hasFrontmatterKey(content: string, key: string): boolean {
+  return !!parseFrontmatter(content)?.blocks.some((b) => b.key === key);
+}
+
 /**
  * Add tags to a note's `tags` property (skipping ones it already has, in any
  * case), writing it as a list. A note without frontmatter is returned unchanged.

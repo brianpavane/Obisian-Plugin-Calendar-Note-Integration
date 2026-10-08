@@ -28,6 +28,17 @@ export interface TrackerMeeting {
   status?: string;
   /** The meeting's calendar event id. */
   id?: string;
+  /** Length in minutes, from the note's start and end. */
+  minutes?: number;
+  /** Properties from the AI reply's Meeting Metadata. */
+  sentiment?: string;
+  outcome?: string;
+  keyTopics?: string[];
+  organizations?: string[];
+  /** Attendees and identified speakers, by name. */
+  people?: string[];
+  /** An AI reply has been filed into the note (`ai_summarized`). */
+  summarized?: boolean;
 }
 
 export interface Item {

@@ -314,3 +314,51 @@ test("a six-section report filed into an older note adds the new sections before
   assert.match(out, /## Meeting Summary\n\nZscaler and Blackbaud[^\n]*\n\n## Summary by Topic\n\n### NSS feed alerts\n[\s\S]*\n## Speakers\n\n\|[\s\S]*\n\n## Transcript\n\nYou\n$/);
   assert.doesNotMatch(out, /## Executive Summary|## Next Steps|## Additional Items/);
 });
+
+test("the Meeting Metadata block and Speakers table become properties, and ai_summarized keeps its first date", () => {
+  const reply = parseReply([
+    "### Meeting Metadata",
+    "- **Category:** Customer",
+    "- **Account / Project:** Blackbaud",
+    "- **Organizations:** Zscaler, Blackbaud; GuidePoint Security",
+    "- **Key Topics:** NSS feeds, TLS inspection",
+    "- **Sentiment:** Mixed",
+    "- **Outcome:** Decision Made",
+    "- **Search Tags:** #Customer #Blackbaud #ZeroTrust",
+    "",
+    SIX_SECTION_REPLY.slice(SIX_SECTION_REPLY.indexOf("### 1.")).replace(
+      "| `Speaker 0` | Brian Pavane |",
+      "| `Speaker 0` | Brian Pavane |  |  |\n| `Speaker 1` | Matt Magyer (High confidence) | Blackbaud | Named |\n| `Speaker 2` | Unidentified |"
+    ),
+  ].join("\n"))!;
+  assert.equal(reply.category, "Customer");
+  assert.equal(reply.account, "Blackbaud");
+  assert.deepEqual(reply.organizations, ["Zscaler", "Blackbaud", "GuidePoint Security"]);
+  assert.deepEqual(reply.keyTopics, ["NSS feeds", "TLS inspection"]);
+  assert.equal(reply.sentiment, "Mixed");
+  assert.equal(reply.outcome, "Decision Made");
+  assert.deepEqual(reply.tags, ["Customer", "Blackbaud", "ZeroTrust"]);
+  assert.deepEqual(reply.speakerNames, ["Brian Pavane", "Matt Magyer"]);
+  assert.equal(reply.summary[0].slice(0, 7), "Zscaler", "the metadata block isn't filed as text");
+  assert.deepEqual(reply.decisions, ["**Brian Pavane, Matt Magyer**: Raise the TLS threshold to 5%."], "decision owners aren't read as metadata");
+
+  const once = applyReply(blankNote, reply, true, "2026-10-07").content;
+  assert.match(once, /^meeting_category: "Customer"$/m);
+  assert.match(once, /^account: "Blackbaud"$/m);
+  assert.match(once, /^sentiment: "Mixed"$/m);
+  assert.match(once, /^outcome: "Decision Made"$/m);
+  assert.match(once, /^organizations:\n {2}- "Zscaler"\n {2}- "Blackbaud"\n {2}- "GuidePoint Security"$/m);
+  assert.match(once, /^key_topics:\n {2}- "NSS feeds"\n {2}- "TLS inspection"$/m);
+  assert.match(once, /^speakers:\n {2}- "Brian Pavane"\n {2}- "Matt Magyer"$/m);
+  assert.match(once, /^ai_summarized: "2026-10-07"$/m);
+  assert.equal(applyReply(once, reply, true, "2026-10-09").content, once);
+  assert.doesNotMatch(applyReply(blankNote, reply, false, "2026-10-07").content, /ai_summarized|sentiment|speakers:/);
+});
+
+test("metadata placeholders such as General, TBD and None aren't saved", () => {
+  const reply = parseReply("- **Category:** TBD\n- **Account / Project:** General\n- **Organizations:** None\n- **Sentiment:** [TBD]\n### Executive Summary\nShort.")!;
+  assert.equal(reply.category, undefined);
+  assert.equal(reply.account, undefined);
+  assert.deepEqual(reply.organizations, []);
+  assert.equal(reply.sentiment, undefined);
+});

@@ -70,9 +70,18 @@ export function createMemoryApp(initialFiles: Array<{ path: string; content?: st
         const fm = (file.content ?? "").match(/^---\n([\s\S]*?)\n---/);
         if (!fm) return null;
         const frontmatter: Record<string, unknown> = {};
+        let last: string | undefined;
         for (const line of fm[1].split("\n")) {
           const m = line.match(/^([A-Za-z0-9_-]+):\s*"?(.*?)"?$/);
-          if (m) frontmatter[m[1]] = m[2];
+          if (m) {
+            frontmatter[m[1]] = m[2];
+            last = m[1];
+          }
+          const item = line.match(/^\s+-\s+"?(.*?)"?$/);
+          if (item && last) {
+            const list = Array.isArray(frontmatter[last]) ? frontmatter[last] as string[] : [];
+            frontmatter[last] = [...list, item[1]];
+          }
         }
         return { frontmatter };
       },

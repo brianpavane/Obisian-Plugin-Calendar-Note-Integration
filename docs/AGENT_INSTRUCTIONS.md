@@ -17,7 +17,19 @@ The headings may be numbered (`### 1. Executive Summary`) or bold (`**1. Executi
 
 Older notes with **Meeting Summary**, **Decisions** and **Action items** sections still work: the reply goes into those, and Summary by Topic, Additional Items and Speakers are added before the Transcript.
 
-These instructions don't produce a Category, Account / Project or Search Tags, so the **By account** and **By category** dashboard views only show meetings whose `account` and `meeting_category` properties you set yourself.
+Before the six sections, the agent writes a **Meeting Metadata** block. It isn't added to the note's text; with **Save the reply's details as properties** on (the default), it becomes the note's properties, which drive the [dashboards](DASHBOARDS.md):
+
+| Metadata field | Property |
+|---|---|
+| **Category** | `meeting_category` |
+| **Account / Project** | `account` (left out when it's `General`) |
+| **Organizations** | `organizations` (a list) |
+| **Key Topics** | `key_topics` (a list) |
+| **Sentiment** | `sentiment` |
+| **Outcome** | `outcome` |
+| **Search Tags** | added to `tags` |
+
+The names in the **Speakers** table become a `speakers` list (unidentified speakers are left out), and `ai_summarized` records the day the first reply was filed.
 
 ## Setting up your assistant
 
@@ -94,7 +106,24 @@ Raw transcripts often identify participants only as `Speaker 0`, `Speaker 1`, et
 
 ## 4. Required Output Structure & Section Rules
 
-You must generate the output strictly using the following 6 sections in the exact order specified:
+Begin the output with a **Meeting Metadata** block, then generate the following 6 sections in the exact order specified.
+
+### Meeting Metadata
+- **Format**: One labeled bullet per field, exactly as below; pick a single value where options are listed.
+```
+### Meeting Metadata
+- **Category:** Customer | Partner | Internal Account | 1:1 | Team Sync | Misc
+- **Account / Project:** [Customer name or internal initiative, or General]
+- **Organizations:** [Every organization represented, comma-separated]
+- **Key Topics:** [3–6 short, reusable topic names, comma-separated]
+- **Sentiment:** Positive | Neutral | Mixed | Negative
+- **Outcome:** Decision Made | Progress | Blocked | Informational
+- **Search Tags:** #[Category] #[Account] #[KeyTopic] (no spaces inside a tag)
+```
+- **Content**:
+  - Use the same account and topic names across meetings (e.g., always `Blackbaud`, not `Blackbaud Inc.` one week and `BB` the next) so dashboards group them together.
+  - **Sentiment** reflects the external party's tone for customer and partner meetings, and the team's overall tone otherwise.
+  - **Outcome**: `Decision Made` when at least one Key Decision was reached, `Blocked` when progress depends on an unresolved blocker, `Progress` for forward movement without a formal decision, `Informational` for updates and briefings.
 
 ### 1. Executive Summary
 - **Format**: Exactly 1 to 2 concise, dense paragraphs.
@@ -145,7 +174,7 @@ You must generate the output strictly using the following 6 sections in the exac
 
 ## 5. Tone, Formatting & Processing Guardrails
 
-1. **Strict Order**: Never reorder, omit, or rename the 6 designated section headers.
+1. **Strict Order**: Never reorder, omit, or rename the Meeting Metadata block or the 6 designated section headers.
 2. **Entity Grounding & Anti-Hallucination**:
    - Only include facts, decisions, and action items directly supported by the transcript text.
    - Do not invent names, dates, commitments, or technical specs. If a detail is ambiguous or inaudible, label it as `[Unclear from audio]` or `[TBD]`.

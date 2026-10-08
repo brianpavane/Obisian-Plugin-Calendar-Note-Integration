@@ -32,6 +32,8 @@ export interface TaskMeta {
   priority?: Priority;
   /** The Tasks plugin's done date (`✅ 2026-10-08`), if the task has one. */
   doneOn?: string;
+  /** The Tasks plugin's created date (`➕ 2026-10-08`), if the task has one. */
+  created?: string;
 }
 
 const DUE_RE = /\s*(?:📅\s*(\d{4}-\d{2}-\d{2})|\[due::\s*(\d{4}-\d{2}-\d{2})\s*\])/u;
@@ -52,12 +54,14 @@ export function parseTaskMeta(text: string): TaskMeta {
   const person = text.match(OWNER_RE);
   const role = text.match(ROLE_OWNER_RE);
   const doneOn = text.match(/✅\s*(\d{4}-\d{2}-\d{2})/u)?.[1];
+  const created = text.match(/➕\s*(\d{4}-\d{2}-\d{2})/u)?.[1];
   return {
     text: text.replace(DUE_RE, "").replace(OTHER_MARKS_RE, "").replace(/\s+/g, " ").trim(),
     owner: person ? (person[1] ?? person[2]).trim() : role?.[1].trim(),
     due: due ? due[1] ?? due[2] : undefined,
     priority: PRIORITY_MARKS.find(([re]) => re.test(text))?.[1],
     ...(doneOn ? { doneOn } : {}),
+    ...(created ? { created } : {}),
   };
 }
 

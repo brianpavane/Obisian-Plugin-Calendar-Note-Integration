@@ -18,7 +18,21 @@ New notes now have **Executive Summary**, **Next Steps**, **Summary by Topic**, 
 A reply with Executive Summary, Next Steps, Summary (by topic), Key Decisions/Agreements, Additional Items and Speakers fills the note section of the same name. Next steps such as `- [ ] **Bob Jones**: Send the scope (2026-10-09)` become tasks with `@[[Bob Jones]]` as owner and a due date. In older notes the reply fills Meeting Summary, Decisions and Action items and adds the new sections before the Transcript. Older reply formats are still understood.
 
 **New agent and built-in instructions**
-`docs/AGENT_INSTRUCTIONS.md` now holds the Meeting Intelligence & Transcript Processing agent instructions, which resolve transcript speakers to real names. The built-in instructions ask for the same six sections. They don't produce a category, account or tags, so set those properties by hand if you use the **By account** and **By category** views.
+`docs/AGENT_INSTRUCTIONS.md` now holds the Meeting Intelligence & Transcript Processing agent instructions, which resolve transcript speakers to real names. The built-in instructions ask for the same six sections.
+
+### Added
+
+**Meeting Metadata in AI replies**
+The agent and built-in instructions now start the reply with a Meeting Metadata block: category, account / project, organizations, key topics, sentiment, outcome and search tags. **Add AI reply** saves them as the note's `meeting_category`, `account`, `organizations`, `key_topics`, `sentiment`, `outcome` and `tags` properties, the Speakers table's names as `speakers`, and the day the first reply was filed as `ai_summarized`. The setting is now called **Save the reply's details as properties**.
+
+**Meeting insights**
+A new **Open meeting insights** command and ribbon button build `Meeting Insights.md` in the Meeting Hub. It covers the last 30 days at a glance, accounts needing attention (negative or mixed sentiment, blocked, gone quiet), meetings and hours per week, time by category with a pie chart, an accounts table with sentiment trends, sentiment and outcome counts, trending topics, the people you meet most, action items by owner, the oldest open items, meetings still needing an AI summary, and the busiest weekdays.
+
+**Account overviews**
+One note per account in the Meeting Hub's **Accounts** folder. It lists every meeting with its sentiment and outcome, open items, recent decisions, key topics, people and organizations, and has Overview and Key contacts sections for your own notes. Opening insights refreshes all of them; **Open account overview** opens the current meeting's account.
+
+**New dashboard views**
+`Meetings.base` gains **Customer meetings**, **By sentiment**, **By outcome**, **Needs AI summary** and **AI-summarized** views. An existing dashboard gets them added once when you next open it; a built-in view you delete stays deleted.
 
 ---
 

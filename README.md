@@ -20,14 +20,16 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 - **Your own template** — point the plugin at a template note with placeholders, or use the built-in format
 - **Daily-note links** — each meeting links to that day's daily note, so the day's meetings appear in its backlinks
 - **Next meeting in the status bar** — click it, or run **Join current or next meeting**, to open the note and join
-- **Meetings dashboard** — a ready-made Bases view of upcoming and recent meetings ([guide](docs/DASHBOARDS.md))
+- **Meetings dashboard** — a ready-made Bases file of upcoming and recent meetings, by account, category, sentiment and outcome, customer meetings, and meetings still needing an AI summary ([guide](docs/DASHBOARDS.md))
 - **Today's meetings** — a sidebar of today's meetings (arrows step to other days) with one-click **Open note**, **Join** and **New note** buttons ([guide](docs/DASHBOARDS.md))
 - **Krisp transcripts** — fill a meeting's Transcript section from its Krisp recording, by command or automatically
-- **AI summaries by copy and paste** — copy a meeting for Gemini, Claude, ChatGPT or Copilot (or your own agent), paste the reply back into Executive Summary, Next Steps, Summary by Topic, Key Decisions, Additional Items and Speakers; the plugin itself never goes online
+- **AI summaries by copy and paste** — copy a meeting for Gemini, Claude, ChatGPT or Copilot (or your own agent), paste the reply back into Executive Summary, Next Steps, Summary by Topic, Key Decisions, Additional Items and Speakers, with its category, account, organizations, key topics, sentiment, outcome and speakers saved as properties; the plugin itself never goes online
 - **File notes anywhere** — move finished notes into your own folders; the plugin still finds them
 - **Skip rules** — no automatic notes for meetings titled Focus time, Lunch, etc., or with no one else invited
 - **Action items view** — every open action item across your meetings in one sidebar, grouped by meeting, owner (`@Bob`), or due date (`📅 2026-10-10`), with priorities, ticked off in place ([guide](docs/DASHBOARDS.md))
 - **Meeting tracker** — one page with overdue and upcoming items, high priorities, open items by account and person, recent decisions and this week's meetings ([guide](docs/DASHBOARDS.md))
+- **Meeting insights** — analytics across your meetings: hours per week and by category, accounts needing attention (negative sentiment, blocked, gone quiet), sentiment trends, trending topics, the people you meet most, follow-through by owner and the oldest open items ([guide](docs/DASHBOARDS.md#6-meeting-insights))
+- **Account overviews** — a note per customer or project with every meeting, its sentiment trend, open items, decisions, topics and people, plus space for your own notes ([guide](docs/DASHBOARDS.md#7-account-overviews))
 - **Weekly review** — a note per week with its meetings, decisions, what got done and what's still open, plus space for your own wins, concerns and next week's focus ([guide](docs/DASHBOARDS.md))
 - **Works with the Tasks plugin** — action items use its format (priority, created, due and done dates), for live lists in any note ([guide](docs/TASKS.md))
 - **Declined event filtering** — events you have declined are skipped, when the calendar identifies you as an attendee or your email address is set
@@ -121,7 +123,7 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Note folder | Meeting Notes | Vault-relative folder for created notes. You can move notes anywhere in the vault afterwards — the plugin finds them by their `calendar_event_id` property |
-| Meeting Hub folder | *(empty — same as note folder)* | Folder for the Meeting Tracker, the `Meetings.base` dashboard, `Weekly Reviews` and `Series` notes, e.g. `Meeting Hub`. After changing it, click **Move existing files** to move the ones you already have (links to them keep working; a file already in the new folder is left in place) |
+| Meeting Hub folder | *(empty — same as note folder)* | Folder for the Meeting Tracker, Meeting Insights, the `Meetings.base` dashboard, and the `Weekly Reviews`, `Series` and `Accounts` notes, e.g. `Meeting Hub`. After changing it, click **Move existing files** to move the ones you already have (links to them keep working; a file already in the new folder is left in place) |
 | Hours in advance | 12 | Create notes for events starting within this many hours (1–48) |
 | Poll interval | 30 min | How often to check for new upcoming events (5–120) |
 | Include past events | Off | Also create notes for events that have already started |
@@ -158,7 +160,7 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 |---------|---------|-------------|
 | Include instructions when copying | On | Put the instructions in front of the copied meeting. Turn off if your assistant already has its own instructions (a Gem, custom GPT, Claude Project or Copilot agent) |
 | Instructions | *(built-in)* | What the assistant is asked to do. **Copy** puts them on the clipboard; **Reset to default** restores the built-in text |
-| Save category, account and tags as properties | On | Save a reply's Category, Primary Account / Project and Search Tags as `meeting_category`, `account` and `tags` |
+| Save the reply's details as properties | On | Save the reply's Meeting Metadata as `meeting_category`, `account`, `organizations`, `key_topics`, `sentiment`, `outcome` and `tags`, its speakers as `speakers`, and the day it was first filed as `ai_summarized` — see [AI agent instructions](docs/AGENT_INSTRUCTIONS.md) |
 
 ### Manual Actions
 
@@ -419,6 +421,8 @@ Both steps are optional. The note's sections are there for you to write in by ha
 | **Open meeting action items** | Shows every open action item from your meeting notes in the right sidebar |
 | **Open this week's review** / **Open last week's review** | Creates (or refreshes) the week's review note in `Weekly Reviews` inside your Meeting Hub folder — see [Weekly review](docs/DASHBOARDS.md#5-weekly-review) |
 | **Open series note** | For a recurring meeting's note: creates (or refreshes) the series note in `Series` inside your Meeting Hub folder — see [Recurring meetings](#recurring-meetings) |
+| **Open meeting insights** | Rebuilds and opens `Meeting Insights.md` in your Meeting Hub folder, and refreshes every account overview — see [Meeting insights](docs/DASHBOARDS.md#6-meeting-insights) |
+| **Open account overview** | In a meeting note with an `account`, rebuilds and opens that account's note in `Accounts` inside your Meeting Hub folder — see [Account overviews](docs/DASHBOARDS.md#7-account-overviews) |
 | **Open meeting tracker** | Rebuilds and opens `Meeting Tracker.md` in your Meeting Hub folder: overdue, due soon, high priority, by account, by person, recent decisions, this week's meetings |
 | **Import Krisp transcript into this note** | Suggests the open note's Krisp recording and, once you confirm, fills its empty Transcript section — see [Krisp transcripts](#krisp-transcripts) |
 | **Copy meeting for AI assistant** | Copies the open note's meeting details, notes and transcript (and, if switched on, the instructions) — see [AI summaries](#ai-summaries-copy-and-paste) |
@@ -453,7 +457,7 @@ Click the **calendar-with-clock** button in the left ribbon (or run **Open today
 
 ### Meetings dashboard
 
-Click the **dashboard** button in the left ribbon (or run **Open meetings dashboard**). It creates a [Bases](https://obsidian.md/help/bases) file (Obsidian 1.9 or later) listing every meeting note, with **Next 7 days**, **Last 7 days**, **By account**, **By category** and **All meetings** views. It is an ordinary `.base` file — edit its columns, filters, and views like any other base.
+Click the **dashboard** button in the left ribbon (or run **Open meetings dashboard**). It creates a [Bases](https://obsidian.md/help/bases) file (Obsidian 1.9 or later) listing every meeting note, with **Next 7 days**, **Last 7 days**, **By account**, **By category**, **Customer meetings**, **By sentiment**, **By outcome**, **Needs AI summary**, **AI-summarized** and **All meetings** views. It is an ordinary `.base` file — edit its columns, filters, and views like any other base. Views added in later versions are added to your copy once.
 
 ### Meeting action items
 
