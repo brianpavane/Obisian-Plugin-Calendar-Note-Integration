@@ -70,6 +70,8 @@ export interface TodayHost {
   openNote(event: CalendarEvent): Promise<void>;
   /** Run a follow-up step on the meeting's note. */
   noteAction(event: CalendarEvent, action: NoteAction): Promise<void>;
+  /** Open (or create) the recurring meeting's series note. */
+  openSeries(event: CalendarEvent): Promise<void>;
 }
 
 export type NoteAction = "transcript" | "copy" | "reply";
@@ -222,6 +224,11 @@ export class TodayView extends ItemView {
       if (url && row.state !== "done") {
         const join = actions.createEl("button", { cls: "mod-cta", text: "Join" });
         join.addEventListener("click", () => window.open(url));
+      }
+      if (row.event.id.includes("::")) {
+        const series = actions.createEl("button", { cls: "clickable-icon cal-notes-icon-button", attr: { "aria-label": "Open series note" } });
+        setIcon(series, "repeat");
+        series.addEventListener("click", () => this.host.openSeries(row.event));
       }
       if (hasNote && row.state !== "upcoming") {
         for (const [icon, label, action] of FOLLOW_UPS) {

@@ -72,6 +72,7 @@ export class Notice {
   message: string;
   timeout?: number;
   hidden = false;
+  messageEl = createFakeEl();
 
   constructor(message: string, timeout?: number) {
     this.message = message;
@@ -288,5 +289,6 @@ function createFakeEl() {
     createEl() { return createFakeEl(); },
     createDiv() { return createFakeEl(); },
     createSpan() { return createFakeEl(); },
+    addEventListener() {},
   };
 }

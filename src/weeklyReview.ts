@@ -139,9 +139,14 @@ export function newReview(body: string, week: Week): string {
  * Returns the content unchanged if the markers were removed.
  */
 export function refreshReview(content: string, body: string): string {
-  const start = content.indexOf(START_MARKER);
-  const end = content.indexOf(END_MARKER);
+  return replaceBetweenMarkers(content, body, START_MARKER, END_MARKER);
+}
+
+/** Replace the text from `startMarker` to `endMarker` (inclusive) with `body`; unchanged if either marker is missing. */
+export function replaceBetweenMarkers(content: string, body: string, startMarker: string, endMarker: string): string {
+  const start = content.indexOf(startMarker);
+  const end = content.indexOf(endMarker);
   if (start === -1 || end === -1 || end < start) return content;
-  return content.slice(0, start) + body + content.slice(end + END_MARKER.length);
+  return content.slice(0, start) + body + content.slice(end + endMarker.length);
 }
 

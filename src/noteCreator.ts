@@ -36,6 +36,8 @@ export interface NoteOptions {
   template?: string;
   /** Vault path (without `.md`) of the previous meeting in the same series. */
   previousNote?: string;
+  /** Vault path (without `.md`) of the recurring meeting's series note. */
+  seriesNote?: string;
   /** Open action items of the previous meeting, listed in the new note's Agenda. */
   carriedItems?: string[];
   /**
@@ -400,13 +402,17 @@ function meetingLink(event: CalendarEvent): MeetingLink | undefined {
   };
 }
 
+function noteTitle(event: CalendarEvent): string {
+  return sanitizeInline(event.summary?.trim() || "Untitled Event");
+}
+
 function organizerName(event: CalendarEvent): string | undefined {
   if (!event.organizer) return undefined;
   return sanitizeInline(event.organizer.displayName?.trim() || event.organizer.email) || undefined;
 }
 
 /** Frontmatter keys the plugin keeps in sync with the calendar. `null` = remove. */
-type SyncOptions = Pick<NoteOptions, "linkAttendees" | "dailyNote" | "previousNote"> & {
+type SyncOptions = Pick<NoteOptions, "linkAttendees" | "dailyNote" | "previousNote" | "seriesNote"> & {
   /** You declined this meeting. */
   declined?: boolean;
 };
@@ -452,7 +458,7 @@ function managedFrontmatter(
     [key, value ? [`${key}: "${escapeYaml(value)}"`] : null];
 
   return [
-    quoted("title", sanitizeInline(event.summary?.trim() || "Untitled Event")),
+    quoted("title", noteTitle(event)),
     ["date", [`date: ${timing.date}`]],
     quoted("daily_note", (() => {
       const link = dailyNoteLink(timing.date, options.dailyNote);
@@ -460,6 +466,10 @@ function managedFrontmatter(
     })()),
     quoted("previous_meeting", (() => {
       const link = previousLink(options.previousNote);
+      return link ? wikilink(link) : undefined;
+    })()),
+    quoted("series", (() => {
+      const link = previousLink(options.seriesNote);
       return link ? wikilink(link) : undefined;
     })()),
     ["start", timing.start ? [`start: ${timing.start}`] : null],
@@ -497,6 +507,8 @@ function renderDetailsCallout(event: CalendarEvent, options: SyncOptions): strin
   );
   const previous = previousLink(options.previousNote);
   if (previous) lines.push(`> **Previous:** ${wikilink(previous)}`);
+  const series = previousLink(options.seriesNote);
+  if (series) lines.push(`> **Series:** ${wikilink(series)}`);
   if (event.location) lines.push(`> **Where:** ${escapeInlineMd(event.location)}`);
   if (link) lines.push(`> **Join:** [Join ${escapeInlineMd(link.platform)}](${link.url})`);
 
@@ -549,7 +561,7 @@ export const DEFAULT_TEMPLATE = builtInTemplate();
 /** Placeholders available in templates, mapped to their value for this event. */
 function templateValues(
   event: CalendarEvent,
-  options: Pick<NoteOptions, "includeEventNotes" | "linkAttendees" | "dailyNote" | "previousNote" | "carriedItems">
+  options: Pick<NoteOptions, "includeEventNotes" | "linkAttendees" | "dailyNote" | "previousNote" | "seriesNote" | "carriedItems">
 ): Record<string, string> {
   const timing = getEventTiming(event);
   const link = meetingLink(event);
@@ -565,7 +577,7 @@ function templateValues(
     : [];
 
   return {
-    title: sanitizeInline(event.summary?.trim() || "Untitled Event"),
+    title: noteTitle(event),
     date: timing.date,
     date_long: timing.dateLong,
     start: timing.start ?? "",
@@ -659,7 +671,7 @@ function applyManagedFrontmatter(blocks: FrontmatterBlock[], entries: Array<[str
  */
 export function createNoteContent(
   event: CalendarEvent,
-  options: Pick<NoteOptions, "includeEventNotes" | "linkAttendees" | "dailyNote" | "template" | "previousNote" | "carriedItems">
+  options: Pick<NoteOptions, "includeEventNotes" | "linkAttendees" | "dailyNote" | "template" | "previousNote" | "seriesNote" | "carriedItems">
 ): string {
   const template = (options.template ?? DEFAULT_TEMPLATE).replace(/\r\n/g, "\n");
   const values = templateValues(event, options);
@@ -804,16 +816,21 @@ export function generateNoteFilename(
   event: CalendarEvent,
   datePosition: "before" | "after" = "before"
 ): string {
-  const raw = event.summary?.trim() || "Untitled Event";
-  const safe = raw
+  return noteFilename(event.summary?.trim() || "Untitled Event", eventDate(event), datePosition);
+}
+
+/** A title with the characters file systems forbid replaced by hyphens. */
+export function safeFilename(title: string): string {
+  return title
     .replace(/[\\/:*?"<>|]/g, "-")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/^\.+/, "") || "Untitled Event";
+}
 
-  const dateIso = eventDate(event);
-
-  return datePosition === "after" ? `${safe} - ${dateIso}` : `${dateIso} - ${safe}`;
+function noteFilename(title: string, date: string, datePosition: "before" | "after"): string {
+  const safe = safeFilename(title);
+  return datePosition === "after" ? `${safe} - ${date}` : `${date} - ${safe}`;
 }
 
 /** Return value of {@link createNoteFile}. */
@@ -894,37 +911,115 @@ export function findNotesByEventId(app: App): Map<string, TFile> {
   return byId;
 }
 
+/** Groups of two or more notes whose `calendar_event_id` is for the same meeting. */
+export function findDuplicateNotes(app: App): TFile[][] {
+  const byId = new Map<string, TFile[]>();
+  for (const file of app.vault.getMarkdownFiles()) {
+    const stored = app.metadataCache.getFileCache(file)?.frontmatter?.calendar_event_id;
+    if (typeof stored !== "string" || !stored) continue;
+    const id = canonicalEventId(stored);
+    byId.set(id, [...(byId.get(id) ?? []), file]);
+  }
+  return [...byId.values()].filter((files) => files.length > 1);
+}
+
+/** The series part of a recurring meeting's occurrence id (before the last `::`); undefined for one-off meetings. */
+export function seriesId(eventId: string): string | undefined {
+  const sep = eventId.lastIndexOf("::");
+  return sep === -1 ? undefined : eventId.slice(0, sep);
+}
+
+/** Every series note in the vault, by its `series_id` property. */
+export function findSeriesNotes(app: App): Map<string, TFile> {
+  const byId = new Map<string, TFile>();
+  for (const file of app.vault.getMarkdownFiles()) {
+    const id = app.metadataCache.getFileCache(file)?.frontmatter?.series_id;
+    if (typeof id === "string" && id && !byId.has(id)) byId.set(id, file);
+  }
+  return byId;
+}
+
+/** Options for {@link syncNoteFile}: the note sync options plus how it may rename the note. */
+export type SyncFileOptions = SyncOptions & {
+  datePosition?: "before" | "after";
+  /** Rename the note, and its `# heading`, when the meeting's title changes. */
+  renameOnTitleChange?: boolean;
+};
+
+export interface SyncFileResult {
+  changed: boolean;
+  /** Path of the note that stopped this one being renamed, because it has the new name. */
+  blockedBy?: string;
+}
+
+const DATE_IN_NAME_RE = /\d{4}-\d{2}-\d{2}/;
+
+function frontmatterTitle(content: string): string | undefined {
+  const fm = parseFrontmatter(content);
+  const line = fm?.blocks.find((b) => b.key === "title")?.lines[0];
+  const m = line?.match(/^title:\s*(?:"((?:[^"\\]|\\.)*)"|(.*?))\s*$/);
+  if (!m) return undefined;
+  return (m[1] !== undefined ? m[1].replace(/\\(["\\])/g, "$1") : m[2]) || undefined;
+}
+
+function replaceHeading(content: string, oldTitle: string, newTitle: string): string {
+  const lines = content.split("\n");
+  const i = lines.findIndex((line) => line.replace(/\r$/, "") === `# ${oldTitle}`);
+  if (i === -1) return content;
+  lines[i] = `# ${newTitle}`;
+  return lines.join("\n");
+}
+
+/**
+ * The note's new basename, or undefined to keep it. The date in the filename
+ * is compared with the meeting's (not the `date` property), so a rename that
+ * was blocked once is retried. A filename the plugin generated from the old
+ * title also takes the new title; one the user edited only gets its date changed.
+ */
+function renamedBasename(basename: string, event: CalendarEvent, oldTitle: string | undefined, options: SyncFileOptions): string | undefined {
+  const dateInName = basename.match(DATE_IN_NAME_RE)?.[0];
+  if (!dateInName) return undefined;
+  const newDate = eventDate(event);
+  const position = options.datePosition ?? "before";
+  const target = options.renameOnTitleChange && oldTitle && basename === noteFilename(oldTitle, dateInName, position)
+    ? noteFilename(noteTitle(event), newDate, position)
+    : basename.replace(dateInName, newDate);
+  return target === basename ? undefined : target;
+}
+
 /**
  * Update an existing note's calendar details from the event, and rename it if
- * the meeting moved to another day (only the date part of the filename changes,
- * so a title the user edited is kept). Returns true if anything changed.
+ * the meeting moved to another day or (with `renameOnTitleChange`) was retitled.
+ * A rename is skipped when another note already has the new name.
  */
 export async function syncNoteFile(
   app: App,
   file: TFile,
   event: CalendarEvent,
-  options: SyncOptions
-): Promise<boolean> {
+  options: SyncFileOptions
+): Promise<SyncFileResult> {
   let changed = false;
   const current = await app.vault.read(file);
-  const oldDate = current.match(/^date:\s*"?(\d{4}-\d{2}-\d{2})/m)?.[1];
-  if (updateNoteContent(current, event, options) !== current) {
-    await app.vault.process(file, (content) => updateNoteContent(content, event, options));
+  const oldTitle = frontmatterTitle(current);
+  const newTitle = noteTitle(event);
+  const update = (content: string) => {
+    const updated = updateNoteContent(content, event, options);
+    return options.renameOnTitleChange && oldTitle && oldTitle !== newTitle
+      ? replaceHeading(updated, oldTitle, newTitle)
+      : updated;
+  };
+  if (update(current) !== current) {
+    await app.vault.process(file, update);
     changed = true;
   }
 
-  const newDate = eventDate(event);
   const slash = file.path.lastIndexOf("/");
-  const dir = slash === -1 ? "" : file.path.slice(0, slash + 1);
-  const basename = file.path.slice(slash + 1).replace(/\.md$/, "");
-  if (oldDate && oldDate !== newDate && basename.includes(oldDate)) {
-    const newPath = `${dir}${basename.replace(oldDate, newDate)}.md`;
-    if (!app.vault.getAbstractFileByPath(newPath)) {
-      await app.fileManager.renameFile(file, newPath);
-      changed = true;
-    }
-  }
-  return changed;
+  const target = renamedBasename(file.path.slice(slash + 1).replace(/\.md$/, ""), event, oldTitle, options);
+  if (!target) return { changed };
+  const newPath = `${slash === -1 ? "" : file.path.slice(0, slash + 1)}${target}.md`;
+  if (app.vault.getAbstractFileByPath(newPath)) return { changed, blockedBy: newPath };
+  await app.fileManager.renameFile(file, newPath);
+  return { changed: true };
 }
 
 /**
@@ -976,23 +1071,58 @@ export function doneTasks(content: string): OpenTask[] {
 }
 
 /**
- * Note options for one event: the link to the previous meeting in its series
- * that took place (cancelled, removed and declined ones are skipped)
- * and, when `withItems` is set (new notes), that meeting's open action items.
+ * Note options for one event: its series note, if one exists, the link to
+ * the previous meeting in its series that took place (cancelled, removed and
+ * declined ones are skipped) and, when `withItems` is set (new notes), that
+ * meeting's open action items.
  */
 export async function seriesOptions(
   app: App,
   notesById: Map<string, TFile>,
   event: CalendarEvent,
-  withItems: boolean
-): Promise<Pick<NoteOptions, "previousNote" | "carriedItems">> {
+  withItems: boolean,
+  seriesNotes: Map<string, TFile> = findSeriesNotes(app)
+): Promise<Pick<NoteOptions, "previousNote" | "seriesNote" | "carriedItems">> {
+  const id = seriesId(event.id);
+  const seriesNote = id ? seriesNotes.get(id)?.path.replace(/\.md$/, "") : undefined;
   const held = new Map(
     [...notesById].filter(([, file]) => !isSkippedStatus(app.metadataCache.getFileCache(file)?.frontmatter?.status))
   );
   const previous = previousNoteInSeries(held, event.id);
-  if (!previous) return {};
+  if (!previous) return { seriesNote };
   return {
     previousNote: previous.path.replace(/\.md$/, ""),
+    seriesNote,
     carriedItems: withItems ? openTasks(await app.vault.read(previous)).map((t) => t.text) : undefined,
   };
+}
+
+/**
+ * Link a meeting note to its series note: the `series` property and a
+ * **Series:** line in the "Meeting details" box (after **Previous:**, or
+ * after **When:**). A note without frontmatter is returned unchanged.
+ */
+export function setSeriesLink(content: string, seriesNote: string): string {
+  const parsed = parseFrontmatter(content);
+  if (!parsed) return content;
+  const link = wikilink(previousLink(seriesNote) as DailyLink);
+  applyManagedFrontmatter(parsed.blocks, [["series", [`series: "${escapeYaml(link)}"`]]]);
+
+  const body = parsed.rest.split("\n");
+  const start = body.findIndex((line) => DETAILS_CALLOUT_RE.test(line.replace(/\r$/, "")));
+  if (start !== -1) {
+    let end = start + 1;
+    while (end < body.length && body[end].startsWith(">")) end++;
+    const line = `> **Series:** ${link}`;
+    const box = body.slice(start, end);
+    const existing = box.findIndex((l) => l.startsWith("> **Series:**"));
+    if (existing !== -1) {
+      body[start + existing] = line;
+    } else {
+      const previous = box.findIndex((l) => l.startsWith("> **Previous:**"));
+      const when = box.findIndex((l) => l.startsWith("> **When:**"));
+      body.splice(start + Math.max(previous, when, 0) + 1, 0, line);
+    }
+  }
+  return `---\n${parsed.blocks.flatMap((b) => b.lines).join("\n")}\n---${parsed.end}${body.join("\n")}`;
 }

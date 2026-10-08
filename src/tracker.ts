@@ -24,6 +24,10 @@ export interface TrackerMeeting {
   decisions: string[];
   /** The meeting was cancelled, removed from the calendar or declined. */
   skipped?: boolean;
+  /** The note's `status` property (e.g. "cancelled"), if any. */
+  status?: string;
+  /** The meeting's calendar event id. */
+  id?: string;
 }
 
 export interface Item {

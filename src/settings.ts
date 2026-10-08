@@ -59,6 +59,10 @@ export interface GoogleCalendarSettings {
   templatePath: string;
   datePosition: "before" | "after";
   daysAhead: number;
+  /** Days ahead to keep existing notes in sync (renamed when moved, updated when changed). */
+  syncDaysAhead: number;
+  /** Rename a note, and its heading, when its meeting's title changes. */
+  renameOnTitleChange: boolean;
   maxEvents: number;
   /** IDs of events that have already been processed (note created or skipped). */
   processedEventIds: string[];
@@ -106,6 +110,8 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   templatePath: "",
   datePosition: "before",
   daysAhead: 7,
+  syncDaysAhead: 30,
+  renameOnTitleChange: true,
   maxEvents: 20,
   processedEventIds: [],
   lastRunVersion: "",
@@ -617,7 +623,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Meeting Hub folder")
-      .setDesc("Vault folder for the Meeting Tracker, the Meetings dashboard and Weekly Reviews. Leave empty to use the note folder.")
+      .setDesc("Vault folder for the Meeting Tracker, the Meetings dashboard, Weekly Reviews and series notes. Leave empty to use the note folder.")
       .addText((text) => {
         new FolderSuggest(this.app, text.inputEl);
         text
@@ -631,7 +637,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Move existing files")
-      .setDesc("Move the Meeting Tracker, the Meetings dashboard and Weekly Reviews from the note folder into the Meeting Hub folder. Links to them keep working.")
+      .setDesc("Move the Meeting Tracker, the Meetings dashboard, Weekly Reviews and series notes from the note folder into the Meeting Hub folder. Links to them keep working.")
       .addButton((button) =>
         button.setButtonText("Move existing files").onClick(async () => {
           button.setDisabled(true);
@@ -721,6 +727,45 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
             });
         });
     }
+
+    new Setting(containerEl)
+      .setName("Keep notes in sync for meetings up to this many days ahead")
+      .setDesc(
+        "Notes that already exist are updated when their meeting changes, and renamed when it moves to " +
+          "another day, as long as the meeting is within this many days. New notes are still only created " +
+          "Hours in advance. (1–90)"
+      )
+      .addText((text) => {
+        text.inputEl.type = "number";
+        text.inputEl.min = "1";
+        text.inputEl.max = "90";
+        text.inputEl.step = "1";
+        text.inputEl.style.width = "80px";
+        text
+          .setValue(String(this.plugin.settings.syncDaysAhead))
+          .onChange(async (value) => {
+            const num = parseInt(value, 10);
+            if (!isNaN(num) && num >= 1 && num <= 90) {
+              this.plugin.settings.syncDaysAhead = num;
+              await this.plugin.saveSettings();
+            }
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Rename notes when the meeting title changes")
+      .setDesc(
+        "When a meeting is retitled, rename its note and update the note's heading. A note you renamed " +
+          "yourself keeps your name; only its date is updated."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.renameOnTitleChange)
+          .onChange(async (value) => {
+            this.plugin.settings.renameOnTitleChange = value;
+            await this.plugin.saveSettings();
+          })
+      );
 
     new Setting(containerEl)
       .setName("Skip meetings titled")

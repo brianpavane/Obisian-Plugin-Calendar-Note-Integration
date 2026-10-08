@@ -972,3 +972,109 @@ test("refreshNotes marks the note of a meeting you declined, and restores it if 
   assert.match(note(), /^> \[!info\] Meeting details$/m);
   assert.equal(app.createdPaths.length, 1);
 });
+
+test("the calendar is read far enough ahead to keep notes in sync for the configured number of days", async () => {
+  const plugin = createPlugin();
+  plugin.settings = appleSettings({ daysAhead: 7, syncDaysAhead: 45 });
+  const service = await plugin.getCalendarService();
+  assert.equal((service as unknown as { appleApi: { daysAhead: number } }).appleApi.daysAhead, 45);
+});
+
+test("refreshNotes warns once per session about two notes for the same meeting, and again on a manual refresh", async () => {
+  const id = "S@google.com::2026-04-03T14:00:00.000Z";
+  const note = (path: string, stored: string) => ({ path, content: `---\ntitle: "Sync"\ndate: 2026-04-03\ncalendar: "Work"\ncalendar_event_id: "${stored}"\n---\n` });
+  const app = createMemoryApp([
+    { path: "Meeting Notes", content: "" },
+    note("Meeting Notes/2026-04-03 - Sync.md", id),
+    note("Meeting Notes/2026-04-05 - Sync.md", "S@google.com/RID=1::2026-04-03T14:00:00.000Z"),
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+  plugin.getCalendarService = appleService([], ["Work"]);
+
+  await plugin.refreshNotes(false);
+  await plugin.refreshNotes(false);
+  const warnings = () => getNotices().filter((n) => /notes are for the same meeting/.test(n.message));
+  assert.equal(warnings().length, 1);
+  assert.match(warnings()[0].message, /2 notes are for the same meeting: 2026-04-03 - Sync, 2026-04-05 - Sync\. Copy what you need into one and delete the other\./);
+
+  await plugin.refreshNotes(true);
+  assert.equal(warnings().length, 2);
+});
+
+test("refreshNotes points out a note that couldn't be renamed because another note has the new name", async () => {
+  const app = createMemoryApp([{ path: "Meeting Notes", content: "" }, { path: "Meeting Notes/2026-04-06 - Planning.md", content: "mine" }]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+  plugin.getCalendarService = appleService([buildEvent({ id: "p", summary: "Planning", calendarName: "Work" })], ["Work"]);
+  await plugin.refreshNotes(false);
+
+  const moved = buildEvent({
+    id: "p", summary: "Planning", calendarName: "Work",
+    start: { dateTime: "2026-04-06T09:00:00-04:00" }, end: { dateTime: "2026-04-06T09:30:00-04:00" },
+  });
+  plugin.getCalendarService = appleService([], ["Work"], [moved]);
+  await plugin.refreshNotes(false);
+
+  assert.ok(app.files.has("Meeting Notes/2026-04-03 - Planning.md"));
+  assert.match(getNotices().at(-1)?.message ?? "", /2026-04-03 - Planning should be renamed to match its meeting, but 2026-04-06 - Planning already has that name/);
+});
+
+test("Open series note creates it in the Meeting Hub, links the occurrences both ways and keeps the user's writing", async () => {
+  const app = createMemoryApp([{ path: "Meeting Notes", content: "" }]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ hubFolder: "Meeting Hub", hoursInAdvance: 48 });
+  const occurrence = (day: string, extra = {}) => buildEvent({
+    id: `weekly@google.com::2026-04-0${day}T14:00:00.000Z`,
+    summary: "Weekly Sync",
+    calendarName: "Work",
+    start: { dateTime: `2026-04-0${day}T10:00:00-04:00` },
+    end: { dateTime: `2026-04-0${day}T10:30:00-04:00` },
+    ...extra,
+  });
+  plugin.getCalendarService = appleService([occurrence("3"), occurrence("4")], ["Work"]);
+  await plugin.refreshNotes(false);
+  const first = app.files.get("Meeting Notes/2026-04-03 - Weekly Sync.md") as TFile;
+  first.content = (first.content ?? "").replace("## Action items\n\n- [ ] ", "## Action items\n\n- [ ] Send deck\n- [ ] ")
+    .replace("## Decisions\n\n- ", "## Decisions\n\n- Ship it");
+
+  await plugin.openSeriesNote(occurrence("3").id, "Weekly Sync");
+
+  const path = "Meeting Hub/Series/Weekly Sync.md";
+  const series = app.files.get(path) as TFile;
+  assert.deepEqual(app.openedFiles, [path]);
+  assert.match(series.content ?? "", /^series_id: "weekly@google\.com"$/m);
+  assert.match(series.content ?? "", /## Purpose\n\n- \n\n## Standing agenda/);
+  assert.match(series.content ?? "", /## Meetings\n\n- 2026-04-04 · \[\[Meeting Notes\/2026-04-04 - Weekly Sync\|Weekly Sync\]\]\n- 2026-04-03 · \[\[Meeting Notes\/2026-04-03 - Weekly Sync\|Weekly Sync\]\] · 1 open/);
+  assert.match(series.content ?? "", /## Open items\n\n- Send deck · /);
+  assert.match(series.content ?? "", /## Recent decisions\n\n### [^\n]+ · 2026-04-03\n\n- Ship it/);
+  assert.match(first.content ?? "", /^series: "\[\[Meeting Hub\/Series\/Weekly Sync\|Weekly Sync\]\]"$/m);
+  assert.match(first.content ?? "", /^> \*\*Series:\*\* \[\[Meeting Hub\/Series\/Weekly Sync\|Weekly Sync\]\]$/m);
+
+  series.content = (series.content ?? "").replace("## Purpose\n\n- ", "## Purpose\n\n- Unblock the team");
+  plugin.getCalendarService = appleService([occurrence("3"), occurrence("4", { cancelled: true }), occurrence("5")], ["Work"]);
+  await plugin.refreshNotes(false);
+  const fifth = (app.files.get("Meeting Notes/2026-04-05 - Weekly Sync.md") as TFile).content ?? "";
+  assert.match(fifth, /^> \*\*Series:\*\* \[\[Meeting Hub\/Series\/Weekly Sync\|Weekly Sync\]\]$/m, "new occurrences are linked when created");
+  assert.match(first.content ?? "", /^series: /m, "the link survives a sync");
+
+  await plugin.openSeriesNote(occurrence("3").id, "Weekly Sync");
+  assert.match(series.content ?? "", /- Unblock the team/);
+  assert.match(series.content ?? "", /- ~~2026-04-04 · [^\n]+~~ · cancelled/);
+  assert.equal(app.createdPaths.filter((p) => p === path).length, 1);
+});
+
+test("Open series note says so for a meeting that doesn't repeat", async () => {
+  const plugin = createPlugin();
+  plugin.settings = appleSettings();
+  await plugin.openSeriesNote("one-off", "Review");
+  assert.match(getNotices().at(-1)?.message ?? "", /isn't a recurring meeting/);
+});
+
+test("Move existing files also moves series notes", async () => {
+  const app = createMemoryApp([{ path: "Meeting Notes/Series/Weekly Sync.md", content: "series" }]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ hubFolder: "Meeting Hub" });
+  await plugin.moveHubFiles();
+  assert.deepEqual(app.renamed, [["Meeting Notes/Series/Weekly Sync.md", "Meeting Hub/Series/Weekly Sync.md"]]);
+});

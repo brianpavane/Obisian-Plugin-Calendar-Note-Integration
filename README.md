@@ -121,11 +121,13 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Note folder | Meeting Notes | Vault-relative folder for created notes. You can move notes anywhere in the vault afterwards — the plugin finds them by their `calendar_event_id` property |
-| Meeting Hub folder | *(empty — same as note folder)* | Folder for the Meeting Tracker, the `Meetings.base` dashboard and `Weekly Reviews`, e.g. `Meeting Hub`. After changing it, click **Move existing files** to move the ones you already have (links to them keep working; a file already in the new folder is left in place) |
+| Meeting Hub folder | *(empty — same as note folder)* | Folder for the Meeting Tracker, the `Meetings.base` dashboard, `Weekly Reviews` and `Series` notes, e.g. `Meeting Hub`. After changing it, click **Move existing files** to move the ones you already have (links to them keep working; a file already in the new folder is left in place) |
 | Hours in advance | 12 | Create notes for events starting within this many hours (1–48) |
 | Poll interval | 30 min | How often to check for new upcoming events (5–120) |
 | Include past events | Off | Also create notes for events that have already started |
 | Days back | 1 | How many days back to look when past events are enabled (1–30) |
+| Keep notes in sync for meetings up to this many days ahead | 30 | Notes that already exist are updated, and renamed when their meeting moves to another day, as long as the meeting is within this many days (1–90). New notes are still only created **Hours in advance** |
+| Rename notes when the meeting title changes | On | When a meeting is retitled, rename its note and update its `# heading`. A note you renamed yourself keeps your name |
 | Skip meetings titled | *(empty)* | Meetings whose title contains any of these words (one per line, any case) never get a note automatically — e.g. `Focus time`, `Lunch`, `Hold`. You can still create one by hand |
 | Skip meetings with no one else invited | Off | Don't auto-create notes for events with no attendees besides you. Set **Your email address** so the plugin knows which attendee is you |
 | Include event description | On | Add the event's description to the Agenda section of new notes |
@@ -309,6 +311,8 @@ Each occurrence of a recurring meeting gets its own note, linked to the one befo
 
 Only meetings that repeat in Apple Calendar are linked; separate events that happen to share a title are not.
 
+**Series notes.** Click the **repeat** icon at the top of a recurring meeting's note (or on its row in **Today's meetings**), or run **Open series note**, to open one note for the whole series in the `Series` folder of your Meeting Hub folder. It has **Purpose** and **Standing agenda** sections for you, and a part the plugin rebuilds each time you open it: every occurrence (newest first, with ones that didn't happen struck through), open items across the series, and recent decisions. Each occurrence's note gets a **Series:** link back to it and a `series` property. If you edit "this and all following events" of a Google meeting, Calendar.app may start a new series, so the occurrences from then on can get their own series note.
+
 The **Previous** link skips occurrences that didn't happen (cancelled, deleted from the calendar, or declined), so it always points to the last meeting that took place. Moving a single occurrence to another day renames its note; it stays in the series.
 
 ### Daily notes
@@ -325,11 +329,15 @@ The plugin never edits daily notes, and the link moves with the meeting if it is
 
 ### Keeping notes up to date
 
-Every poll, Refresh, and Rebuild updates the notes of meetings in the time window. The plugin only rewrites the calendar properties listed above (title, date, daily note, previous meeting, start, end, calendar, organizer, attendees, location, meeting link, status, and event ID) and the **Meeting details** box. Everything else in the note — your writing, extra properties, and tags you add — is never changed.
+Every poll, Refresh, and Rebuild updates the notes of meetings in the time window. The plugin only rewrites the calendar properties listed above (title, date, daily note, previous meeting, series, start, end, calendar, organizer, attendees, location, meeting link, status, and event ID) and the **Meeting details** box. Everything else in the note — your writing, extra properties, and tags you add — is never changed.
 
-If a meeting moves to another day, its note is renamed to the new date on the next sync (a title you edited in the filename is kept). This works for any new date in the look-ahead range, even if it's beyond the window in which new notes are created.
+If a meeting moves to another day, its note is renamed to the new date on the next sync (a title you edited in the filename is kept). This works for any new date within **Keep notes in sync for meetings up to this many days ahead** (30 days by default), even though new notes are only created **Hours in advance**. The plugin compares the date in the filename with the meeting's, so a note whose rename was blocked once is renamed as soon as it can be.
 
-If a meeting disappears from Apple Calendar (deleted rather than cancelled), its note is marked `status: removed` with a red **Meeting removed from calendar** box. This only happens for meetings in the time window and from calendars the plugin read, so turning a calendar off never marks its notes. If the meeting comes back — for example it was moved more than a week out and is now back in range — the next sync restores the note.
+If a meeting is retitled, its note is renamed to the new title and its `# heading` updated (turn off **Rename notes when the meeting title changes** to keep the old name). A note you renamed yourself keeps your name; only its date changes.
+
+A rename never overwrites another note. If two notes are for the same meeting, or a note can't be renamed because another note already has the new name, the plugin shows a notice naming both notes — click a name to open it, copy what you need into one, and delete the other. In the background each case is shown once per Obsidian session; **Refresh** shows it again.
+
+If a meeting disappears from Apple Calendar (deleted rather than cancelled), its note is marked `status: removed` with a red **Meeting removed from calendar** box. This only happens for meetings in the time window and from calendars the plugin read, so turning a calendar off never marks its notes. If the meeting comes back — for example it was moved further out than the sync range and is now back in it — the next sync restores the note.
 
 If you decline a meeting that already has a note, the note is marked `status: declined` with a yellow **Meeting declined** box. Accept it again and the next sync restores the note. No new notes are created for declined meetings.
 
@@ -383,6 +391,7 @@ Both steps are optional. The note's sections are there for you to write in by ha
 | **Open today's meetings** | Shows today's meetings in the right sidebar, with Open note and Join buttons, arrows to other days, and a New note button |
 | **Open meeting action items** | Shows every open action item from your meeting notes in the right sidebar |
 | **Open this week's review** / **Open last week's review** | Creates (or refreshes) the week's review note in `Weekly Reviews` inside your Meeting Hub folder — see [Weekly review](docs/DASHBOARDS.md#5-weekly-review) |
+| **Open series note** | For a recurring meeting's note: creates (or refreshes) the series note in `Series` inside your Meeting Hub folder — see [Recurring meetings](#recurring-meetings) |
 | **Open meeting tracker** | Rebuilds and opens `Meeting Tracker.md` in your Meeting Hub folder: overdue, due soon, high priority, by account, by person, recent decisions, this week's meetings |
 | **Import Krisp transcript into this note** | Suggests the open note's Krisp recording and, once you confirm, fills its empty Transcript section — see [Krisp transcripts](#krisp-transcripts) |
 | **Copy meeting for AI assistant** | Copies the open note's meeting details, notes and transcript (and, if switched on, the instructions) — see [AI summaries](#ai-summaries-copy-and-paste) |

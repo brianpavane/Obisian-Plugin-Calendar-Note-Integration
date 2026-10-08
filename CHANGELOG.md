@@ -7,6 +7,29 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+**Series notes for recurring meetings**
+Click the new **repeat** icon on a recurring meeting's note or its row in **Today's meetings**, or run **Open series note**, to get one note for the whole series in **Meeting Hub/Series**. It has **Purpose** and **Standing agenda** sections for you, and lists every occurrence, open items across the series and recent decisions, refreshed each time you open it. Each occurrence's note links back to it.
+
+**Notes are renamed when a meeting's title changes**
+A new setting, **Rename notes when the meeting title changes** (on by default), renames a retitled meeting's note and updates its heading. Notes you renamed yourself keep your name.
+
+**Choose how far ahead existing notes are kept in sync**
+A new setting, **Keep notes in sync for meetings up to this many days ahead** (default 30), so a meeting moved up to a month out has its note renamed straight away instead of being marked removed.
+
+**Warning about duplicate meeting notes**
+When two notes are for the same meeting, or a note can't be renamed because another note has the new name, a notice names both notes with links, so you can merge them.
+
+### Fixed
+
+**A note whose rename was blocked once is renamed later**
+If a moved meeting's note couldn't be renamed because a note with the new name existed, deleting that note didn't help: the plugin had already updated the time and never retried. It now compares the date in the filename with the meeting's, so the rename happens on the next sync.
+
+---
+
 ## [6.18.0] – 2026-10-07
 
 ### Added

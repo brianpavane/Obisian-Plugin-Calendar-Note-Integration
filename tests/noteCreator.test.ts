@@ -5,7 +5,10 @@ import {
   builtInTemplate,
   createNoteContent,
   createNoteFile,
+  findDuplicateNotes,
   findNotesByEventId,
+  setSeriesLink,
+  syncNoteFile,
   generateNoteFilename,
   openTasks,
   previousNoteInSeries,
@@ -439,4 +442,83 @@ test("findNotesByEventId indexes /RID ids without the suffix and prefers a note 
   assert.equal(byId.get("S@google.com::2026-10-07T13:30:00.000Z")?.path, "Original.md");
   assert.equal(byId.get("T@google.com::2026-10-07T13:30:00.000Z")?.path, "Moved only.md");
   assert.equal(byId.size, 2);
+});
+
+const syncedNote = (title: string, date: string, extra = "") =>
+  `---\ntitle: ${title}\ndate: ${date}\nstart: ${date}T09:30\ncalendar_event_id: "s::x"\n---\n\n# Standup\n\n> [!info] Meeting details\n> **When:** ${date}\n${extra}`;
+const standup = (summary: string, day: string) => buildEventFor(summary, day);
+function buildEventFor(summary: string, day: string): CalendarEvent {
+  return {
+    id: "s::x",
+    summary,
+    start: { dateTime: `${day}T09:30:00-04:00` },
+    end: { dateTime: `${day}T10:00:00-04:00` },
+  } as CalendarEvent;
+}
+
+test("syncNoteFile renames by the date in the filename, so a rename blocked once is retried", async () => {
+  const app = createMemoryApp([
+    { path: "M/2026-10-07 - Standup.md", content: syncedNote('"Standup"', "2026-10-07") },
+    { path: "M/2026-10-09 - Standup.md", content: "duplicate" },
+  ]);
+  const file = app.files.get("M/2026-10-07 - Standup.md") as TFile;
+
+  const first = await syncNoteFile(app as never, file as never, standup("Standup", "2026-10-09"), { linkAttendees: false });
+  assert.deepEqual(first, { changed: true, blockedBy: "M/2026-10-09 - Standup.md" });
+
+  app.files.delete("M/2026-10-09 - Standup.md");
+  const second = await syncNoteFile(app as never, file as never, standup("Standup", "2026-10-09"), { linkAttendees: false });
+  assert.equal(second.changed, true);
+  assert.equal(file.path, "M/2026-10-09 - Standup.md");
+});
+
+test("syncNoteFile renames a retitled meeting's note and heading, but keeps a name the user edited", async () => {
+  const app = createMemoryApp([
+    { path: "M/2026-10-07 - Standup.md", content: syncedNote("Standup", "2026-10-07") },
+    { path: "M/Standup with Acme 2026-10-07.md", content: syncedNote('"Standup"', "2026-10-07").replace('"s::x"', '"s::y"') },
+  ]);
+  const plain = app.files.get("M/2026-10-07 - Standup.md") as TFile;
+  const edited = app.files.get("M/Standup with Acme 2026-10-07.md") as TFile;
+  const options = { linkAttendees: false, renameOnTitleChange: true, datePosition: "before" as const };
+
+  await syncNoteFile(app as never, plain as never, standup("Team Sync", "2026-10-07"), options);
+  await syncNoteFile(app as never, edited as never, { ...standup("Team Sync", "2026-10-08"), id: "s::y" }, options);
+
+  assert.equal(plain.path, "M/2026-10-07 - Team Sync.md");
+  assert.match(plain.content ?? "", /^# Team Sync$/m);
+  assert.match(plain.content ?? "", /^title: "Team Sync"$/m);
+  assert.equal(edited.path, "M/Standup with Acme 2026-10-08.md");
+});
+
+test("syncNoteFile leaves the name and heading alone on a title change when the setting is off", async () => {
+  const app = createMemoryApp([{ path: "M/2026-10-07 - Standup.md", content: syncedNote('"Standup"', "2026-10-07") }]);
+  const file = app.files.get("M/2026-10-07 - Standup.md") as TFile;
+
+  await syncNoteFile(app as never, file as never, standup("Team Sync", "2026-10-07"), { linkAttendees: false, renameOnTitleChange: false });
+
+  assert.equal(file.path, "M/2026-10-07 - Standup.md");
+  assert.match(file.content ?? "", /^# Standup$/m);
+  assert.deepEqual(app.renamed, []);
+});
+
+test("findDuplicateNotes groups notes for the same meeting, including /RID ids", () => {
+  const note = (path: string, id: string) => ({ path, content: `---\ncalendar_event_id: "${id}"\n---\n` });
+  const app = createMemoryApp([
+    note("A.md", "S::2026-10-07T13:30:00.000Z"),
+    note("B.md", "S/RID=1::2026-10-07T13:30:00.000Z"),
+    note("C.md", "T::2026-10-07T13:30:00.000Z"),
+  ]);
+
+  assert.deepEqual(findDuplicateNotes(app as never).map((files) => files.map((f) => f.path)), [["A.md", "B.md"]]);
+});
+
+test("setSeriesLink adds the series property and a Series line after Previous, and replaces it later", () => {
+  const content = "---\ntitle: \"Sync\"\ntags:\n  - meeting\n---\n\n> [!info] Meeting details\n> **When:** Friday\n> **Previous:** [[M/Old|Old]]\n> **Where:** Room\n\n## Notes\n";
+
+  const linked = setSeriesLink(content, "Meeting Hub/Series/Sync");
+
+  assert.match(linked, /^series: "\[\[Meeting Hub\/Series\/Sync\|Sync\]\]"\ntags:/m);
+  assert.match(linked, /> \*\*Previous:\*\* \[\[M\/Old\|Old\]\]\n> \*\*Series:\*\* \[\[Meeting Hub\/Series\/Sync\|Sync\]\]\n> \*\*Where:\*\* Room/);
+  assert.equal(setSeriesLink(linked, "Meeting Hub/Series/Sync"), linked);
+  assert.match(setSeriesLink(linked, "Hub/Sync (2)"), /> \*\*Series:\*\* \[\[Hub\/Sync \(2\)\|Sync \(2\)\]\]\n> \*\*Where/);
 });

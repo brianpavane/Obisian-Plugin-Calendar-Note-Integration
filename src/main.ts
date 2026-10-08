@@ -43,6 +43,8 @@ import { ActionItemsView, ACTION_ITEMS_VIEW, localDate, parseTaskMeta } from "./
 import { addDays, buildTracker, TRACKER_FILENAME, type TrackerMeeting } from "./tracker";
 import { isoWeek, newReview, refreshReview, REVIEW_FOLDER, reviewBody, reviewFilename } from "./weeklyReview";
 import { DASHBOARD_CONTENT, DASHBOARD_FILENAME } from "./dashboard";
+import { newSeriesNote, refreshSeries, SERIES_FOLDER, seriesBody } from "./series";
+import { canonicalEventId } from "./appleCalendarApi";
 import { TodayView, TODAY_VIEW, type NoteAction } from "./todayView";
 import { currentOrNextMeeting, meetingToJoin, statusText } from "./meetingStatus";
 import {
@@ -57,8 +59,13 @@ import { EventSuggestModal } from "./eventModal";
 import {
   builtInTemplate,
   createNoteFile,
+  findDuplicateNotes,
   findNotesByEventId,
+  findSeriesNotes,
   isSkippedStatus,
+  safeFilename,
+  seriesId,
+  setSeriesLink,
   joinUrl,
   doneTasks,
   markNoteRemoved,
@@ -128,6 +135,8 @@ export default class GoogleCalendarPlugin extends Plugin {
   private statusBarEl: HTMLElement | undefined;
   private liveEvents: CalendarEvent[] = [];
   private lastFetchFailed = false;
+  /** Duplicate-note cases already pointed out this session (sorted paths joined by |). */
+  private warnedDuplicates = new Set<string>();
   /** Notes whose transcript offer was declined; not offered again until Obsidian restarts. */
   private readonly dismissedTranscripts = new Set<string>();
   private transcriptOfferOpen = false;
@@ -173,6 +182,17 @@ export default class GoogleCalendarPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "open-series-note",
+      name: "Open series note",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!this.isRecurringMeetingNote(file)) return false;
+        if (!checking) void this.openSeriesNoteForFile(file as TFile);
+        return true;
+      },
+    });
+
+    this.addCommand({
       id: "open-meetings-dashboard",
       name: "Open meetings dashboard",
       callback: () => this.openDashboard(),
@@ -184,6 +204,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       notedEventIds: () => new Set(findNotesByEventId(this.app).keys()),
       openNote: (event) => this.openNoteForEvent(event),
       noteAction: (event, action) => this.meetingNoteAction(event, action),
+      openSeries: (event) => this.openSeriesNote(event.id, event.summary?.trim() || "Untitled Event"),
     }));
 
     this.addCommand({
@@ -313,7 +334,7 @@ export default class GoogleCalendarPlugin extends Plugin {
   /** Every meeting note's open items, decisions, account and category, for the tracker. */
   async trackerMeetings(): Promise<TrackerMeeting[]> {
     const meetings: TrackerMeeting[] = [];
-    for (const file of findNotesByEventId(this.app).values()) {
+    for (const [id, file] of findNotesByEventId(this.app)) {
       const fm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
       const content = await this.app.vault.cachedRead(file);
       const start = frontmatterDate(fm.start) ?? frontmatterDate(fm.date);
@@ -331,6 +352,8 @@ export default class GoogleCalendarPlugin extends Plugin {
           .map((l) => l.replace(/^\s*[-*+]\s+/, "").trim())
           .filter(Boolean),
         skipped: isSkippedStatus(fm.status),
+        status: text(fm.status),
+        id,
       });
     }
     return meetings;
@@ -347,7 +370,7 @@ export default class GoogleCalendarPlugin extends Plugin {
   }
 
   /**
-   * Move the tracker, dashboard and weekly reviews from the note folder into
+   * Move the tracker, dashboard, weekly reviews and series notes from the note folder into
    * the Meeting Hub folder, keeping links to them. A file already at its
    * destination is left where it is.
    */
@@ -359,11 +382,13 @@ export default class GoogleCalendarPlugin extends Plugin {
       return;
     }
     const inFolder = (folder: string, name: string) => normalizePath(folder ? `${folder}/${name}` : name);
-    const reviews = `${inFolder(from, REVIEW_FOLDER)}/`;
+    const subfolders = [REVIEW_FOLDER, SERIES_FOLDER].map((name) => `${inFolder(from, name)}/`);
     const sources = this.app.vault.getAllLoadedFiles().filter(
       (f): f is TFile =>
         f instanceof TFile &&
-        (f.path === inFolder(from, TRACKER_FILENAME) || f.path === inFolder(from, DASHBOARD_FILENAME) || f.path.startsWith(reviews))
+        (f.path === inFolder(from, TRACKER_FILENAME) ||
+          f.path === inFolder(from, DASHBOARD_FILENAME) ||
+          subfolders.some((folder) => f.path.startsWith(folder)))
     );
 
     let moved = 0;
@@ -441,6 +466,54 @@ export default class GoogleCalendarPlugin extends Plugin {
       file = await this.app.vault.create(path, content);
     }
     await this.app.workspace.getLeaf(false).openFile(file as TFile);
+  }
+
+  /**
+   * Open the series note of a recurring meeting, creating it in the Meeting
+   * Hub's Series folder if needed. Its plugin part is rebuilt from the
+   * occurrences' notes, and each occurrence note is linked back to it.
+   */
+  async openSeriesNote(eventId: string, title: string): Promise<void> {
+    const id = seriesId(canonicalEventId(eventId));
+    if (!id) {
+      new Notice("Calendar Notes: This isn't a recurring meeting, so it has no series note.");
+      return;
+    }
+    const now = this.now();
+    const occurrences = (await this.trackerMeetings()).filter((m) => m.id && seriesId(m.id) === id);
+    const body = seriesBody(occurrences, `${localDate(now)} ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`);
+
+    let file: TFile | undefined = findSeriesNotes(this.app).get(id);
+    if (file) {
+      await this.app.vault.process(file, (content) => refreshSeries(content, body));
+    } else {
+      const base = this.hubFolderPath();
+      const folder = normalizePath(base ? `${base}/${SERIES_FOLDER}` : SERIES_FOLDER);
+      await this.ensureFolder(folder);
+      const name = safeFilename(title);
+      let path = normalizePath(`${folder}/${name}.md`);
+      for (let n = 2; this.app.vault.getAbstractFileByPath(path); n++) path = normalizePath(`${folder}/${name} (${n}).md`);
+      file = await this.app.vault.create(path, newSeriesNote(title, id, body));
+    }
+
+    const notesById = findNotesByEventId(this.app);
+    const seriesPath = file.path.replace(/\.md$/, "");
+    for (const m of occurrences) {
+      const note = m.id ? notesById.get(m.id) : undefined;
+      if (!note) continue;
+      const content = await this.app.vault.read(note);
+      if (setSeriesLink(content, seriesPath) !== content) {
+        await this.app.vault.process(note, (c) => setSeriesLink(c, seriesPath));
+      }
+    }
+    await this.app.workspace.getLeaf(false).openFile(file);
+  }
+
+  /** Open the series note of the recurring meeting whose note is `file`. */
+  async openSeriesNoteForFile(file: TFile): Promise<void> {
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    const id = typeof fm?.calendar_event_id === "string" ? fm.calendar_event_id : "";
+    await this.openSeriesNote(id, typeof fm?.title === "string" && fm.title.trim() ? fm.title.trim() : file.basename);
   }
 
   /** Open the meetings dashboard (a Bases file), creating it on first use. */
@@ -542,8 +615,16 @@ export default class GoogleCalendarPlugin extends Plugin {
         view.addAction("clipboard-paste", "Add AI reply to this meeting", run(this.addAssistantReply)),
         view.addAction("clipboard-copy", "Copy meeting for AI assistant", run(this.copyForAssistant)),
         view.addAction("file-audio", "Import Krisp transcript into this note", run(this.importKrispTranscript)),
+        ...(this.isRecurringMeetingNote(view.file)
+          ? [view.addAction("repeat", "Open series note", run(this.openSeriesNoteForFile))]
+          : []),
       ]);
     }
+  }
+
+  private isRecurringMeetingNote(file: TFile | null): boolean {
+    const id = file ? this.app.metadataCache.getFileCache(file)?.frontmatter?.calendar_event_id : undefined;
+    return typeof id === "string" && seriesId(id) !== undefined;
   }
 
   private isMeetingNote(file: TFile | null): file is TFile {
@@ -574,6 +655,12 @@ export default class GoogleCalendarPlugin extends Plugin {
     merged.daysAhead = clamp(
       Number(merged.daysAhead) || DEFAULT_SETTINGS.daysAhead, 1, 30
     );
+    merged.syncDaysAhead = clamp(
+      Number(merged.syncDaysAhead) || DEFAULT_SETTINGS.syncDaysAhead, 1, 90
+    );
+    if (typeof merged.renameOnTitleChange !== "boolean") {
+      merged.renameOnTitleChange = DEFAULT_SETTINGS.renameOnTitleChange;
+    }
     merged.maxEvents = clamp(
       Number(merged.maxEvents) || DEFAULT_SETTINGS.maxEvents, 1, 50
     );
@@ -701,8 +788,12 @@ export default class GoogleCalendarPlugin extends Plugin {
       // daysBack = 0 when past events disabled → JXA windowStart = today.
       // At least yesterday, so meetings still in progress are included.
       const daysBack  = this.settings.includePastEvents ? this.settings.daysBack : 1;
-      // Cover both the event picker's range and the auto-create window.
-      const daysAhead = Math.max(this.settings.daysAhead, Math.ceil(this.settings.hoursInAdvance / 24) + 1);
+      // Cover the event picker's range, the auto-create window and the range existing notes are kept in sync for.
+      const daysAhead = Math.max(
+        this.settings.daysAhead,
+        this.settings.syncDaysAhead,
+        Math.ceil(this.settings.hoursInAdvance / 24) + 1
+      );
       return CalendarService.fromApple(calendarFilter, daysBack, daysAhead);
     }
     return CalendarService.fromIcal(decrypt(this.settings.icalUrl));
@@ -924,16 +1015,28 @@ export default class GoogleCalendarPlugin extends Plugin {
     };
     const options = await this.getNoteOptions(verbose);
     const notesById = findNotesByEventId(this.app);
+    const seriesNotes = findSeriesNotes(this.app);
     const skipRules = { titles: this.settings.skipTitles, solo: this.settings.skipSolo };
     let created = 0;
     let updated = 0;
+    const blocked: Array<[TFile, string]> = [];
+    const syncExisting = async (file: TFile, event: CalendarEvent, declined: boolean) => {
+      const series = await seriesOptions(this.app, notesById, event, false, seriesNotes);
+      const result = await syncNoteFile(this.app, file, event, {
+        ...options,
+        ...series,
+        declined,
+        renameOnTitleChange: this.settings.renameOnTitleChange,
+      });
+      if (result.changed) updated++;
+      if (result.blockedBy) blocked.push([file, result.blockedBy]);
+    };
 
     for (const event of events) {
       try {
         const existing = notesById.get(event.id);
         if (existing) {
-          const series = await seriesOptions(this.app, notesById, event, false);
-          if (await syncNoteFile(this.app, existing, event, { ...options, ...series })) updated++;
+          await syncExisting(existing, event, false);
           markProcessed(event.id);
           continue;
         }
@@ -943,7 +1046,7 @@ export default class GoogleCalendarPlugin extends Plugin {
           markProcessed(event.id);
           continue;
         }
-        const series = await seriesOptions(this.app, notesById, event, true);
+        const series = await seriesOptions(this.app, notesById, event, true, seriesNotes);
         const result = await createNoteFile(this.app, event, { ...options, ...series });
         notesById.set(event.id, result.file);
         if (result.wasCreated) created++;
@@ -961,8 +1064,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       const existing = notesById.get(event.id);
       if (!existing) continue;
       try {
-        const series = await seriesOptions(this.app, notesById, event, false);
-        if (await syncNoteFile(this.app, existing, event, { ...options, ...series, declined })) updated++;
+        await syncExisting(existing, event, declined);
       } catch (err) {
         console.warn("[CalendarNoteIntegration] Failed to sync note for event:", err);
       }
@@ -984,8 +1086,51 @@ export default class GoogleCalendarPlugin extends Plugin {
     } else if (verbose) {
       new Notice("Calendar Notes: All notes are up to date.");
     }
+    this.warnAboutDuplicates(blocked, verbose);
     await this.offerTranscripts();
     return true;
+  }
+
+  /**
+   * Point out notes that are for the same meeting, and notes that couldn't be
+   * renamed because another note has the new name, with links to each note.
+   * In the background each case is shown once per session; `verbose` shows all.
+   */
+  private warnAboutDuplicates(blocked: Array<[TFile, string]>, verbose: boolean): void {
+    const fix = " Copy what you need into one and delete the other.";
+    const cases: Array<{ key: string; parts: Array<string | TFile> }> = [];
+    for (const files of findDuplicateNotes(this.app)) {
+      const parts: Array<string | TFile> = [`Calendar Notes: ${files.length} notes are for the same meeting: `];
+      files.forEach((file, i) => parts.push(...(i > 0 ? [", "] : []), file));
+      parts.push(`.${fix.replace("the other", files.length > 2 ? "the others" : "the other")}`);
+      cases.push({ key: files.map((f) => f.path).sort().join("|"), parts });
+    }
+    for (const [file, path] of blocked) {
+      const other = this.app.vault.getAbstractFileByPath(path);
+      if (!(other instanceof TFile) || cases.some((c) => c.parts.includes(file) && c.parts.includes(other))) continue;
+      cases.push({
+        key: [file.path, path].sort().join("|"),
+        parts: [`Calendar Notes: `, file, ` should be renamed to match its meeting, but `, other, ` already has that name.${fix}`],
+      });
+    }
+    for (const { key, parts } of cases) {
+      if (!verbose && this.warnedDuplicates.has(key)) continue;
+      this.warnedDuplicates.add(key);
+      const notice = new Notice(parts.map((p) => (typeof p === "string" ? p : p.basename)).join(""), 0);
+      notice.messageEl.empty();
+      for (const part of parts) {
+        if (typeof part === "string") {
+          notice.messageEl.createSpan({ text: part });
+        } else {
+          notice.messageEl
+            .createEl("a", { text: part.basename, href: "#" })
+            .addEventListener("click", (e) => {
+              e.preventDefault();
+              void this.app.workspace.getLeaf(false).openFile(part);
+            });
+        }
+      }
+    }
   }
 
   /**
