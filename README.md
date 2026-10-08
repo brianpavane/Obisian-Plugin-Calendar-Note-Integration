@@ -138,6 +138,7 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 | Sections in new notes | All on | Which sections the built-in format includes: Agenda, Notes, Executive Summary, Next Steps, Summary by Topic, Key Decisions, Additional Items, Speakers, Transcript. Ignored when a template file is set. Existing notes are not changed |
 | Link to daily note | On | Link each meeting note to that day's daily note, using your Daily Notes format and folder |
 | Show next meeting in status bar | On | Show the meeting in progress or coming up next at the bottom of the window; click it to join |
+| Open Today's meetings at startup | On | Open the **Today's meetings** panel, with its **Join** buttons, in the right sidebar when Obsidian starts (if it isn't already open) |
 | Date position in filename | Before | `2026-01-15 - Meeting Name.md` or `Meeting Name - 2026-01-15.md` |
 
 ### Calendar View (event picker)
@@ -363,7 +364,7 @@ If a meeting moves to another day, its note is renamed to the new date on the ne
 
 If a meeting is retitled, its note is renamed to the new title and its `# heading` updated (turn off **Rename notes when the meeting title changes** to keep the old name). A note you renamed yourself keeps your name; only its date changes.
 
-A rename never overwrites another note. If two notes are for the same meeting, or a note can't be renamed because another note already has the new name, the plugin shows a notice naming both notes — click a name to open it, copy what you need into one, and delete the other. In the background each case is shown once per Obsidian session; **Refresh** shows it again.
+A rename never overwrites another note. If two notes are for the same meeting — the same calendar event *and* the same date — or a note can't be renamed because another note already has the new name, the plugin shows one notice naming the notes — click a name to open it, copy what you need into one, and delete the other. Notes for different occurrences of a recurring meeting are never reported. In the background each case is shown once per Obsidian session and the notice closes after 20 seconds; **Refresh** shows it again and keeps it open.
 
 If a meeting disappears from Apple Calendar (deleted rather than cancelled), its note is marked `status: removed` with a red **Meeting removed from calendar** box. This only happens for meetings in the time window and from calendars the plugin read, so turning a calendar off never marks its notes. If the meeting comes back — for example it was moved further out than the sync range and is now back in it — the next sync restores the note.
 

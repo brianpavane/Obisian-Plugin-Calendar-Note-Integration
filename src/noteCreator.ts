@@ -941,14 +941,22 @@ export function findNotesByEventId(app: App): Map<string, TFile> {
   return byId;
 }
 
-/** Groups of two or more notes whose `calendar_event_id` is for the same meeting. */
+/**
+ * Groups of two or more notes for the same meeting: the same
+ * `calendar_event_id` and the same date. Notes of different occurrences of
+ * a recurring meeting are never grouped, even if an older version of the
+ * plugin saved them with one id.
+ */
 export function findDuplicateNotes(app: App): TFile[][] {
   const byId = new Map<string, TFile[]>();
   for (const file of app.vault.getMarkdownFiles()) {
-    const stored = app.metadataCache.getFileCache(file)?.frontmatter?.calendar_event_id;
+    const fm = app.metadataCache.getFileCache(file)?.frontmatter;
+    const stored = fm?.calendar_event_id;
     if (typeof stored !== "string" || !stored) continue;
-    const id = canonicalEventId(stored);
-    byId.set(id, [...(byId.get(id) ?? []), file]);
+    const day = (value: unknown) =>
+      value instanceof Date ? value.toISOString().slice(0, 10) : typeof value === "string" ? value.slice(0, 10) : "";
+    const key = `${canonicalEventId(stored)}|${day(fm?.date) || day(fm?.start)}`;
+    byId.set(key, [...(byId.get(key) ?? []), file]);
   }
   return [...byId.values()].filter((files) => files.length > 1);
 }

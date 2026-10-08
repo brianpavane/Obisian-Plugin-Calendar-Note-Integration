@@ -55,6 +55,8 @@ export interface GoogleCalendarSettings {
   linkAttendees: boolean;
   dailyNoteLink: boolean;
   showStatusBar: boolean;
+  /** Open the Today's meetings panel in the right sidebar when Obsidian starts, if it isn't open. */
+  openTodayOnStartup: boolean;
   /** Vault path of a template note; empty = built-in template. */
   templatePath: string;
   datePosition: "before" | "after";
@@ -109,6 +111,7 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   linkAttendees: false,
   dailyNoteLink: true,
   showStatusBar: true,
+  openTodayOnStartup: true,
   templatePath: "",
   datePosition: "before",
   daysAhead: 7,
@@ -848,6 +851,18 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
             this.plugin.settings.showStatusBar = value;
             await this.plugin.saveSettings();
             this.plugin.updateStatusBar();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Open Today's meetings at startup")
+      .setDesc("Open the Today's meetings panel, with its Join buttons, in the right sidebar when Obsidian starts.")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.openTodayOnStartup)
+          .onChange(async (value) => {
+            this.plugin.settings.openTodayOnStartup = value;
+            await this.plugin.saveSettings();
           })
       );
 

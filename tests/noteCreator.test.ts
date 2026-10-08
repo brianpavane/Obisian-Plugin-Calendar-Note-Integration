@@ -533,3 +533,15 @@ test("createNoteContent puts the last meeting's continuity points first in the A
   });
   assert.match(content, /## Agenda\n\n- Where we left off in \[\[Meetings\/Weekly Sync\|last meeting\]\]:\n  - Confirm the \[\[CVS\]\] POV scope\n  - TLS decryption pilot status\n- Open items from \[\[Meetings\/Weekly Sync\|last meeting\]\]:\n  - Send deck\n- \n/);
 });
+
+test("findDuplicateNotes never groups different occurrences, even with one saved id", () => {
+  const note = (path: string, id: string, date: string) => ({ path, content: `---\ndate: ${date}\ncalendar_event_id: "${id}"\n---\n` });
+  const app = createMemoryApp([
+    note("2026-10-07 - Sync.md", "S@google.com/RID=813072600", "2026-10-09"),
+    note("2026-10-14 - Sync.md", "S@google.com/RID=813677400", "2026-10-16"),
+    note("2026-10-06 - Weekly.md", "WEEKLY", "2026-10-06"),
+    note("2026-10-13 - Weekly.md", "WEEKLY", "2026-10-13"),
+    note("Copy of 2026-10-13 - Weekly.md", "WEEKLY", "2026-10-13"),
+  ]);
+  assert.deepEqual(findDuplicateNotes(app as never).map((files) => files.map((f) => f.path)), [["2026-10-13 - Weekly.md", "Copy of 2026-10-13 - Weekly.md"]]);
+});

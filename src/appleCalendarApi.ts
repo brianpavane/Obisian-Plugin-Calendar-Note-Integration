@@ -155,14 +155,23 @@ const JXA_SERIALIZE_EK_EVENT = `
         }
       } catch (e) {}`.trimStart();
 
+/** 2001-01-01T00:00:00Z, the reference date of Apple timestamps, in Unix seconds. */
+const APPLE_EPOCH_SECONDS = 978_307_200;
+
 /**
- * An event id without the "/RID=<original start>" that Calendar.app appends
- * to the identifier of a moved occurrence of a Google recurring event, so the
- * occurrence keeps the id (and note) it had before it moved.
+ * An event id in its occurrence form. Calendar.app appends "/RID=<original
+ * start>" (seconds since 2001) to the identifier of a moved occurrence of a
+ * Google recurring event. When the id already ends in "::<occurrence>", the
+ * suffix is dropped; otherwise it becomes "::<original start>", since it is
+ * the only thing telling that occurrence apart from the series' others.
+ * Either way the occurrence keeps the id (and note) it had before it moved.
  */
 export function canonicalEventId(id: string): string {
-  return id.replace(/\/RID=\d+(?=::|$)/, "");
+  const m = id.match(/^(.*)\/RID=(\d+)(::.*)?$/);
+  if (!m) return id;
+  return m[3] ? `${m[1]}${m[3]}` : `${m[1]}::${new Date((Number(m[2]) + APPLE_EPOCH_SECONDS) * 1000).toISOString()}`;
 }
+
 
 /**
  * Reads events from the local EventKit store in one call.
@@ -342,6 +351,7 @@ export function parseJxaEvents(json: string, calendarFilter: string[]): Calendar
   }
 
   const events: CalendarEvent[] = [];
+  const occurrences: string[] = [];
 
   for (const item of raw) {
     if (typeof item !== "object" || item === null) continue;
@@ -403,9 +413,11 @@ export function parseJxaEvents(json: string, calendarFilter: string[]): Calendar
     // Every occurrence of a recurring event shares one identifier, so the
     // occurrence's original start date distinguishes them. occurrenceDate stays
     // fixed when a single occurrence is moved, keeping its note matched.
-    const uid = canonicalEventId(safeStr(r.uid, 500)) || `apple-${startMs}-${summary ?? ""}`;
+    const rawUid = safeStr(r.uid, 500);
+    const series = rawUid.replace(/\/RID=\d+$/, "") || `apple-${startMs}-${summary ?? ""}`;
     const occurrence = safeStr(r.occurrenceDate) || new Date(startMs).toISOString();
-    const id = r.recurring === true ? `${uid}::${occurrence}` : uid;
+    const id = r.recurring === true ? `${series}::${occurrence}` : (rawUid ? canonicalEventId(rawUid) : series);
+    occurrences.push(occurrence);
 
     const status = r.status;
     const cancelled = status === 3 || (typeof status === "string" && status.toLowerCase() === "cancelled");
@@ -424,6 +436,13 @@ export function parseJxaEvents(json: string, calendarFilter: string[]): Calendar
     });
   }
 
+  // Occurrences of one series that EventKit didn't report as recurring would
+  // share an id; their occurrence dates tell them apart.
+  const count = new Map<string, Set<string>>();
+  events.forEach((e, i) => count.set(e.id, (count.get(e.id) ?? new Set()).add(occurrences[i])));
+  events.forEach((e, i) => {
+    if (!e.id.includes("::") && (count.get(e.id)?.size ?? 0) > 1) e.id = `${e.id}::${occurrences[i]}`;
+  });
   return events;
 }
 

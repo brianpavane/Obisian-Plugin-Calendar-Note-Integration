@@ -110,6 +110,8 @@ interface FetchResult {
 const IN_PROGRESS_LOOKBACK_MS = 12 * 60 * 60 * 1_000;
 /** "Join meeting" acts on a meeting starting within this long. */
 const JOIN_WINDOW_MS = 30 * 60 * 1_000;
+/** A duplicate-notes warning from a background sync closes after this long; one from Refresh stays until clicked. */
+const DUPLICATE_NOTICE_MS = 20_000;
 /** Automatic Krisp import looks at meetings that ended within this long. */
 const KRISP_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1_000;
 
@@ -294,6 +296,9 @@ export default class GoogleCalendarPlugin extends Plugin {
     this.registerEvent(this.app.workspace.on("layout-change", refreshActions));
     this.registerEvent(this.app.metadataCache.on("changed", refreshActions));
     this.app.workspace.onLayoutReady(refreshActions);
+    this.app.workspace.onLayoutReady(() => {
+      if (this.settings.openTodayOnStartup) void this.showTodayInBackground();
+    });
 
     this.addSettingTab(new GoogleCalendarSettingTab(this.app, this));
 
@@ -675,6 +680,13 @@ export default class GoogleCalendarPlugin extends Plugin {
   }
 
   /** Show one of the plugin's sidebar views, opening it in the right sidebar if needed. */
+  /** Open Today's meetings in the right sidebar without taking focus, unless it is already open. */
+  async showTodayInBackground(): Promise<void> {
+    if (this.app.workspace.getLeavesOfType(TODAY_VIEW).length > 0) return;
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) await leaf.setViewState({ type: TODAY_VIEW, active: false });
+  }
+
   async openSidebarView(type: string): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(type)[0];
     const leaf = existing ?? this.app.workspace.getRightLeaf(false);
@@ -833,6 +845,9 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
     if (typeof merged.showStatusBar !== "boolean") {
       merged.showStatusBar = DEFAULT_SETTINGS.showStatusBar;
+    }
+    if (typeof merged.openTodayOnStartup !== "boolean") {
+      merged.openTodayOnStartup = DEFAULT_SETTINGS.openTodayOnStartup;
     }
     if (typeof merged.dailyNoteLink !== "boolean") {
       merged.dailyNoteLink = DEFAULT_SETTINGS.dailyNoteLink;
@@ -1242,8 +1257,9 @@ export default class GoogleCalendarPlugin extends Plugin {
 
   /**
    * Point out notes that are for the same meeting, and notes that couldn't be
-   * renamed because another note has the new name, with links to each note.
-   * In the background each case is shown once per session; `verbose` shows all.
+   * renamed because another note has the new name, with links to each note,
+   * in one notice. In the background each case is shown once per session and
+   * the notice closes by itself; `verbose` (Refresh) shows all and keeps it open.
    */
   private warnAboutDuplicates(blocked: Array<[TFile, string]>, verbose: boolean): void {
     const fix = " Copy what you need into one and delete the other.";
@@ -1262,16 +1278,19 @@ export default class GoogleCalendarPlugin extends Plugin {
         parts: [`Calendar Notes: `, file, ` should be renamed to match its meeting, but `, other, ` already has that name.${fix}`],
       });
     }
-    for (const { key, parts } of cases) {
-      if (!verbose && this.warnedDuplicates.has(key)) continue;
-      this.warnedDuplicates.add(key);
-      const notice = new Notice(parts.map((p) => (typeof p === "string" ? p : p.basename)).join(""), 0);
-      notice.messageEl.empty();
-      for (const part of parts) {
+    const shown = cases.filter(({ key }) => verbose || !this.warnedDuplicates.has(key));
+    if (shown.length === 0) return;
+    for (const { key } of shown) this.warnedDuplicates.add(key);
+    const text = shown.map(({ parts }) => parts.map((p) => (typeof p === "string" ? p : p.basename)).join("")).join("\n");
+    const notice = new Notice(text, verbose ? 0 : DUPLICATE_NOTICE_MS);
+    notice.messageEl.empty();
+    shown.forEach(({ parts }, i) => {
+      const line = notice.messageEl.createDiv();
+      for (const part of i > 0 && typeof parts[0] === "string" ? [parts[0].replace(/^Calendar Notes: /, ""), ...parts.slice(1)] : parts) {
         if (typeof part === "string") {
-          notice.messageEl.createSpan({ text: part });
+          line.createSpan({ text: part });
         } else {
-          notice.messageEl
+          line
             .createEl("a", { text: part.basename, href: "#" })
             .addEventListener("click", (e) => {
               e.preventDefault();
@@ -1279,7 +1298,7 @@ export default class GoogleCalendarPlugin extends Plugin {
             });
         }
       }
-    }
+    });
   }
 
   /**

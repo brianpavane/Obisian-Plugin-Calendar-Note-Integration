@@ -7,6 +7,23 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+**Recurring meetings no longer reported as "notes for the same meeting"**
+Occurrences of a Google recurring meeting that had been moved were all given the same id, so their notes, though for different weeks, were reported as duplicates (and could be matched to the wrong occurrence). Each moved occurrence now keeps an id of its own, notes saved with the older id are matched again, and occurrences read without recurrence details get their date added. The warning now only lists notes with the same meeting and the same date.
+
+**One duplicate-notes notice that closes by itself**
+All duplicate and blocked-rename cases are shown in a single notice. After a background sync it closes after 20 seconds instead of staying on screen over the sidebar; **Refresh** still shows it until you close it.
+
+### Added
+
+**Open Today's meetings at startup**
+A new setting (on by default) opens the **Today's meetings** panel, with its **Join** buttons, in the right sidebar when Obsidian starts, without taking focus.
+
+---
+
 ## [6.20.1] – 2026-10-08
 
 ### Changed

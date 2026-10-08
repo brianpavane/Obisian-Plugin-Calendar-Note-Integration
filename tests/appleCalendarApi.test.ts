@@ -73,7 +73,7 @@ test("parseJxaEvents ignores the /RID suffix Google adds to a moved occurrence's
 
 test("canonicalEventId drops /RID from saved occurrence ids and leaves other ids alone", () => {
   assert.equal(canonicalEventId("A@google.com/RID=813072600::2026-10-07T13:30:00.000Z"), "A@google.com::2026-10-07T13:30:00.000Z");
-  assert.equal(canonicalEventId("A@google.com/RID=813072600"), "A@google.com");
+  assert.equal(canonicalEventId("A@google.com/RID=813072600"), "A@google.com::2026-10-07T13:30:00.000Z", "the RID is the occurrence");
   assert.equal(canonicalEventId("A@google.com::2026-10-07T13:30:00.000Z"), "A@google.com::2026-10-07T13:30:00.000Z");
   assert.equal(canonicalEventId("odd/RID=12/x"), "odd/RID=12/x");
 });
@@ -101,4 +101,22 @@ test("parseJxaEvents finds join links in the location and gives id-less events a
   assert.equal(first.conferenceData?.conferenceSolution?.name, "Microsoft Teams");
   assert.equal(first.id, second.id);
   assert.equal(first.cancelled, undefined);
+});
+
+test("moved occurrences that EventKit doesn't report as recurring keep separate ids", () => {
+  const series = "S@google.com";
+  const events = parseJxaEvents(JSON.stringify([
+    raw({ uid: `${series}/RID=813072600`, recurring: false, startDate: "2026-10-09T13:30:00.000Z", endDate: "2026-10-09T14:00:00.000Z" }),
+    raw({ uid: `${series}/RID=813677400`, recurring: false, startDate: "2026-10-16T13:30:00.000Z", endDate: "2026-10-16T14:00:00.000Z" }),
+  ]), []);
+  assert.deepEqual(events.map((e) => e.id), [`${series}::2026-10-07T13:30:00.000Z`, `${series}::2026-10-14T13:30:00.000Z`]);
+});
+
+test("occurrences of one series read without recurrence info get their dates added to the shared id", () => {
+  const events = parseJxaEvents(JSON.stringify([
+    raw({ uid: "WEEKLY", recurring: false, startDate: "2026-10-06T14:00:00.000Z", endDate: "2026-10-06T14:30:00.000Z" }),
+    raw({ uid: "WEEKLY", recurring: false, startDate: "2026-10-13T14:00:00.000Z", endDate: "2026-10-13T14:30:00.000Z" }),
+    raw({ uid: "ONE-OFF", recurring: false, startDate: "2026-10-07T14:00:00.000Z", endDate: "2026-10-07T14:30:00.000Z" }),
+  ]), []);
+  assert.deepEqual(events.map((e) => e.id), ["WEEKLY::2026-10-06T14:00:00.000Z", "WEEKLY::2026-10-13T14:00:00.000Z", "ONE-OFF"]);
 });

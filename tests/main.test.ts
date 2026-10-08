@@ -1119,3 +1119,17 @@ test("openDashboard adds new built-in views to an existing dashboard", async () 
   await plugin.openDashboard();
   assert.doesNotMatch(file.content ?? "", /Needs AI summary/, "a built-in view the user deleted isn't added back");
 });
+
+test("showTodayInBackground opens Today's meetings without focus, only when it isn't open", async () => {
+  const app = createMemoryApp();
+  const plugin = createPlugin(app);
+  const states: unknown[] = [];
+  let open = 0;
+  Object.assign(app.workspace, {
+    getLeavesOfType: () => Array.from({ length: open }),
+    getRightLeaf: () => ({ setViewState: async (state: unknown) => { states.push(state); open++; } }),
+  });
+  await plugin.showTodayInBackground();
+  await plugin.showTodayInBackground();
+  assert.deepEqual(states, [{ type: "calendar-notes-today", active: false }]);
+});

@@ -59,6 +59,7 @@ Open **Settings → Meeting Notes for Apple Calendar**. Recommended values:
 | Sections in new notes | All on | Turn off only sections you never use. Keep **Next Steps**, **Executive Summary**, **Key Decisions** and **Transcript** if you use the action items panel, AI summaries or Krisp |
 | Link to daily note | On | Each day's daily note lists that day's meetings in its backlinks |
 | Show next meeting in status bar | On | One click to open the note and join |
+| Open Today's meetings at startup | On | The Today panel, with Join buttons, opens in the right sidebar |
 
 ### Krisp Transcripts
 
