@@ -29,7 +29,8 @@ export const TRANSCRIPT_SECTIONS = ["Transcript"];
 
 export const DEFAULT_INSTRUCTIONS = [
   "Write up the meeting below from my notes and the transcript. MEETING DETAILS comes from my calendar and is correct; MY NOTES are my own notes and take priority over the transcript.",
-  "Work out who each transcript speaker (Speaker 0, Speaker 1…) is from the dialogue and the attendee list, and write each person as an Obsidian link, [[Full Name]], throughout.",
+  "Work out who each transcript speaker (Speaker 0, Speaker 1…) is from the dialogue, and write each person as an Obsidian link, [[Full Name]], throughout.",
+  "Only people who speak in the transcript may appear in Speakers, own next steps or be credited with decisions. The Attendees line is the invite list, not who joined: use it only to complete a name the transcript already gives, and leave unnamed speakers as Unidentified.",
   "Reply in Markdown with this metadata block and then exactly these six headings, in this order, and nothing before or after them:",
   "",
   "## Meeting Metadata",

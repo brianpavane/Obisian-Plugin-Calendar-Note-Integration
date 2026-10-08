@@ -5,6 +5,13 @@ All notable changes to **Meeting Notes for Apple Calendar** (formerly Calendar N
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+**Agent instructions include the Meeting Metadata and list only people in the transcript**
+The Meeting Scribe instructions in `docs/AGENT_INSTRUCTIONS.md` now include the Meeting Metadata block directly, so the dashboards fill without an add-on. They also tell the agent that the `Attendees:` line is only the invite list: only people who speak in the transcript appear in Speakers, own next steps or are credited with decisions, and the invite list is used only to complete a name the transcript already gives. The built-in instructions follow the same rule. Next Steps deadlines are asked for as `YYYY-MM-DD` dates so they become due dates.
+
 ---
 
 ## [6.20.0] – 2026-10-08

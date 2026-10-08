@@ -426,3 +426,28 @@ test("the Meeting Scribe reply: wiki-link owners, continuity points and the summ
   assert.match(filed, /^speakers:\n {2}- "Brian Pavane"\n {2}- "Danny Ward"$/m);
   assert.equal(applyReply(filed, reply, true, "2026-10-09").content, filed);
 });
+
+test("a full Meeting Scribe reply with its Meeting Metadata block files sections and properties", () => {
+  const reply = parseReply([
+    "## Meeting Metadata",
+    "- **Category:** Customer",
+    "- **Account / Project:** CVS",
+    "- **Organizations:** Zscaler, CVS",
+    "- **Key Topics:** TLS Decryption, Cloud Connector",
+    "- **Sentiment:** Positive",
+    "- **Outcome:** Progress",
+    "- **Search Tags:** #Customer #CVS #TLS-Decryption",
+    "",
+    SCRIBE_REPLY.replace("- **[[CVS]], [[Brian Pavane]]**: Pilot TLS Decryption for finance.", "- None"),
+  ].join("\n"))!;
+  assert.equal(reply.category, "Customer");
+  assert.equal(reply.account, "CVS");
+  assert.deepEqual(reply.organizations, ["Zscaler", "CVS"]);
+  assert.deepEqual(reply.keyTopics, ["TLS Decryption", "Cloud Connector"]);
+  assert.equal(reply.sentiment, "Positive");
+  assert.equal(reply.outcome, "Progress");
+  assert.deepEqual(reply.tags, ["Customer", "CVS", "TLS-Decryption"]);
+  assert.deepEqual(reply.decisions, []);
+  assert.equal(reply.actionItems.length, 3);
+  assert.match(reply.summary[0], /^\[\[CVS\]\] and Zscaler/);
+});
