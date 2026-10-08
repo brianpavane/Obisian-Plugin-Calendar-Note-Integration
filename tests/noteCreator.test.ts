@@ -522,3 +522,14 @@ test("setSeriesLink adds the series property and a Series line after Previous, a
   assert.equal(setSeriesLink(linked, "Meeting Hub/Series/Sync"), linked);
   assert.match(setSeriesLink(linked, "Hub/Sync (2)"), /> \*\*Series:\*\* \[\[Hub\/Sync \(2\)\|Sync \(2\)\]\]\n> \*\*Where/);
 });
+
+test("createNoteContent puts the last meeting's continuity points first in the Agenda", () => {
+  const content = createNoteContent(buildEvent({}), {
+    includeEventNotes: false,
+    linkAttendees: false,
+    previousNote: "Meetings/Weekly Sync",
+    carriedContinuity: ["Confirm the [[CVS]] POV scope", "TLS decryption pilot status"],
+    carriedItems: ["Send deck"],
+  });
+  assert.match(content, /## Agenda\n\n- Where we left off in \[\[Meetings\/Weekly Sync\|last meeting\]\]:\n  - Confirm the \[\[CVS\]\] POV scope\n  - TLS decryption pilot status\n- Open items from \[\[Meetings\/Weekly Sync\|last meeting\]\]:\n  - Send deck\n- \n/);
+});

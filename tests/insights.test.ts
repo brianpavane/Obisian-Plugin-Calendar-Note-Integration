@@ -68,6 +68,9 @@ test("account notes list the account's meetings, items, decisions, topics and pe
   assert.match(body, /## Open items\n\n- Fix certs/);
   assert.match(body, /## Recent decisions\n\n### \[\[M\/Acme pilot\|Acme pilot\]\] · 2026-10-05\n\n- Pause the rollout/);
   assert.match(body, /## Key topics\n\n- Pilot scope \(2\)\n- TLS inspection \(1\)/);
+  assert.match(body, /## Where we left off\n\nNothing here\./);
+  const withContinuity = acme.map((m) => (m.date === "2026-09-20" ? { ...m, continuity: ["Agree pilot scope"] } : m));
+  assert.match(accountBody(withContinuity, "2026-10-08", "now"), /## Where we left off\n\nFrom \[\[M\/Acme kickoff\|Acme kickoff\]\] · 2026-09-20:\n\n- Agree pilot scope\n/);
   assert.match(body, /## People\n\n- Alice Smith \(2 meetings\)\n- Bob Jones \(1 meeting\)/);
 
   const note = newAccountNote("Acme", body).replace("## Overview\n\n- ", "## Overview\n\n- Our biggest pilot");

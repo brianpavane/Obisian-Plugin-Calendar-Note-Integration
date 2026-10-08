@@ -29,7 +29,7 @@ export const TRANSCRIPT_SECTIONS = ["Transcript"];
 
 export const DEFAULT_INSTRUCTIONS = [
   "Write up the meeting below from my notes and the transcript. MEETING DETAILS comes from my calendar and is correct; MY NOTES are my own notes and take priority over the transcript.",
-  "Work out who each transcript speaker (Speaker 0, Speaker 1…) is from the dialogue and the attendee list, and use their full names throughout.",
+  "Work out who each transcript speaker (Speaker 0, Speaker 1…) is from the dialogue and the attendee list, and write each person as an Obsidian link, [[Full Name]], throughout.",
   "Reply in Markdown with this metadata block and then exactly these six headings, in this order, and nothing before or after them:",
   "",
   "## Meeting Metadata",
@@ -42,17 +42,22 @@ export const DEFAULT_INSTRUCTIONS = [
   "- **Search Tags:** #Category #Account #Topic (no spaces inside a tag)",
   "",
   "## Executive Summary",
-  "One or two short paragraphs: why the meeting was held, what was covered and the outcome.",
+  "One paragraph of at most 175 words: why the meeting was held, what was covered and the outcome.",
+  "",
+  "---",
+  "",
+  "**Core Elements for Next Meeting Continuity:**",
+  "- 3 to 5 bullets: what the next meeting must pick up from this one.",
   "",
   "## Next Steps",
-  "- [ ] **Full Name**: One checkbox per follow-up task, with its owner (YYYY-MM-DD)",
+  "- [ ] **[[Full Name]]**: One checkbox per follow-up task, with its owner (YYYY-MM-DD)",
   "",
   "## Summary (by topic)",
   "### Topic name",
   "A short paragraph or bullets per topic discussed.",
   "",
   "## Key Decisions/Agreements",
-  "- **Full Name(s)**: One bullet per decision or agreement. Write \"- None\" if there were none.",
+  "- **[[Full Name]]**: One bullet per decision or agreement. Write \"- None\" if there were none.",
   "",
   "## Additional Items",
   "- Side topics, risks and open questions. Write \"- No additional items noted.\" if there were none.",
@@ -186,11 +191,13 @@ const isPerson = (name: string) => PERSON_RE.test(name) && !ROLE_WORDS.test(name
 
 /**
  * Who owns a task, from an Owner cell: `@[[Bob Jones]]` links (one or more),
- * plain names ("Bob Jones", "Bob Jones / Alice Smith"), or a role or team.
+ * plain names ("Bob Jones", "Bob Jones / Alice Smith"), or a role or team
+ * (which may contain a link, as in "[[CVS]] Network Team").
  */
 function owner(cell: string): Pick<ActionItem, "people" | "role"> {
   const links = [...cell.matchAll(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)].map((m) => m[1].trim()).filter(Boolean);
-  if (links.length > 0) return { people: links };
+  const besideLinks = cell.replace(/\[\[[^\]]*\]\]/g, "").replace(/\band\b|[\s,/&@]/gi, "");
+  if (links.length > 0) return besideLinks ? { role: cell.trim() } : { people: links };
   const value = cell.replace(/^\[|\]$/g, "").replace(/^@/, "").trim();
   if (!value || isNone(value) || /^(unassigned|tbd)\b/i.test(value)) return {};
   if (/^(you|me|i|myself)$/i.test(value)) return { role: "me" };
@@ -270,14 +277,31 @@ function replyLines(text: string): string[] {
   return trimBlank(first > 0 ? lines.slice(first) : lines);
 }
 
-/** A Next Steps line: `**Owner(s)**: Task (2026-10-10)`; other wording is kept as written. */
+/** A Next Steps line: `**[[Owner]]**: Task (2026-10-10)`; other wording is kept as written. */
 function nextStep(text: string): ActionItem {
-  const m = text.match(/^\*\*\s*\[?(.+?)\]?\s*:?\s*\*\*\s*:?\s*(.+)$/);
+  const m = text.match(/^\*\*(.+?)\*\*\s*:?\s*(.+)$/);
   if (!m) return { task: text, raw: text };
   let task = m[2].trim();
   const due = task.match(/\s*\(([^()]*?(\d{4}-\d{2}-\d{2})[^()]*)\)\s*$/);
   if (due) task = task.slice(0, due.index).trim();
-  return { task, ...owner(m[1]), due: due?.[2] };
+  return { task, ...owner(m[1].replace(/:\s*$/, "").trim()), due: due?.[2] };
+}
+
+/** `[[Target|Alias]]` and `[[Target]]` links reduced to their target. */
+const unlink = (s: string) => s.replace(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g, "$1");
+
+/**
+ * The Executive Summary as filed: a horizontal rule (the agent puts one
+ * before its continuity points) gets blank lines around it, so Obsidian
+ * doesn't read the paragraph above as a heading; a rule at either end is dropped.
+ */
+function summaryBody(lines: string[]): string[] {
+  let out = trimBlank(lines);
+  while (out.length > 0 && RULE_RE.test(out[0])) out = trimBlank(out.slice(1));
+  while (out.length > 0 && RULE_RE.test(out[out.length - 1])) out = trimBlank(out.slice(0, -1));
+  return out
+    .flatMap((l) => (RULE_RE.test(l) ? ["", "---", ""] : [l]))
+    .filter((l, i, all) => l.trim() || all[i - 1]?.trim());
 }
 
 type ReplySection = keyof Pick<AssistantReply, "summary" | "actionItems" | "topics" | "decisions" | "additional" | "speakers">;
@@ -324,7 +348,7 @@ function parseSixSections(lines: string[]): Omit<AssistantReply, keyof Metadata 
     return out.every((l) => !l.trim() || isNone(l.replace(BULLET_RE, ""))) ? [] : out;
   };
   return {
-    summary: trimBlank(body("summary")),
+    summary: summaryBody(body("summary")),
     actionItems: bullets("actionItems").map(nextStep),
     topics: block("topics"),
     decisions: bullets("decisions"),
@@ -338,7 +362,7 @@ type Metadata = Pick<AssistantReply, "category" | "account" | "tags" | "organiza
 
 /** A comma- or semicolon-separated field value as a list. */
 const listValue = (value?: string) =>
-  (value ?? "").split(/\s*[,;]\s*/).map((v) => v.replace(/^\[|\]$/g, "").trim()).filter((v) => v && !isNone(v) && !/^(tbd|general)$/i.test(v));
+  unlink(value ?? "").split(/\s*[,;]\s*/).map((v) => v.replace(/^\[|\]$/g, "").trim()).filter((v) => v && !isNone(v) && !/^(tbd|general)$/i.test(v));
 
 /**
  * The Meeting Metadata fields: "**Label:** value" lines, also inside a quote
@@ -354,7 +378,10 @@ function metadata(lines: string[]): Metadata {
     }
     return undefined;
   };
-  const single = (value?: string) => (value && !isNone(value) && !/^\[?tbd\]?$/i.test(value) ? value.replace(/^\[|\]$/g, "") : undefined);
+  const single = (raw?: string) => {
+    const value = raw && unlink(raw);
+    return value && !isNone(value) && !/^\[?tbd\]?$/i.test(value) ? value.replace(/^\[|\]$/g, "") : undefined;
+  };
   const account = single(field(/^(primary )?(account|project)( \/ (project|account))?$/i));
   return {
     category: single(field(/^(meeting )?category$/i)),
@@ -374,7 +401,7 @@ function speakerNames(table: string[]): string[] {
   const col = rows[0].findIndex((h) => /name/i.test(h));
   if (col === -1) return [];
   const names = rows.slice(1)
-    .map((r) => (r[col] ?? "").replace(/`/g, "").replace(/\s*\(.*\)\s*$/, "").trim())
+    .map((r) => unlink(r[col] ?? "").replace(/`/g, "").replace(/^.*->\s*/, "").replace(/\s*\(.*\)\s*$/, "").trim())
     .filter((n) => n && !/^:?-+:?$/.test(n) && !/unidentified|unknown|unclear|tbd|^n\/a$/i.test(n));
   return [...new Set(names)];
 }

@@ -17,6 +17,7 @@
 import { App, moment, normalizePath, TFile } from "obsidian";
 import { CalendarEvent, ResponseStatus } from "./calendarApi";
 import { canonicalEventId } from "./appleCalendarApi";
+import { continuityItems } from "./sections";
 
 // ---------------------------------------------------------------------------
 // Public options interface
@@ -40,6 +41,8 @@ export interface NoteOptions {
   seriesNote?: string;
   /** Open action items of the previous meeting, listed in the new note's Agenda. */
   carriedItems?: string[];
+  /** The previous meeting's "Core Elements for Next Meeting Continuity", listed in the new note's Agenda. */
+  carriedContinuity?: string[];
   /**
    * "before" → "2026-03-30 - Meeting Title.md"
    * "after"  → "Meeting Title - 2026-03-30.md"
@@ -570,7 +573,7 @@ export const DEFAULT_TEMPLATE = builtInTemplate();
 /** Placeholders available in templates, mapped to their value for this event. */
 function templateValues(
   event: CalendarEvent,
-  options: Pick<NoteOptions, "includeEventNotes" | "linkAttendees" | "dailyNote" | "previousNote" | "seriesNote" | "carriedItems">
+  options: Pick<NoteOptions, "includeEventNotes" | "linkAttendees" | "dailyNote" | "previousNote" | "seriesNote" | "carriedItems" | "carriedContinuity">
 ): Record<string, string> {
   const timing = getEventTiming(event);
   const link = meetingLink(event);
@@ -581,9 +584,14 @@ function templateValues(
     ? descriptionLines(event.description)
     : [];
   const previous = previousLink(options.previousNote);
-  const carried = previous && options.carriedItems?.length
-    ? [`- Open items from ${wikilink(previous, "last meeting")}:`, ...options.carriedItems.map((item) => `  - ${item}`)]
-    : [];
+  const carried = [
+    ...(previous && options.carriedContinuity?.length
+      ? [`- Where we left off in ${wikilink(previous, "last meeting")}:`, ...options.carriedContinuity.map((item) => `  - ${item}`)]
+      : []),
+    ...(previous && options.carriedItems?.length
+      ? [`- Open items from ${wikilink(previous, "last meeting")}:`, ...options.carriedItems.map((item) => `  - ${item}`)]
+      : []),
+  ];
 
   return {
     title: noteTitle(event),
@@ -680,7 +688,7 @@ function applyManagedFrontmatter(blocks: FrontmatterBlock[], entries: Array<[str
  */
 export function createNoteContent(
   event: CalendarEvent,
-  options: Pick<NoteOptions, "includeEventNotes" | "linkAttendees" | "dailyNote" | "template" | "previousNote" | "seriesNote" | "carriedItems">
+  options: Pick<NoteOptions, "includeEventNotes" | "linkAttendees" | "dailyNote" | "template" | "previousNote" | "seriesNote" | "carriedItems" | "carriedContinuity">
 ): string {
   const template = (options.template ?? DEFAULT_TEMPLATE).replace(/\r\n/g, "\n");
   const values = templateValues(event, options);
@@ -1096,7 +1104,7 @@ export function doneTasks(content: string): OpenTask[] {
  * Note options for one event: its series note, if one exists, the link to
  * the previous meeting in its series that took place (cancelled, removed and
  * declined ones are skipped) and, when `withItems` is set (new notes), that
- * meeting's open action items.
+ * meeting's open action items and its continuity points.
  */
 export async function seriesOptions(
   app: App,
@@ -1104,7 +1112,7 @@ export async function seriesOptions(
   event: CalendarEvent,
   withItems: boolean,
   seriesNotes: Map<string, TFile> = findSeriesNotes(app)
-): Promise<Pick<NoteOptions, "previousNote" | "seriesNote" | "carriedItems">> {
+): Promise<Pick<NoteOptions, "previousNote" | "seriesNote" | "carriedItems" | "carriedContinuity">> {
   const id = seriesId(event.id);
   const seriesNote = id ? seriesNotes.get(id)?.path.replace(/\.md$/, "") : undefined;
   const held = new Map(
@@ -1112,10 +1120,12 @@ export async function seriesOptions(
   );
   const previous = previousNoteInSeries(held, event.id);
   if (!previous) return { seriesNote };
+  const content = withItems ? await app.vault.read(previous) : undefined;
   return {
     previousNote: previous.path.replace(/\.md$/, ""),
     seriesNote,
-    carriedItems: withItems ? openTasks(await app.vault.read(previous)).map((t) => t.text) : undefined,
+    carriedItems: content !== undefined ? openTasks(content).map((t) => t.text) : undefined,
+    carriedContinuity: content !== undefined ? continuityItems(content) : undefined,
   };
 }
 

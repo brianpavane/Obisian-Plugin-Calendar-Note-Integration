@@ -16,7 +16,7 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 - **One-click join** — Zoom, Google Meet, Microsoft Teams, and Webex links are found in the event's URL, location, or description and shown as a **Join** link
 - **Attendees with RSVP status** — 🟢 accepted, 🔴 declined, 🟡 tentative, ⚪ awaiting; optionally as `[[Name]]` links to your people notes
 - **Notes stay in sync** — time, attendee, and location changes are applied to existing notes; moved meetings are renamed to their new date; cancelled, deleted and declined meetings are marked as such
-- **Recurring meetings** — every occurrence gets its own note, linked to the previous one, with last meeting's open action items in the Agenda
+- **Recurring meetings** — every occurrence gets its own note, linked to the previous one, with where you left off (the AI write-up's continuity points) and last meeting's open action items in the Agenda
 - **Your own template** — point the plugin at a template note with placeholders, or use the built-in format
 - **Daily-note links** — each meeting links to that day's daily note, so the day's meetings appear in its backlinks
 - **Next meeting in the status bar** — click it, or run **Join current or next meeting**, to open the note and join
@@ -334,11 +334,12 @@ tags:
 Each occurrence of a recurring meeting gets its own note, linked to the one before it:
 
 - **Meeting details** shows a **Previous** link, and the note gets a `previous_meeting` property.
-- A new note's **Agenda** lists the previous meeting's open action items under *Open items from last meeting*. They are plain bullets rather than checkboxes, so each item stays a single task in the earlier note — tick it off there or in the **Meeting action items** view.
+- A new note's **Agenda** starts with *Where we left off in last meeting*: the **Core Elements for Next Meeting Continuity** from the previous meeting's Executive Summary, when an [AI write-up](docs/AGENT_INSTRUCTIONS.md) was filed there.
+- It then lists the previous meeting's open action items under *Open items from last meeting*. They are plain bullets rather than checkboxes, so each item stays a single task in the earlier note — tick it off there or in the **Meeting action items** view.
 
 Only meetings that repeat in Apple Calendar are linked; separate events that happen to share a title are not.
 
-**Series notes.** Click the **repeat** icon at the top of a recurring meeting's note (or on its row in **Today's meetings**), or run **Open series note**, to open one note for the whole series in the `Series` folder of your Meeting Hub folder. It has **Purpose** and **Standing agenda** sections for you, and a part the plugin rebuilds each time you open it: every occurrence (newest first, with ones that didn't happen struck through), open items across the series, and recent decisions. Each occurrence's note gets a **Series:** link back to it and a `series` property. If you edit "this and all following events" of a Google meeting, Calendar.app may start a new series, so the occurrences from then on can get their own series note.
+**Series notes.** Click the **repeat** icon at the top of a recurring meeting's note (or on its row in **Today's meetings**), or run **Open series note**, to open one note for the whole series in the `Series` folder of your Meeting Hub folder. It has **Purpose** and **Standing agenda** sections for you, and a part the plugin rebuilds each time you open it: **Where we left off** (the latest meeting's continuity points), every occurrence (newest first, with ones that didn't happen struck through), open items across the series, and recent decisions. Each occurrence's note gets a **Series:** link back to it and a `series` property. If you edit "this and all following events" of a Google meeting, Calendar.app may start a new series, so the occurrences from then on can get their own series note.
 
 The **Previous** link skips occurrences that didn't happen (cancelled, deleted from the calendar, or declined), so it always points to the last meeting that took place. Moving a single occurrence to another day renames its note; it stays in the series.
 

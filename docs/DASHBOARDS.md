@@ -160,11 +160,13 @@ Any unchecked checkbox in a meeting note counts, not only the ones under **Actio
 
 ### How it works with recurring meetings
 
-When the plugin creates the next note in a recurring series (for example next week's Weekly Sync), its **Agenda** reminds you of what is still open from last time:
+When the plugin creates the next note in a recurring series (for example next week's Weekly Sync), its **Agenda** reminds you where you left off — the **Core Elements for Next Meeting Continuity** from last time's AI write-up — and what is still open:
 
 ```markdown
 ## Agenda
 
+- Where we left off in [[last meeting]]:
+  - Confirm the POV success criteria
 - Open items from [[last meeting]]:
   - Send the deck to Bob
 - 
@@ -337,6 +339,7 @@ Like the tracker, it's rebuilt each time you open it — don't write in it. Open
 One note per account, in an **Accounts** folder inside your Meeting Hub folder, named after the account (for example `Accounts/Acme Corp.md`). The plugin's part shows:
 
 - **At a glance**: meetings held, last met, the next meeting on the calendar, open and overdue items, and the sentiment trend
+- **Where we left off**: the continuity points of the latest meeting that has them
 - **Meetings**: every meeting with the account, newest first, with its category, sentiment and outcome
 - **Open items**, **Recent decisions** (the last five meetings with decisions), **Key topics** and **People** (with how many meetings each was in), and the organizations involved
 

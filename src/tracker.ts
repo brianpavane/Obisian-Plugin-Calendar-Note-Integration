@@ -39,6 +39,16 @@ export interface TrackerMeeting {
   people?: string[];
   /** An AI reply has been filed into the note (`ai_summarized`). */
   summarized?: boolean;
+  /** The note's "Core Elements for Next Meeting Continuity" bullets. */
+  continuity?: string[];
+}
+
+/** "Where we left off": the continuity points of the latest meeting held that has some. */
+export function leftOff(meetings: TrackerMeeting[], today: string): string[] {
+  const latest = meetings
+    .filter((m) => !m.skipped && m.date && m.date <= today && (m.continuity?.length ?? 0) > 0)
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  return latest ? [`From ${link(latest)} · ${latest.date}:`, "", ...latest.continuity!.map((c) => `- ${c}`)] : ["Nothing here."];
 }
 
 export interface Item {

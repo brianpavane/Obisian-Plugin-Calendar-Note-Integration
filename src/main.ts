@@ -37,7 +37,7 @@ import {
   type ApplyResult,
   type MeetingInfo,
 } from "./assistant";
-import { appendToSection, sectionText } from "./sections";
+import { appendToSection, continuityItems, sectionText } from "./sections";
 import { isSkipped } from "./skipRules";
 import { ActionItemsView, ACTION_ITEMS_VIEW, localDate, parseTaskMeta } from "./actionItems";
 import { addDays, buildTracker, TRACKER_FILENAME, type TrackerMeeting } from "./tracker";
@@ -404,6 +404,7 @@ export default class GoogleCalendarPlugin extends Plugin {
         organizations: frontmatterList(fm.organizations),
         people,
         summarized: fm.ai_summarized !== undefined && fm.ai_summarized !== null && fm.ai_summarized !== "",
+        continuity: continuityItems(content),
       });
     }
     return meetings;
@@ -532,7 +533,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
     const now = this.now();
     const occurrences = (await this.trackerMeetings()).filter((m) => m.id && seriesId(m.id) === id);
-    const body = seriesBody(occurrences, `${localDate(now)} ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`);
+    const body = seriesBody(occurrences, `${localDate(now)} ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`, localDate(now));
 
     let file: TFile | undefined = findSeriesNotes(this.app).get(id);
     if (file) {

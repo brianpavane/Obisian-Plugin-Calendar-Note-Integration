@@ -18,12 +18,21 @@ New notes now have **Executive Summary**, **Next Steps**, **Summary by Topic**, 
 A reply with Executive Summary, Next Steps, Summary (by topic), Key Decisions/Agreements, Additional Items and Speakers fills the note section of the same name. Next steps such as `- [ ] **Bob Jones**: Send the scope (2026-10-09)` become tasks with `@[[Bob Jones]]` as owner and a due date. In older notes the reply fills Meeting Summary, Decisions and Action items and adds the new sections before the Transcript. Older reply formats are still understood.
 
 **New agent and built-in instructions**
-`docs/AGENT_INSTRUCTIONS.md` now holds the Meeting Intelligence & Transcript Processing agent instructions, which resolve transcript speakers to real names. The built-in instructions ask for the same six sections.
+`docs/AGENT_INSTRUCTIONS.md` now holds the Meeting Scribe & Action Intelligence Agent instructions. They resolve transcript speakers to `[[wiki-linked]]` names and end the Executive Summary with 3–5 **Core Elements for Next Meeting Continuity**. The Meeting Metadata block is an optional add-on there. The built-in instructions ask for the same format, metadata included.
+
+**Next Steps owners written as wiki-links**
+`- [ ] **[[Danny Ward]]**: …` and `**[[Jeff Duke]], [[Brian Pavane]]**: …` become tasks owned by `@[[Danny Ward]]` and so on; a team such as `[[CVS]] Network Team` becomes `(owner: [[CVS]] Network Team)`. Wiki-linked names in the Speakers table and metadata are saved as plain names.
+
+**The summary's horizontal rule no longer turns it into a heading**
+The `---` the agent puts after the Executive Summary paragraph is filed with blank lines around it, so Obsidian doesn't read the paragraph as a heading.
 
 ### Added
 
+**Where we left off**
+A recurring meeting's new note opens its Agenda with the previous meeting's **Core Elements for Next Meeting Continuity**, ahead of its open items. Series notes and account overviews show them under **Where we left off**.
+
 **Meeting Metadata in AI replies**
-The agent and built-in instructions now start the reply with a Meeting Metadata block: category, account / project, organizations, key topics, sentiment, outcome and search tags. **Add AI reply** saves them as the note's `meeting_category`, `account`, `organizations`, `key_topics`, `sentiment`, `outcome` and `tags` properties, the Speakers table's names as `speakers`, and the day the first reply was filed as `ai_summarized`. The setting is now called **Save the reply's details as properties**.
+The built-in instructions (and the optional add-on to the agent instructions) start the reply with a Meeting Metadata block: category, account / project, organizations, key topics, sentiment, outcome and search tags. **Add AI reply** saves them as the note's `meeting_category`, `account`, `organizations`, `key_topics`, `sentiment`, `outcome` and `tags` properties, the Speakers table's names as `speakers`, and the day the first reply was filed as `ai_summarized`. The setting is now called **Save the reply's details as properties**.
 
 **Meeting insights**
 A new **Open meeting insights** command and ribbon button build `Meeting Insights.md` in the Meeting Hub. It covers the last 30 days at a glance, accounts needing attention (negative or mixed sentiment, blocked, gone quiet), meetings and hours per week, time by category with a pie chart, an accounts table with sentiment trends, sentiment and outcome counts, trending topics, the people you meet most, action items by owner, the oldest open items, meetings still needing an AI summary, and the busiest weekdays.

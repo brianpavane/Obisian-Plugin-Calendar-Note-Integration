@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { actionLine, applyReply, copyText, DEFAULT_INSTRUCTIONS, parseReply } from "../src/assistant";
 import { builtInTemplate } from "../src/noteCreator";
+import { continuityItems } from "../src/sections";
 
 const meeting = { title: "Design Review", date: "2026-10-06", time: "11:00 AM – 12:00 PM", attendees: ["Alice Smith", "Bob Jones"] };
 const blankNote = `---\ntitle: "Design Review"\ntags:\n  - meeting\n---\n` + builtInTemplate().split("---\n").slice(2).join("---\n").replace(/\{\{[a-z_]+\}\}/g, "");
@@ -361,4 +362,67 @@ test("metadata placeholders such as General, TBD and None aren't saved", () => {
   assert.equal(reply.account, undefined);
   assert.deepEqual(reply.organizations, []);
   assert.equal(reply.sentiment, undefined);
+});
+
+const SCRIBE_REPLY = `## 1. Executive Summary
+[[CVS]] and Zscaler reviewed the **ZIA** POV. The team agreed to pilot TLS Decryption.
+---
+**Core Elements for Next Meeting Continuity:**
+- Confirm the [[CVS]] POV success criteria
+- Review NSS Feed alerts volume
+- Decide on the Cloud Connector rollout
+
+---
+
+## 2. Next Steps
+- [ ] **[[Danny Ward]]**: Send the TLS Decryption runbook (2026-10-09)
+- [ ] **[[Jeff Duke]], [[Brian Pavane]]**: Book the CVS architecture review ([TBD])
+- [ ] **[[CVS]] Network Team**: Open the firewall change
+
+## 3. Summary (by topic)
+### TLS Decryption
+- [[Danny Ward]] reported a 2% error rate.
+
+## 4. Key Decisions/Agreements
+- **[[CVS]], [[Brian Pavane]]**: Pilot TLS Decryption for finance.
+
+## 5. Additional Items
+- No additional items noted.
+
+## 6. Speakers
+| Transcript Reference | Identified Name | Organization / Role | Identification Context |
+|---|---|---|---|
+| \`Speaker 0\` | [[Brian Pavane]] | Zscaler / Senior Director, Specialist SA | Self-identified |
+| \`Speaker 2\` | Speaker 2 -> [[Danny Ward]] (High confidence: addressed by name) | Zscaler | Addressed as Danny |`;
+
+test("the Meeting Scribe reply: wiki-link owners, continuity points and the summary's horizontal rule", () => {
+  const reply = parseReply(SCRIBE_REPLY)!;
+  assert.deepEqual(reply.summary, [
+    "[[CVS]] and Zscaler reviewed the **ZIA** POV. The team agreed to pilot TLS Decryption.",
+    "",
+    "---",
+    "",
+    "**Core Elements for Next Meeting Continuity:**",
+    "- Confirm the [[CVS]] POV success criteria",
+    "- Review NSS Feed alerts volume",
+    "- Decide on the Cloud Connector rollout",
+  ], "a blank line keeps the rule from turning the paragraph into a heading, and the trailing rule is dropped");
+  assert.deepEqual(reply.actionItems.map((i) => actionLine(i)), [
+    "- [ ] Send the TLS Decryption runbook @[[Danny Ward]] 📅 2026-10-09",
+    "- [ ] Book the CVS architecture review ([TBD]) @[[Jeff Duke]] @[[Brian Pavane]]",
+    "- [ ] Open the firewall change (owner: [[CVS]] Network Team)",
+  ]);
+  assert.deepEqual(reply.decisions, ["**[[CVS]], [[Brian Pavane]]**: Pilot TLS Decryption for finance."]);
+  assert.deepEqual(reply.topics, ["### TLS Decryption", "- [[Danny Ward]] reported a 2% error rate."]);
+  assert.deepEqual(reply.speakerNames, ["Brian Pavane", "Danny Ward"]);
+
+  const filed = applyReply(blankNote, reply, true, "2026-10-08").content;
+  assert.match(filed, /## Executive Summary\n\n\[\[CVS\]\] and Zscaler[^\n]*\n\n---\n\n\*\*Core Elements/);
+  assert.deepEqual(continuityItems(filed), [
+    "Confirm the [[CVS]] POV success criteria",
+    "Review NSS Feed alerts volume",
+    "Decide on the Cloud Connector rollout",
+  ]);
+  assert.match(filed, /^speakers:\n {2}- "Brian Pavane"\n {2}- "Danny Ward"$/m);
+  assert.equal(applyReply(filed, reply, true, "2026-10-09").content, filed);
 });

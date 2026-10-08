@@ -60,6 +60,26 @@ export function sectionLines(content: string, names: string[]): string[] {
   return section ? lines.slice(section.start + 1, section.end).filter((l) => l.trim()) : [];
 }
 
+const CONTINUITY_RE = /^\s*(?:#{1,6}\s+)?\**\s*core elements for next meeting continuity\s*:?\s*\**\s*:?\s*$/i;
+
+/**
+ * The bullets under the note's "Core Elements for Next Meeting Continuity"
+ * label (written in the Executive Summary by the AI agent), as plain text.
+ */
+export function continuityItems(content: string): string[] {
+  const lines = content.split("\n").map((l) => l.replace(/\r$/, ""));
+  const at = lines.slice(bodyStart(lines)).findIndex((l) => CONTINUITY_RE.test(l));
+  if (at === -1) return [];
+  const items: string[] = [];
+  for (const line of lines.slice(bodyStart(lines) + at + 1)) {
+    if (!line.trim()) continue;
+    if (!/^(?:[-*+]|\d+[.)])\s/.test(line)) break;
+    const text = line.replace(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/, "").trim();
+    if (text) items.push(text);
+  }
+  return items;
+}
+
 /** Replace a section's contents; a missing section is created as in {@link appendToSection}. */
 export function replaceSection(content: string, names: string[], body: string[], beforeNames: string[] = []): string {
   return writeSection(content, names, body, beforeNames, true);

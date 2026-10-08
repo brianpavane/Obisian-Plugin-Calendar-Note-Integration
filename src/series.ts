@@ -6,7 +6,7 @@
  * and recent decisions — is rebuilt between two markers each time it opens.
  */
 
-import { link, list, type Item, type TrackerMeeting } from "./tracker";
+import { leftOff, link, list, type Item, type TrackerMeeting } from "./tracker";
 import { replaceBetweenMarkers } from "./weeklyReview";
 
 export const SERIES_FOLDER = "Series";
@@ -17,7 +17,7 @@ export const SERIES_END = "<!-- meeting-series:end -->";
 const RECENT_DECISIONS = 5;
 
 /** The plugin's part of a series note, from the occurrences' notes. */
-export function seriesBody(occurrences: TrackerMeeting[], updated: string): string {
+export function seriesBody(occurrences: TrackerMeeting[], updated: string, today: string): string {
   const newestFirst = [...occurrences].sort((a, b) => b.date.localeCompare(a.date));
   const held = newestFirst.filter((m) => !m.skipped);
   const open: Item[] = newestFirst.flatMap((meeting) => meeting.openItems.map((meta) => ({ meta, meeting })));
@@ -37,6 +37,10 @@ export function seriesBody(occurrences: TrackerMeeting[], updated: string): stri
     "| Meetings held | Open items | Decisions |",
     "| --- | --- | --- |",
     `| ${held.length} | ${open.length} | ${held.reduce((n, m) => n + m.decisions.length, 0)} |`,
+    "",
+    "## Where we left off",
+    "",
+    ...leftOff(occurrences, today),
     "",
     "## Meetings",
     "",

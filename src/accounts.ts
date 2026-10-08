@@ -8,7 +8,7 @@
  */
 
 import { groupBy, sentimentMark, sentimentTrend } from "./insights";
-import { link, list, type Item, type TrackerMeeting } from "./tracker";
+import { leftOff, link, list, type Item, type TrackerMeeting } from "./tracker";
 import { replaceBetweenMarkers } from "./weeklyReview";
 
 export const ACCOUNTS_FOLDER = "Accounts";
@@ -47,6 +47,10 @@ export function accountBody(meetings: TrackerMeeting[], today: string, updated: 
     "| Meetings held | Last met | Next meeting | Open items | Overdue | Sentiment (oldest → newest) |",
     "| ---: | --- | --- | ---: | ---: | --- |",
     `| ${held.length} | ${held[0]?.date ?? "—"} | ${next ? `${next.date} ${link(next, true)}` : "—"} | ${open.length} | ${overdue.length} | ${sentimentTrend(held) || "—"} |`,
+    "",
+    "## Where we left off",
+    "",
+    ...leftOff(meetings, today),
     "",
     "## Meetings",
     "",

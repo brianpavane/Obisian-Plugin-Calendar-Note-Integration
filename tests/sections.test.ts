@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { appendToSection, sectionText } from "../src/sections";
+import { appendToSection, continuityItems, sectionText } from "../src/sections";
 
 const note = "---\ntitle: \"Sync\"\n---\n\n# Sync\n\n## Notes\n\n- \n\n## Decisions\n\n- Ship it\n\n## Action items\n\n- [ ] \n\n## Transcript\n\n";
 
@@ -33,4 +33,10 @@ test("appendToSection creates a missing section before another, or at the end", 
 
 test("headings in the frontmatter are not sections", () => {
   assert.equal(sectionText("---\n# Notes\n---\n## Notes\n\nreal\n", ["Notes"]), "real");
+});
+
+test("continuityItems reads the bullets under the continuity label", () => {
+  const note = "---\ntitle: x\n---\n\n## Executive Summary\n\nWe met.\n\n---\n\n**Core Elements for Next Meeting Continuity:**\n- Confirm scope\n\n- [ ] Check certs\n* Ask [[Danny Ward]]\n\n## Next Steps\n\n- [ ] Other\n";
+  assert.deepEqual(continuityItems(note), ["Confirm scope", "Check certs", "Ask [[Danny Ward]]"]);
+  assert.deepEqual(continuityItems("## Executive Summary\n\nNo label here.\n"), []);
 });
