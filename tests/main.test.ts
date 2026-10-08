@@ -551,7 +551,7 @@ test("refreshNotes links each recurring meeting to the previous one and carries 
   await plugin.refreshNotes(false);
 
   const first = app.files.get("Meeting Notes/2026-04-03 - Weekly Sync.md") as TFile;
-  first.content = (first.content ?? "").replace("## Action items\n\n- [ ] ", "## Action items\n\n- [ ] Send deck\n- [x] Book room\n- [ ] ");
+  first.content = (first.content ?? "").replace("## Next Steps\n\n- [ ] ", "## Next Steps\n\n- [ ] Send deck\n- [x] Book room\n- [ ] ");
 
   plugin.getCalendarService = async () =>
     ({ queriedCalendars: () => undefined, fetchedEvents: () => undefined, listEventsInTimeWindow: async () => [occurrence("3"), occurrence("4")] } as never);
@@ -683,7 +683,7 @@ test("loadSettings keeps every note section on unless switched off", async () =>
   plugin.loadData = async () => ({ noteSections: { transcript: false, agenda: "no" }, skipSolo: "yes", krispFolder: 5 });
   await plugin.loadSettings();
   assert.deepEqual(plugin.settings.noteSections, {
-    agenda: true, notes: true, decisions: true, actionItems: true, summary: true, transcript: false,
+    agenda: true, notes: true, summary: true, actionItems: true, topics: true, decisions: true, additional: true, speakers: true, transcript: false,
   });
   assert.equal(plugin.settings.skipSolo, false);
   assert.equal(plugin.settings.krispFolder, "~/Documents/Transcripts/Krisp Meetings");
@@ -721,7 +721,7 @@ test("Add AI reply files an agent report into a filed note and rejects unrelated
   assert.match(file.content ?? "", /## Action items\n\n- \[ \] Write notes @\[\[Alice Smith\]\] ➕ 2026-04-03 📅 2026-04-10\n/);
   assert.match(file.content ?? "", /^meeting_category: "Team Sync"$/m);
   assert.doesNotMatch(file.content ?? "", /^account:/m, "General is not an account");
-  assert.match(getNotices().at(-1)?.message ?? "", /Updated the summary; added 1 new decision and 1 new action item/);
+  assert.match(getNotices().at(-1)?.message ?? "", /Updated the summary; added 1 new decision and 1 new next step/);
 
   const before = file.content;
   assert.equal(await plugin.applyAssistantReply(file as never, "Hello there"), false);
@@ -1035,8 +1035,8 @@ test("Open series note creates it in the Meeting Hub, links the occurrences both
   plugin.getCalendarService = appleService([occurrence("3"), occurrence("4")], ["Work"]);
   await plugin.refreshNotes(false);
   const first = app.files.get("Meeting Notes/2026-04-03 - Weekly Sync.md") as TFile;
-  first.content = (first.content ?? "").replace("## Action items\n\n- [ ] ", "## Action items\n\n- [ ] Send deck\n- [ ] ")
-    .replace("## Decisions\n\n- ", "## Decisions\n\n- Ship it");
+  first.content = (first.content ?? "").replace("## Next Steps\n\n- [ ] ", "## Next Steps\n\n- [ ] Send deck\n- [ ] ")
+    .replace("## Key Decisions\n\n- ", "## Key Decisions\n\n- Ship it");
 
   await plugin.openSeriesNote(occurrence("3").id, "Weekly Sync");
 

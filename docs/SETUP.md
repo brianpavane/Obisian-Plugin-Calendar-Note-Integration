@@ -56,7 +56,7 @@ Open **Settings → Meeting Notes for Apple Calendar**. Recommended values:
 | Include event description | On | The invite's agenda lands in the Agenda section |
 | Link attendees | On if you keep a note per person | Each person's note then lists every meeting with them |
 | Template file | Empty (built-in format) unless you need a custom layout | The built-in format has every section the Krisp, AI and action item features use |
-| Sections in new notes | All on | Turn off only sections you never use. Keep **Action items**, **Meeting Summary** and **Transcript** if you use the action items panel, AI summaries or Krisp |
+| Sections in new notes | All on | Turn off only sections you never use. Keep **Next Steps**, **Executive Summary**, **Key Decisions** and **Transcript** if you use the action items panel, AI summaries or Krisp |
 | Link to daily note | On | Each day's daily note lists that day's meetings in its backlinks |
 | Show next meeting in status bar | On | One click to open the note and join |
 

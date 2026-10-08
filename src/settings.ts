@@ -874,9 +874,12 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
     const sectionNames: Array<[keyof NoteSections, string]> = [
       ["agenda", "Agenda"],
       ["notes", "Notes"],
-      ["decisions", "Decisions"],
-      ["actionItems", "Action items"],
-      ["summary", "Meeting Summary"],
+      ["summary", "Executive Summary"],
+      ["actionItems", "Next Steps"],
+      ["topics", "Summary by Topic"],
+      ["decisions", "Key Decisions"],
+      ["additional", "Additional Items"],
+      ["speakers", "Speakers"],
       ["transcript", "Transcript"],
     ];
     for (const [key, name] of sectionNames) {
@@ -1028,7 +1031,8 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Instructions")
       .setDesc(
-        "What the assistant is asked to do. Keep the Summary, Decisions and Action items headings " +
+        "What the assistant is asked to do. Keep the six headings (Executive Summary, Next Steps, " +
+          "Summary (by topic), Key Decisions/Agreements, Additional Items, Speakers) " +
           "so the reply can be filed. For a custom agent, see docs/AGENT_INSTRUCTIONS.md."
       )
       .addButton((button) =>

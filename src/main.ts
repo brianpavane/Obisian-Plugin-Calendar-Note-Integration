@@ -1454,7 +1454,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     if (!reply) {
       new Notice(
         "Calendar Notes: The clipboard doesn't hold an AI reply the plugin understands — it needs " +
-          "a summary, decisions or action items. Copy the assistant's whole reply and try again."
+          "a summary, decisions or next steps. Copy the assistant's whole reply and try again."
       );
       return false;
     }
@@ -1466,7 +1466,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     const plural = (n: number, word: string) => `${n} new ${word}${n !== 1 ? "s" : ""}`;
     new Notice(
       `Calendar Notes: ${reply.summary.length > 0 ? "Updated the summary; added" : "Added"} ` +
-        `${plural(result?.decisions ?? 0, "decision")} and ${plural(result?.actionItems ?? 0, "action item")}.`
+        `${plural(result?.decisions ?? 0, "decision")} and ${plural(result?.actionItems ?? 0, "next step")}.`
     );
     return true;
   }

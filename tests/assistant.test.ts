@@ -122,8 +122,9 @@ test("applyReply files a full report and changes nothing when applied twice", ()
   const once = applyReply(blankNote, reply, true);
   assert.equal(once.decisions, 2);
   assert.equal(once.actionItems, 3);
-  assert.match(once.content, /## Decisions\n\n- Move to a production pilot in November\n- Keep SSL inspection off for finance traffic\n\n## Action items\n\n- \[ \] Send the pilot scope document @\[\[Bob Jones\]\] ⏫ 📅 2026-10-09\n/);
-  assert.match(once.content, /## Meeting Summary\n\n### Meeting Overview\n/);
+  assert.match(once.content, /## Next Steps\n\n- \[ \] Send the pilot scope document @\[\[Bob Jones\]\] ⏫ 📅 2026-10-09\n/);
+  assert.match(once.content, /## Key Decisions\n\n- Move to a production pilot in November\n- Keep SSL inspection off for finance traffic\n\n## Additional Items/);
+  assert.match(once.content, /## Executive Summary\n\n### Meeting Overview\n/);
   assert.match(once.content, /\n## Transcript\n/);
   assert.match(once.content, /^meeting_category: "External Customer"$/m);
   assert.match(once.content, /^account: "Acme Corp"$/m);
@@ -137,10 +138,10 @@ test("applyReply files a full report and changes nothing when applied twice", ()
 
 test("applyReply keeps the user's own items, skips ticked duplicates, and can leave properties alone", () => {
   const note = blankNote
-    .replace("## Decisions\n\n- \n", "## Decisions\n\n- My own decision\n")
-    .replace("## Action items\n\n- [ ] \n", "## Action items\n\n- [x] Send the pilot scope document @[[Bob Jones]] 📅 2026-10-09\n");
+    .replace("## Key Decisions\n\n- \n", "## Key Decisions\n\n- My own decision\n")
+    .replace("## Next Steps\n\n- [ ] \n", "## Next Steps\n\n- [x] Send the pilot scope document @[[Bob Jones]] 📅 2026-10-09\n");
   const result = applyReply(note, parseReply(AGENT_REPLY)!, false);
-  assert.match(result.content, /## Decisions\n\n- My own decision\n- Move to a production pilot/);
+  assert.match(result.content, /## Key Decisions\n\n- My own decision\n- Move to a production pilot/);
   assert.equal(result.actionItems, 2);
   assert.doesNotMatch(result.content, /meeting_category|account:/);
 });
@@ -243,6 +244,73 @@ test("parseReply reads the agent's Mode 1 reply", () => {
 test("a Mode 2 report filed twice changes nothing, including its already-done item", () => {
   const once = applyReply(blankNote, parseReply(MODE2_REPLY)!, true, "2026-10-07");
   assert.match(once.content, /^meeting_category: "Customer"$/m);
-  assert.match(once.content, /## Meeting Summary\n\n> # Acme Zero Trust POV Review\n/);
+  assert.match(once.content, /## Executive Summary\n\n> # Acme Zero Trust POV Review\n/);
   assert.equal(applyReply(once.content, parseReply(MODE2_REPLY)!, true, "2026-10-08").content, once.content);
+});
+
+const SIX_SECTION_REPLY = `Here is the meeting write-up.
+
+### 1. Executive Summary
+Zscaler and Blackbaud met to review the **NSS feed** rollout. The team agreed on a TLS fix.
+
+### 2. Next Steps
+- [ ] **Brian Pavane**: Send the TLS certificate runbook (by Friday, 2026-10-09)
+- [ ] **[Matt Magyer / Danny Ward]**: Confirm the firewall window ([TBD])
+  - Depends on the change board
+- [ ] **Blackbaud IT team**: Upgrade the connectors
+- [ ] Review the pilot @[[Alice Smith]]
+
+### 3. Summary (by topic)
+### NSS feed alerts
+Matt Magyer raised alert volume.
+- TLS error threshold at 5%
+### Pricing decisions
+- Deferred to next call
+
+### 4. Key Decisions/Agreements
+- **Brian Pavane, Matt Magyer**: Raise the TLS threshold to 5%.
+
+### 5. Additional Items
+- No additional items noted.
+
+---
+
+### 6. Speakers
+| Transcript Reference | Identified Name | Organization / Role | Identification Context |
+|---|---|---|---|
+| \`Speaker 0\` | Brian Pavane | Zscaler / Specialist SA | Addressed as Brian |`;
+
+test("parseReply reads the six-section report", () => {
+  const reply = parseReply(SIX_SECTION_REPLY)!;
+  assert.deepEqual(reply.summary, ["Zscaler and Blackbaud met to review the **NSS feed** rollout. The team agreed on a TLS fix."]);
+  assert.deepEqual(reply.actionItems.map((i) => actionLine(i, "2026-10-07")), [
+    "- [ ] Send the TLS certificate runbook @[[Brian Pavane]] ➕ 2026-10-07 📅 2026-10-09",
+    "- [ ] Confirm the firewall window ([TBD]) @[[Matt Magyer]] @[[Danny Ward]] ➕ 2026-10-07",
+    "- [ ] Upgrade the connectors (owner: Blackbaud IT team) ➕ 2026-10-07",
+    "- [ ] Review the pilot @[[Alice Smith]] ➕ 2026-10-07",
+  ]);
+  assert.deepEqual(reply.topics, ["### NSS feed alerts", "Matt Magyer raised alert volume.", "- TLS error threshold at 5%", "### Pricing decisions", "- Deferred to next call"]);
+  assert.deepEqual(reply.decisions, ["**Brian Pavane, Matt Magyer**: Raise the TLS threshold to 5%."]);
+  assert.deepEqual(reply.additional, [], "\"No additional items noted\" files nothing");
+  assert.equal(reply.speakers.length, 3);
+  assert.match(reply.speakers[2], /Brian Pavane \| Zscaler/);
+});
+
+test("a six-section report fills each section of a new note, and filing it twice changes nothing", () => {
+  const once = applyReply(blankNote, parseReply(SIX_SECTION_REPLY)!, true, "2026-10-07");
+  assert.equal(once.actionItems, 4);
+  assert.equal(once.decisions, 1);
+  assert.match(once.content, /## Executive Summary\n\nZscaler and Blackbaud[^\n]*\n\n## Next Steps\n\n- \[ \] Send the TLS/);
+  assert.match(once.content, /## Summary by Topic\n\n### NSS feed alerts\n[\s\S]*- Deferred to next call\n\n## Key Decisions\n\n- \*\*Brian Pavane, Matt Magyer\*\*: Raise/);
+  assert.match(once.content, /## Additional Items\n\n- \n\n## Speakers\n\n\| Transcript Reference [^\n]*\n\|---[^\n]*\n\| `Speaker 0` [^\n]*\n\n## Transcript/);
+  assert.equal(applyReply(once.content, parseReply(SIX_SECTION_REPLY)!, true, "2026-10-08").content, once.content);
+});
+
+test("a six-section report filed into an older note adds the new sections before the Transcript", () => {
+  const old = "# Sync\n\n## Notes\n\n- Mine\n\n## Decisions\n\n- \n\n## Action items\n\n- [ ] \n\n## Meeting Summary\n\n\n\n## Transcript\n\nYou\n";
+  const out = applyReply(old, parseReply(SIX_SECTION_REPLY)!, false).content;
+  assert.match(out, /## Decisions\n\n- \*\*Brian Pavane/);
+  assert.match(out, /## Action items\n\n- \[ \] Send the TLS/);
+  assert.match(out, /## Meeting Summary\n\nZscaler and Blackbaud[^\n]*\n\n## Summary by Topic\n\n### NSS feed alerts\n[\s\S]*\n## Speakers\n\n\|[\s\S]*\n\n## Transcript\n\nYou\n$/);
+  assert.doesNotMatch(out, /## Executive Summary|## Next Steps|## Additional Items/);
 });

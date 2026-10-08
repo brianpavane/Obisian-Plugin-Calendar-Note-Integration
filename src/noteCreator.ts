@@ -526,27 +526,36 @@ function renderDetailsCallout(event: CalendarEvent, options: SyncOptions): strin
 export interface NoteSections {
   agenda: boolean;
   notes: boolean;
-  decisions: boolean;
-  actionItems: boolean;
   summary: boolean;
+  actionItems: boolean;
+  topics: boolean;
+  decisions: boolean;
+  additional: boolean;
+  speakers: boolean;
   transcript: boolean;
 }
 
 export const ALL_SECTIONS: NoteSections = {
   agenda: true,
   notes: true,
-  decisions: true,
-  actionItems: true,
   summary: true,
+  actionItems: true,
+  topics: true,
+  decisions: true,
+  additional: true,
+  speakers: true,
   transcript: true,
 };
 
 const SECTION_BLOCKS: Array<[keyof NoteSections, string]> = [
   ["agenda", "## Agenda\n\n{{agenda}}\n"],
   ["notes", "## Notes\n\n- \n"],
-  ["decisions", "## Decisions\n\n- \n"],
-  ["actionItems", "## Action items\n\n- [ ] \n"],
-  ["summary", "## Meeting Summary\n\n\n"],
+  ["summary", "## Executive Summary\n\n\n"],
+  ["actionItems", "## Next Steps\n\n- [ ] \n"],
+  ["topics", "## Summary by Topic\n\n\n"],
+  ["decisions", "## Key Decisions\n\n- \n"],
+  ["additional", "## Additional Items\n\n- \n"],
+  ["speakers", "## Speakers\n\n\n"],
   ["transcript", "## Transcript\n\n"],
 ];
 

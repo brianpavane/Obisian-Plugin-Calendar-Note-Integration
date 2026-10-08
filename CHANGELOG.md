@@ -7,6 +7,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+**Meeting notes follow the AI write-up's six sections**
+New notes now have **Executive Summary**, **Next Steps**, **Summary by Topic**, **Key Decisions**, **Additional Items** and **Speakers** between Notes and Transcript, in place of Decisions, Action items and Meeting Summary. Each can be switched off under **Sections in new notes**. Existing notes keep their sections.
+
+**Add AI reply files the six-section write-up**
+A reply with Executive Summary, Next Steps, Summary (by topic), Key Decisions/Agreements, Additional Items and Speakers fills the note section of the same name. Next steps such as `- [ ] **Bob Jones**: Send the scope (2026-10-09)` become tasks with `@[[Bob Jones]]` as owner and a due date. In older notes the reply fills Meeting Summary, Decisions and Action items and adds the new sections before the Transcript. Older reply formats are still understood.
+
+**New agent and built-in instructions**
+`docs/AGENT_INSTRUCTIONS.md` now holds the Meeting Intelligence & Transcript Processing agent instructions, which resolve transcript speakers to real names. The built-in instructions ask for the same six sections. They don't produce a category, account or tags, so set those properties by hand if you use the **By account** and **By category** views.
+
+---
+
 ## [6.19.0] – 2026-10-07
 
 ### Added

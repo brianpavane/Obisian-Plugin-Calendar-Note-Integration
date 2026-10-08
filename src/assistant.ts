@@ -5,39 +5,54 @@
  * and file the assistant's reply into the note. The plugin never contacts
  * any AI service itself.
  *
- * Two reply shapes are understood:
- *   - the short format the built-in instructions ask for: `Summary`,
- *     `Decisions` and `Action items` headings;
- *   - a full report from a custom agent (see docs/AGENT_INSTRUCTIONS.md):
- *     the whole reply becomes the Meeting Summary, decisions come from a
- *     "Key Decisions Made" list and action items from an action items table.
+ * Reply shapes understood:
+ *   - the six-section report (see docs/AGENT_INSTRUCTIONS.md and the
+ *     built-in instructions): Executive Summary, Next Steps, Summary (by
+ *     topic), Key Decisions/Agreements, Additional Items and Speakers, each
+ *     filed into the note section of the same name;
+ *   - older formats: a short `Summary` / `Decisions` / `Action items` reply,
+ *     or a full report whose whole text becomes the Executive Summary, with
+ *     decisions from a "Key Decisions" list and action items from a table.
  */
 
 import { addFrontmatterTags, setFrontmatterValue } from "./noteCreator";
 import { appendToSection, replaceSection, sectionLines, sectionText } from "./sections";
 
-export const SUMMARY_SECTIONS = ["Meeting Summary", "Summary"];
-export const DECISIONS_SECTIONS = ["Decisions"];
-export const ACTION_SECTIONS = ["Action items"];
+export const SUMMARY_SECTIONS = ["Executive Summary", "Meeting Summary", "Summary"];
+export const ACTION_SECTIONS = ["Next Steps", "Action items"];
+export const TOPICS_SECTIONS = ["Summary by Topic", "Summary (by topic)"];
+export const DECISIONS_SECTIONS = ["Key Decisions", "Key Decisions/Agreements", "Decisions"];
+export const ADDITIONAL_SECTIONS = ["Additional Items"];
+export const SPEAKERS_SECTIONS = ["Speakers"];
 export const NOTES_SECTIONS = ["Notes"];
 export const TRANSCRIPT_SECTIONS = ["Transcript"];
 
 export const DEFAULT_INSTRUCTIONS = [
   "Write up the meeting below from my notes and the transcript. MEETING DETAILS comes from my calendar and is correct; MY NOTES are my own notes and take priority over the transcript.",
-  "Reply in Markdown with exactly these three headings, in this order, and nothing before or after them:",
+  "Work out who each transcript speaker (Speaker 0, Speaker 1…) is from the dialogue and the attendee list, and use their full names throughout.",
+  "Reply in Markdown with exactly these six headings, in this order, and nothing before or after them:",
   "",
-  "## Summary",
-  "A short paragraph (3–6 sentences): what was discussed and what was concluded.",
+  "## Executive Summary",
+  "One or two short paragraphs: why the meeting was held, what was covered and the outcome.",
   "",
-  "## Decisions",
-  "- One bullet per decision made in the meeting. Write \"- None\" if there were none.",
+  "## Next Steps",
+  "- [ ] **Full Name**: One checkbox per follow-up task, with its owner (YYYY-MM-DD)",
   "",
-  "## Action items",
-  "- [ ] One checkbox per follow-up task, starting with a verb.",
+  "## Summary (by topic)",
+  "### Topic name",
+  "A short paragraph or bullets per topic discussed.",
   "",
-  "For each action item, add the owner as @[[Full Name]] (for example @[[Bob Jones]]) when it's clear who owns it,",
-  "and a due date as 📅 YYYY-MM-DD when one was mentioned; turn relative dates such as \"by Friday\" into dates using the meeting date.",
-  "Use only what's in the notes and transcript; don't invent tasks, owners or dates.",
+  "## Key Decisions/Agreements",
+  "- **Full Name(s)**: One bullet per decision or agreement. Write \"- None\" if there were none.",
+  "",
+  "## Additional Items",
+  "- Side topics, risks and open questions. Write \"- No additional items noted.\" if there were none.",
+  "",
+  "## Speakers",
+  "| Transcript Reference | Identified Name | Organization / Role | Identification Context |",
+  "",
+  "In Next Steps, give a due date in brackets as YYYY-MM-DD only when one was mentioned; turn relative dates such as \"by Friday\" into dates using the meeting date.",
+  "Use only what's in the notes and transcript; don't invent tasks, owners or dates. Write [TBD] or [Unclear from audio] for anything ambiguous.",
 ].join("\n");
 
 export interface MeetingInfo {
@@ -93,6 +108,10 @@ export interface AssistantReply {
   summary: string[];
   decisions: string[];
   actionItems: ActionItem[];
+  /** Summary (by topic), Additional Items and Speakers: section bodies, empty if the reply has none. */
+  topics: string[];
+  additional: string[];
+  speakers: string[];
   category?: string;
   account?: string;
   tags: string[];
@@ -125,7 +144,7 @@ function trimBlank(lines: string[]): string[] {
   return out;
 }
 
-const isNone = (s: string) => /^(none|none noted|n\/a|-+)\.?$/i.test(s.trim());
+const isNone = (s: string) => /^(none|none noted|no additional items noted|n\/a|-+)\.?$/i.test(s.trim());
 
 /** Bullets following the line at `from`, up to the next heading, label or other text. */
 function bulletsAfter(lines: string[], from: number): string[] {
@@ -235,9 +254,75 @@ function replyLines(text: string): string[] {
   return trimBlank(first > 0 ? lines.slice(first) : lines);
 }
 
+/** A Next Steps line: `**Owner(s)**: Task (2026-10-10)`; other wording is kept as written. */
+function nextStep(text: string): ActionItem {
+  const m = text.match(/^\*\*\s*\[?(.+?)\]?\s*:?\s*\*\*\s*:?\s*(.+)$/);
+  if (!m) return { task: text, raw: text };
+  let task = m[2].trim();
+  const due = task.match(/\s*\(([^()]*?(\d{4}-\d{2}-\d{2})[^()]*)\)\s*$/);
+  if (due) task = task.slice(0, due.index).trim();
+  return { task, ...owner(m[1]), due: due?.[2] };
+}
+
+type ReplySection = keyof Pick<AssistantReply, "summary" | "actionItems" | "topics" | "decisions" | "additional" | "speakers">;
+
+const SIX_SECTIONS: Array<[ReplySection, RegExp]> = [
+  ["summary", /^executive summary$/],
+  ["actionItems", /^(next steps|action items)\b/],
+  ["topics", /^summary\s*\(?by topics?\)?$|^topics$/],
+  ["decisions", /^key decisions/],
+  ["additional", /^additional items/],
+  ["speakers", /^speakers\b/],
+];
+
+/**
+ * The six-section report, or undefined if the reply has no Executive Summary
+ * or Next Steps heading. A section runs to the next of the six headings, so
+ * the topic subheadings stay inside Summary (by topic); headings below the
+ * level of Executive Summary never start a section.
+ */
+function parseSixSections(lines: string[]): AssistantReply | undefined {
+  const headings = lines.map(headingText);
+  const anchor = headings.findIndex((h) => !!h && /^(executive summary|next steps)$/i.test(h.text));
+  if (anchor === -1) return undefined;
+  const top = headings[anchor]!.level;
+  const starts: Array<[number, ReplySection]> = [];
+  headings.forEach((h, i) => {
+    if (!h || h.level > top) return;
+    const key = SIX_SECTIONS.find(([, re]) => re.test(h.text.toLowerCase()))?.[0];
+    if (key && !starts.some(([, k]) => k === key)) starts.push([i, key]);
+  });
+  const body = (key: ReplySection) => {
+    const at = starts.findIndex(([, k]) => k === key);
+    if (at === -1) return [];
+    const end = starts.find(([i]) => i > starts[at][0])?.[0];
+    return lines.slice(starts[at][0] + 1, end);
+  };
+  const bullets = (key: ReplySection) =>
+    body(key)
+      .filter((l) => /^(?:[-*+•]|\d+[.)])\s/.test(l))
+      .map((l) => l.replace(BULLET_RE, "").trim())
+      .filter((l) => l && !isNone(l));
+  const block = (key: ReplySection) => {
+    const out = reportBody(body(key));
+    return out.every((l) => !l.trim() || isNone(l.replace(BULLET_RE, ""))) ? [] : out;
+  };
+  return {
+    summary: trimBlank(body("summary")),
+    actionItems: bullets("actionItems").map(nextStep),
+    topics: block("topics"),
+    decisions: bullets("decisions"),
+    additional: block("additional"),
+    speakers: block("speakers"),
+    tags: [],
+  };
+}
+
 /** The parts of an assistant's reply, or undefined if it has neither a summary nor action items to file. */
 export function parseReply(text: string): AssistantReply | undefined {
   const lines = replyLines(text);
+  const six = parseSixSections(lines);
+  if (six) return six;
   const headings = lines.map(headingText);
   const find = (test: (t: string) => boolean) => headings.findIndex((h) => !!h && test(h.text.toLowerCase()));
 
@@ -285,6 +370,9 @@ export function parseReply(text: string): AssistantReply | undefined {
     summary,
     decisions: decisionsAt !== -1 ? [...inlineDecisions, ...bulletsAfter(lines, decisionsAt)] : [],
     actionItems,
+    topics: [],
+    additional: [],
+    speakers: [],
     category: category || undefined,
     account: account && !/^general$/i.test(account) ? account : undefined,
     tags,
@@ -330,16 +418,21 @@ export interface ApplyResult {
   actionItems: number;
 }
 
+/** The note's AI sections in order, for placing one that the note lacks before the sections that follow it. */
+const AFTER_SUMMARY = [ACTION_SECTIONS, TOPICS_SECTIONS, DECISIONS_SECTIONS, ADDITIONAL_SECTIONS, SPEAKERS_SECTIONS, TRANSCRIPT_SECTIONS];
+const after = (names: string[]) => AFTER_SUMMARY.slice(AFTER_SUMMARY.indexOf(names) + 1).flat();
+
 /**
- * File the reply into the note: the summary replaces Meeting Summary;
- * decisions and action items not already in their sections are added; the
+ * File the reply into the note: the summary, topics, additional items and
+ * speakers replace their sections; decisions and next steps not already in
+ * their sections are added; the
  * category, account and tags become properties when `saveProperties` is set.
  * New action items are stamped with `today` as their created date.
  * Applying the same reply twice changes nothing the second time.
  */
 export function applyReply(content: string, reply: AssistantReply, saveProperties: boolean, today?: string): ApplyResult {
   let out = content;
-  if (reply.summary.length > 0) out = replaceSection(out, SUMMARY_SECTIONS, reply.summary, TRANSCRIPT_SECTIONS);
+  if (reply.summary.length > 0) out = replaceSection(out, SUMMARY_SECTIONS, reply.summary, AFTER_SUMMARY.flat());
 
   const fresh = (names: string[], candidates: string[]) => {
     const seen = new Set(sectionLines(out, names).map(sameItem));
@@ -350,10 +443,13 @@ export function applyReply(content: string, reply: AssistantReply, savePropertie
       return true;
     });
   };
-  const decisions = fresh(DECISIONS_SECTIONS, reply.decisions.map((d) => `- ${d}`));
-  if (decisions.length > 0) out = appendToSection(out, DECISIONS_SECTIONS, decisions, ACTION_SECTIONS);
   const actions = fresh(ACTION_SECTIONS, reply.actionItems.map((item) => actionLine(item, today)));
-  if (actions.length > 0) out = appendToSection(out, ACTION_SECTIONS, actions, SUMMARY_SECTIONS);
+  if (actions.length > 0) out = appendToSection(out, ACTION_SECTIONS, actions, after(ACTION_SECTIONS));
+  if (reply.topics.length > 0) out = replaceSection(out, TOPICS_SECTIONS, reply.topics, after(DECISIONS_SECTIONS));
+  const decisions = fresh(DECISIONS_SECTIONS, reply.decisions.map((d) => `- ${d}`));
+  if (decisions.length > 0) out = appendToSection(out, DECISIONS_SECTIONS, decisions, after(DECISIONS_SECTIONS));
+  if (reply.additional.length > 0) out = replaceSection(out, ADDITIONAL_SECTIONS, reply.additional, after(ADDITIONAL_SECTIONS));
+  if (reply.speakers.length > 0) out = replaceSection(out, SPEAKERS_SECTIONS, reply.speakers, after(SPEAKERS_SECTIONS));
 
   if (saveProperties) {
     if (reply.category) out = setFrontmatterValue(out, "meeting_category", reply.category);

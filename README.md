@@ -12,7 +12,7 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 
 - **Automatic note creation** — notes appear before your meetings without any manual action
 - **Local Apple Calendar** — reads Calendar.app on your Mac; choose exactly which calendars to include
-- **Structured meeting notes** — searchable properties, a Meeting details box, and Agenda, Notes, Decisions, Action items, Meeting Summary, and Transcript sections
+- **Structured meeting notes** — searchable properties, a Meeting details box, and Agenda, Notes, Executive Summary, Next Steps, Summary by Topic, Key Decisions, Additional Items, Speakers, and Transcript sections
 - **One-click join** — Zoom, Google Meet, Microsoft Teams, and Webex links are found in the event's URL, location, or description and shown as a **Join** link
 - **Attendees with RSVP status** — 🟢 accepted, 🔴 declined, 🟡 tentative, ⚪ awaiting; optionally as `[[Name]]` links to your people notes
 - **Notes stay in sync** — time, attendee, and location changes are applied to existing notes; moved meetings are renamed to their new date; cancelled, deleted and declined meetings are marked as such
@@ -23,7 +23,7 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 - **Meetings dashboard** — a ready-made Bases view of upcoming and recent meetings ([guide](docs/DASHBOARDS.md))
 - **Today's meetings** — a sidebar of today's meetings (arrows step to other days) with one-click **Open note**, **Join** and **New note** buttons ([guide](docs/DASHBOARDS.md))
 - **Krisp transcripts** — fill a meeting's Transcript section from its Krisp recording, by command or automatically
-- **AI summaries by copy and paste** — copy a meeting for Gemini, Claude, ChatGPT or Copilot (or your own agent), paste the reply back into Meeting Summary, Decisions and Action items; the plugin itself never goes online
+- **AI summaries by copy and paste** — copy a meeting for Gemini, Claude, ChatGPT or Copilot (or your own agent), paste the reply back into Executive Summary, Next Steps, Summary by Topic, Key Decisions, Additional Items and Speakers; the plugin itself never goes online
 - **File notes anywhere** — move finished notes into your own folders; the plugin still finds them
 - **Skip rules** — no automatic notes for meetings titled Focus time, Lunch, etc., or with no one else invited
 - **Action items view** — every open action item across your meetings in one sidebar, grouped by meeting, owner (`@Bob`), or due date (`📅 2026-10-10`), with priorities, ticked off in place ([guide](docs/DASHBOARDS.md))
@@ -133,7 +133,7 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 | Include event description | On | Add the event's description to the Agenda section of new notes |
 | Link attendees | Off | Write the organizer and attendees as `[[Name]]` links instead of plain names and emails |
 | Template file | *(built-in)* | A note to use as the template for new meeting notes — see [Custom templates](#custom-templates) |
-| Sections in new notes | All on | Which sections the built-in format includes: Agenda, Notes, Decisions, Action items, Meeting Summary, Transcript. Ignored when a template file is set. Existing notes are not changed |
+| Sections in new notes | All on | Which sections the built-in format includes: Agenda, Notes, Executive Summary, Next Steps, Summary by Topic, Key Decisions, Additional Items, Speakers, Transcript. Ignored when a template file is set. Existing notes are not changed |
 | Link to daily note | On | Link each meeting note to that day's daily note, using your Daily Notes format and folder |
 | Show next meeting in status bar | On | Show the meeting in progress or coming up next at the bottom of the window; click it to join |
 | Date position in filename | Before | `2026-01-15 - Meeting Name.md` or `Meeting Name - 2026-01-15.md` |
@@ -212,15 +212,27 @@ tags:
 
 - 
 
-## Decisions
+## Executive Summary
 
-- 
 
-## Action items
+
+## Next Steps
 
 - [ ] 
 
-## Meeting Summary
+## Summary by Topic
+
+
+
+## Key Decisions
+
+- 
+
+## Additional Items
+
+- 
+
+## Speakers
 
 
 
@@ -231,8 +243,9 @@ tags:
 - **Properties** hold the meeting's details so you can search, sort, and query meetings (for example with Bases or Dataview). `meeting_url` is clickable in the Properties panel.
 - **Meeting details** has the **Join** link, and the date links to the daily note. A cancelled meeting shows a red **Meeting cancelled** box instead.
 - **Agenda** starts with the lines of the event description (when **Include event description** is on).
-- **Agenda**, **Notes**, **Decisions**, and **Action items** are yours to fill in. Action items are checkboxes, so Obsidian's task search and the Tasks plugin can collect them across meetings.
-- **Meeting Summary** and **Transcript** are empty sections at the end of the note, for pasting a summary and transcript from your recording or AI note-taker.
+- **Agenda** and **Notes** are yours to fill in.
+- **Executive Summary**, **Next Steps**, **Summary by Topic**, **Key Decisions**, **Additional Items** and **Speakers** follow the sections of an [AI agent's write-up](docs/AGENT_INSTRUCTIONS.md), so **Add AI reply** can fill each one — or write in them by hand. Next Steps are checkboxes, so Obsidian's task search and the Tasks plugin can collect them across meetings.
+- **Transcript** is the empty section at the end of the note, for the Krisp transcript or one from your AI note-taker.
 
 ### Custom templates
 
@@ -286,15 +299,27 @@ tags:
 
 - 
 
-## Decisions
+## Executive Summary
 
-- 
 
-## Action items
+
+## Next Steps
 
 - [ ] 
 
-## Meeting Summary
+## Summary by Topic
+
+
+
+## Key Decisions
+
+- 
+
+## Additional Items
+
+- 
+
+## Speakers
 
 
 
@@ -368,12 +393,14 @@ Use any AI assistant your organization approves — Gemini, Claude, ChatGPT, Cop
 
 Every meeting note's header also has an **Import Krisp transcript** icon (a file with a sound wave). All three are commands too (**Cmd + P**), for hotkeys.
 
-The plugin understands two kinds of reply:
+The reply has six sections — **Executive Summary**, **Next Steps**, **Summary (by topic)**, **Key Decisions/Agreements**, **Additional Items** and **Speakers** — both from the built-in instructions and from your own agent (see **[AI agent instructions](docs/AGENT_INSTRUCTIONS.md)**). Each goes into the note section of the same name:
 
-- **The short format** the built-in instructions ask for (**Summary**, **Decisions**, **Action items** headings): the summary goes into **Meeting Summary**, decisions into **Decisions**, action items into **Action items**.
-- **A full report from your own agent** (see **[AI agent instructions](docs/AGENT_INSTRUCTIONS.md)**): the whole report goes into **Meeting Summary**; bullets under **Key Decisions Made** go into **Decisions**; each row of the action items table becomes a checkbox in **Action items** — owners as `@[[Full Name]]` (or `(owner: Customer IT team)` for a role), priority as `⏫` / `🔼` / `🔽`, the date added as `➕ YYYY-MM-DD` and due dates as `📅 YYYY-MM-DD` — the [Tasks plugin's format](docs/TASKS.md). The report's **Category**, **Primary Account / Project** and **Search Tags** become the note's `meeting_category`, `account` and `tags` properties, for the **By account** and **By category** dashboard views.
+- **Next Steps** like `- [ ] **Bob Jones**: Send the scope (2026-10-09)` become checkboxes in the [Tasks plugin's format](docs/TASKS.md): owners as `@[[Full Name]]` (or `(owner: Customer IT team)` for a team), the date added as `➕ YYYY-MM-DD` and a `YYYY-MM-DD` deadline as the due date `📅 YYYY-MM-DD`.
+- **Key Decisions/Agreements** go into **Key Decisions**, the topic write-up into **Summary by Topic**, and the speaker table into **Speakers**.
 
-Running it again with the same reply is safe: **Meeting Summary is replaced**, and decisions and action items already in the note (ticked or not) aren't added twice. Your own writing in Notes, Decisions and Action items is kept.
+Running it again with the same reply is safe: Executive Summary, Summary by Topic, Additional Items and Speakers are **replaced**, and next steps and decisions already in the note (ticked or not) aren't added twice. Your own writing in Notes, Next Steps and Key Decisions is kept.
+
+Older notes keep their **Meeting Summary**, **Decisions** and **Action items** sections; a reply fills those, and adds the new sections before the Transcript. Replies in the older formats (a short **Summary** / **Decisions** / **Action items** reply, or a full report with an action items table and **Category**, **Account / Project** and **Search Tags** fields) are still understood.
 
 Both steps are optional. The note's sections are there for you to write in by hand either way.
 
@@ -395,7 +422,7 @@ Both steps are optional. The note's sections are there for you to write in by ha
 | **Open meeting tracker** | Rebuilds and opens `Meeting Tracker.md` in your Meeting Hub folder: overdue, due soon, high priority, by account, by person, recent decisions, this week's meetings |
 | **Import Krisp transcript into this note** | Suggests the open note's Krisp recording and, once you confirm, fills its empty Transcript section — see [Krisp transcripts](#krisp-transcripts) |
 | **Copy meeting for AI assistant** | Copies the open note's meeting details, notes and transcript (and, if switched on, the instructions) — see [AI summaries](#ai-summaries-copy-and-paste) |
-| **Add AI reply to this meeting** | Files the AI reply on the clipboard into the open note's Meeting Summary, Decisions and Action items, and its properties |
+| **Add AI reply to this meeting** | Files the AI reply on the clipboard into the open note's Executive Summary, Next Steps, Summary by Topic, Key Decisions, Additional Items and Speakers |
 
 The plugin adds six buttons to the ribbon (the icon strip on the far left of the window):
 

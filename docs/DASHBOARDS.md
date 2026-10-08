@@ -103,10 +103,10 @@ The list re-reads your calendar every 5 minutes, and the Now / faded markers upd
 
 ### What it is
 
-Every meeting note has an **Action items** section with checkboxes:
+Every meeting note has a **Next Steps** section (**Action items** in older notes) with checkboxes:
 
 ```markdown
-## Action items
+## Next Steps
 
 - [ ] Send the deck to Bob
 - [ ] Book the review room

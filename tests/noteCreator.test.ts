@@ -194,7 +194,7 @@ test("createNoteContent uses the meeting format with properties, details callout
   assert.match(content, /^> \*\*Where:\*\* Room B$/m);
   assert.match(content, /^> \*\*Join:\*\* \[Join Google Meet\]\(https:\/\/meet\.google\.com\/abc-defg-hij\)$/m);
   assert.match(content, /^> \*\*Attendees:\*\* 🟢 \[\[Alice Smith\]\] \*\(organizer\)\* · 🟡 \[\[Bob Jones\]\]$/m);
-  assert.match(content, /## Agenda\n\n- \n\n## Notes\n\n- \n\n## Decisions\n\n- \n\n## Action items\n\n- \[ \] \n\n## Meeting Summary\n\n\n\n## Transcript\n\n$/);
+  assert.match(content, /## Agenda\n\n- \n\n## Notes\n\n- \n\n## Executive Summary\n\n\n\n## Next Steps\n\n- \[ \] \n\n## Summary by Topic\n\n\n\n## Key Decisions\n\n- \n\n## Additional Items\n\n- \n\n## Speakers\n\n\n\n## Transcript\n\n$/);
   assert.doesNotMatch(content, /Event description/);
 });
 
@@ -403,7 +403,7 @@ test("the built-in format keeps every section by default and drops only the ones
   const event = buildEvent({ summary: "Sync" });
   const all = createNoteContent(event, { includeEventNotes: false, linkAttendees: false, template: builtInTemplate() });
   assert.equal(all, createNoteContent(event, { includeEventNotes: false, linkAttendees: false }));
-  for (const heading of ["Agenda", "Notes", "Decisions", "Action items", "Meeting Summary", "Transcript"]) {
+  for (const heading of ["Agenda", "Notes", "Executive Summary", "Next Steps", "Summary by Topic", "Key Decisions", "Additional Items", "Speakers", "Transcript"]) {
     assert.match(all, new RegExp(`^## ${heading}$`, "m"));
   }
 
@@ -413,7 +413,7 @@ test("the built-in format keeps every section by default and drops only the ones
     template: builtInTemplate({ ...ALL_SECTIONS, agenda: false, transcript: false }),
   });
   assert.doesNotMatch(trimmed, /## Agenda|## Transcript/);
-  assert.match(trimmed, /## Notes\n\n- \n\n## Decisions\n\n- \n\n## Action items\n\n- \[ \] \n\n## Meeting Summary\n\n\n$/);
+  assert.match(trimmed, /## Notes\n\n- \n\n## Executive Summary\n\n\n\n## Next Steps\n\n- \[ \] \n\n## Summary by Topic\n\n\n\n## Key Decisions\n\n- \n\n## Additional Items\n\n- \n\n## Speakers\n\n\n$/);
 });
 
 test("setFrontmatterValue adds or replaces one property", () => {
