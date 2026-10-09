@@ -426,6 +426,8 @@ Both steps are optional. The note's sections are there for you to write in by ha
 | **Open meeting insights** | Rebuilds and opens `Meeting Insights.md` in your Meeting Hub folder, and refreshes every account overview — see [Meeting insights](docs/DASHBOARDS.md#6-meeting-insights) |
 | **Open account overview** | In a meeting note with an `account`, rebuilds and opens that account's note in `Accounts` inside your Meeting Hub folder — see [Account overviews](docs/DASHBOARDS.md#7-account-overviews) |
 | **Open meeting tracker** | Rebuilds and opens `Meeting Tracker.md` in your Meeting Hub folder: overdue, due soon, high priority, by account, by person, recent decisions, this week's meetings |
+
+The tracker, insights, weekly reviews, series notes and account overviews also rebuild themselves whenever you open them, however you get there, and have a **↻** icon at the top right to rebuild them while open. **Add AI reply** updates the overview of the account it saves — see [Keeping the Meeting Hub notes current](docs/DASHBOARDS.md#keeping-the-meeting-hub-notes-current).
 | **Import Krisp transcript into this note** | Suggests the open note's Krisp recording and, once you confirm, fills its empty Transcript section — see [Krisp transcripts](#krisp-transcripts) |
 | **Copy meeting for AI assistant** | Copies the open note's meeting details, notes and transcript (and, if switched on, the instructions) — see [AI summaries](#ai-summaries-copy-and-paste) |
 | **Add AI reply to this meeting** | Files the AI reply on the clipboard into the open note's Executive Summary, Next Steps, Summary by Topic, Key Decisions, Additional Items and Speakers |

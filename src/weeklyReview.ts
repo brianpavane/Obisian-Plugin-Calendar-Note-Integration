@@ -57,7 +57,7 @@ export function reviewBody(meetings: TrackerMeeting[], week: Week, today: string
   return [
     START_MARKER,
     "",
-    `*Updated ${updated}.*`,
+    `*Updated ${updated}. Refreshes each time you open it, or click ↻ at the top right.*`,
     "",
     "## At a glance",
     "",

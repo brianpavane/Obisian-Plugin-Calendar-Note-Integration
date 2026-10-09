@@ -125,7 +125,7 @@ export function buildTracker(meetings: TrackerMeeting[], today: string, updated:
   return [
     "# Meeting Tracker",
     "",
-    `*Updated ${updated}. This note is rebuilt each time you run **Open meeting tracker** — edits here are overwritten.*`,
+    `*Updated ${updated}. Refreshes each time you open it, or click ↻ at the top right. Edits here are overwritten.*`,
     "",
     "## At a glance",
     "",

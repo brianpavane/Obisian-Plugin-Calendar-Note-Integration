@@ -7,6 +7,23 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+**Meeting Hub notes keep themselves up to date**
+The Meeting Tracker, Meeting Insights, weekly reviews, series notes and account overviews are now rebuilt whenever you open them — from the file list, a link or search, not only from their ribbon button or command — so they no longer show stale meetings. Their *Updated* line says so.
+
+**Add AI reply updates the account's overview**
+When a reply saves an account, that account's overview note is brought up to date (or created) straight away, so the meeting shows up there without any other step.
+
+### Added
+
+**Refresh icon on Meeting Hub notes**
+A ↻ icon at the top right of each Meeting Hub note rebuilds it while it's open, for example after adding an AI reply in another tab.
+
+---
+
 ## [6.21.1] – 2026-10-09
 
 ### Fixed

@@ -47,6 +47,16 @@ In the palette, every command from this plugin starts with **Meeting Notes for A
 
 > **Tip — give it a shortcut.** Open **Settings → Hotkeys**, search for `today's meetings`, `action items`, or `meetings dashboard`, click the **+** next to the command, and press the keys you want, for example **Cmd + Shift + A**.
 
+## Keeping the Meeting Hub notes current
+
+The Meeting Tracker, Meeting Insights, weekly reviews, series notes and account overviews are built from your meeting notes. They bring themselves up to date:
+
+- **When you open one**, however you open it (ribbon button, command, file list, a link, search), the plugin rebuilds it first.
+- **Click the ↻ icon** at the top right of the note to rebuild it while it's open, for example after adding an AI reply to a meeting in another tab.
+- **Add AI reply** with an account also updates that account's overview note straight away, creating it if it's new.
+
+Each note's *Updated …* line at the top says when it was last rebuilt.
+
 ---
 
 ## 1. Today's meetings
@@ -264,7 +274,7 @@ It needs no other plugins. Accounts and categories come from the `account` and `
 
 Click the **gauge** button in the left ribbon, or press **Cmd + P** and run **Open meeting tracker**.
 
-It's a snapshot: each time you open it this way, the plugin rebuilds `Meeting Tracker.md` in your Meeting Hub folder with the latest numbers. Don't write in it — your edits are replaced the next time. To tick an item off, use the **Meeting action items** panel or the meeting's own note, then reopen the tracker. Meetings that were cancelled, deleted from your calendar or declined aren't listed under this week's meetings, but their open items still are.
+It's a snapshot: each time you open it, the plugin rebuilds `Meeting Tracker.md` in your Meeting Hub folder with the latest numbers (click **↻** at the top right to rebuild it while it's open). Don't write in it — your edits are replaced the next time. To tick an item off, use the **Meeting action items** panel or the meeting's own note, then click **↻**. Meetings that were cancelled, deleted from your calendar or declined aren't listed under this week's meetings, but their open items still are.
 
 The items are plain bullets, not checkboxes, so the action items panel and the Tasks plugin never count them twice.
 
@@ -349,8 +359,9 @@ Above it are **Overview** and **Key contacts** sections for your own notes; they
 
 - Run **Open meeting insights**: it creates or refreshes the note of every account met in the last 90 days, and links each one from its **Accounts** table.
 - Or, in any meeting note with an `account`, press **Cmd + P** and run **Open account overview**.
+- **Add AI reply** creates or refreshes the overview of the account it saves.
 
-The plugin's part sits between two hidden markers and is rebuilt each time; write above it.
+The plugin's part sits between two hidden markers and is rebuilt each time you open the note or click **↻** at its top right; write above it.
 
 ---
 

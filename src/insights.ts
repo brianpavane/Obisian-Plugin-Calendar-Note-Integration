@@ -170,7 +170,7 @@ export function buildInsights(
   return [
     "# Meeting Insights",
     "",
-    `*Updated ${updated}. This note is rebuilt each time you run **Open meeting insights** — edits here are overwritten. Category, account, sentiment, outcome and topics come from each meeting's properties, filled in by **Add AI reply**.*`,
+    `*Updated ${updated}. Refreshes each time you open it, or click ↻ at the top right. Edits here are overwritten. Category, account, sentiment, outcome and topics come from each meeting's properties, filled in by **Add AI reply**.*`,
     "",
     "## Last 30 days at a glance",
     "",

@@ -1133,3 +1133,82 @@ test("showTodayInBackground opens Today's meetings without focus, only when it i
   await plugin.showTodayInBackground();
   assert.deepEqual(states, [{ type: "calendar-notes-today", active: false }]);
 });
+
+test("Meeting Hub notes get a refresh icon that rebuilds them; meeting notes keep their own icons", async () => {
+  const app = createMemoryApp([
+    { path: "Meeting Notes/Pilot.md", content: "---\ntitle: \"Pilot\"\nstart: 2026-04-02T10:00\naccount: \"Acme\"\ncalendar_event_id: \"p\"\n---\n" },
+    { path: "Meeting Hub/Accounts/Acme.md", content: "---\ntype: meeting-account\naccount: \"Acme\"\n---\n\n<!-- meeting-account:start — the plugin rebuilds everything down to the end marker. Write above it. -->\nold\n<!-- meeting-account:end -->\n" },
+    { path: "Ideas.md", content: "Just a note" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ hubFolder: "Meeting Hub" });
+  await plugin.openInsights();
+
+  const views = ["Meeting Hub/Accounts/Acme.md", "Meeting Hub/Meeting Insights.md", "Meeting Notes/Pilot.md", "Ideas.md"].map((path) => {
+    const view = new MarkdownView(new WorkspaceLeaf());
+    view.file = app.files.get(path) as TFile;
+    return view;
+  });
+  (app.workspace as unknown as { getLeavesOfType: () => unknown[] }).getLeavesOfType = () => views.map((view) => ({ view }));
+  plugin.updateNoteActions();
+  assert.deepEqual(views.map((v) => v.actions.map((a) => a.icon)), [
+    ["refresh-cw"],
+    ["refresh-cw"],
+    ["clipboard-paste", "clipboard-copy", "file-audio"],
+    [],
+  ]);
+
+  const account = app.files.get("Meeting Hub/Accounts/Acme.md") as TFile;
+  account.content = (account.content ?? "").replace(/(meeting-account:start[^\n]*\n)[\s\S]*?(<!-- meeting-account:end)/, "$1stale\n$2");
+  views[0].actions[0].callback();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(account.content ?? "", /\[\[Meeting Notes\/Pilot\|Pilot\]\]/);
+  assert.match(getNotices().at(-1)?.message ?? "", /Refreshed/);
+});
+
+test("a Meeting Hub note is rebuilt when opened, but not again right after the plugin rebuilt it", async () => {
+  const app = createMemoryApp([
+    { path: "Meeting Notes/Pilot.md", content: "---\ntitle: \"Pilot\"\nstart: 2026-04-02T10:00\ncalendar_event_id: \"p\"\n---\n\n## Next Steps\n\n- [ ] Fix certs\n" },
+    { path: "Meeting Notes/Meeting Tracker.md", content: "stale" },
+    { path: "Weekly Reviews/2026-W14.md", content: "---\ntype: weekly-review\nweek_start: 2026-03-30\n---\n\n<!-- weekly-review:start — the plugin rebuilds everything down to the end marker each time you open this review. Write below it. -->\nold\n<!-- weekly-review:end -->\n\nMine\n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+  await (plugin as unknown as { refreshHubNoteOnOpen: (f: TFile) => Promise<void> }).refreshHubNoteOnOpen(app.files.get("Meeting Notes/Meeting Tracker.md") as TFile);
+  assert.equal((app.files.get("Meeting Notes/Meeting Tracker.md") as TFile).content, "stale", "not rebuilt before Obsidian has read the vault");
+  plugin.metadataReady = true;
+  const onOpen = (path: string) =>
+    (plugin as unknown as { refreshHubNoteOnOpen: (f: TFile) => Promise<void> }).refreshHubNoteOnOpen(app.files.get(path) as TFile);
+
+  await onOpen("Meeting Notes/Meeting Tracker.md");
+  const tracker = app.files.get("Meeting Notes/Meeting Tracker.md") as TFile;
+  assert.match(tracker.content ?? "", /Fix certs/);
+
+  tracker.content = "edited";
+  await onOpen("Meeting Notes/Meeting Tracker.md");
+  assert.equal(tracker.content, "edited", "not rebuilt twice in a row when a command just rebuilt and opened it");
+
+  await onOpen("Weekly Reviews/2026-W14.md");
+  const review = (app.files.get("Weekly Reviews/2026-W14.md") as TFile).content ?? "";
+  assert.match(review, /Mine/);
+  assert.match(review, /Refreshes each time you open it/);
+
+  await onOpen("Meeting Notes/Pilot.md");
+  assert.doesNotMatch((app.files.get("Meeting Notes/Pilot.md") as TFile).content ?? "", /Refreshes/, "meeting notes aren't touched");
+});
+
+test("Add AI reply with an account brings that account's overview note up to date", async () => {
+  const app = createMemoryApp([
+    { path: "Meeting Notes/Pilot.md", content: "---\ntitle: \"Pilot\"\nstart: 2026-04-02T10:00\ncalendar_event_id: \"p\"\n---\n\n## Notes\n\n- Mine\n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ hubFolder: "Meeting Hub", aiSaveProperties: true });
+  await plugin.applyAssistantReply(
+    app.files.get("Meeting Notes/Pilot.md") as never,
+    "## Meeting Metadata\n- **Account / Project:** Acme\n\n## Executive Summary\nShort.\n\n## Next Steps\n- [ ] **[[Ann Lee]]**: Send the deck\n"
+  );
+  const overview = (app.files.get("Meeting Hub/Accounts/Acme.md") as TFile | undefined)?.content ?? "";
+  assert.match(overview, /\[\[Meeting Notes\/Pilot\|Pilot\]\]/);
+  assert.match(overview, /Send the deck/);
+  assert.deepEqual(app.openedFiles, [], "the overview isn't opened");
+});

@@ -41,7 +41,7 @@ import { appendToSection, continuityItems, sectionText } from "./sections";
 import { isSkipped } from "./skipRules";
 import { ActionItemsView, ACTION_ITEMS_VIEW, localDate, parseTaskMeta } from "./actionItems";
 import { addDays, buildTracker, TRACKER_FILENAME, type TrackerMeeting } from "./tracker";
-import { isoWeek, newReview, refreshReview, REVIEW_FOLDER, reviewBody, reviewFilename } from "./weeklyReview";
+import { isoWeek, newReview, type Week, refreshReview, REVIEW_FOLDER, reviewBody, reviewFilename } from "./weeklyReview";
 import { addMissingViews, DASHBOARD_CONTENT, DASHBOARD_FILENAME, DASHBOARD_VIEW_NAMES } from "./dashboard";
 import { buildInsights, INSIGHTS_FILENAME } from "./insights";
 import { accountBody, ACCOUNTS_FOLDER, newAccountNote, refreshAccount } from "./accounts";
@@ -112,6 +112,8 @@ const IN_PROGRESS_LOOKBACK_MS = 12 * 60 * 60 * 1_000;
 const JOIN_WINDOW_MS = 30 * 60 * 1_000;
 /** A duplicate-notes warning from a background sync closes after this long; one from Refresh stays until clicked. */
 const DUPLICATE_NOTICE_MS = 20_000;
+/** A Meeting Hub note rebuilt this recently isn't rebuilt again when it opens. */
+const HUB_REBUILT_RECENTLY_MS = 5_000;
 /** Automatic Krisp import looks at meetings that ended within this long. */
 const KRISP_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1_000;
 
@@ -158,7 +160,11 @@ export default class GoogleCalendarPlugin extends Plugin {
   private readonly dismissedTranscripts = new Set<string>();
   private transcriptOfferOpen = false;
   /** Header icons added to meeting notes' views, so they can be removed again. */
-  private readonly noteActions = new Map<MarkdownView, HTMLElement[]>();
+  private readonly noteActions = new Map<MarkdownView, { kind: string; icons: HTMLElement[] }>();
+  /** When the plugin last rebuilt each Meeting Hub note, by path. */
+  private readonly hubRebuiltAt = new Map<string, number>();
+  /** Obsidian has finished reading the vault's properties since startup, so hub notes can be rebuilt on open. */
+  metadataReady = false;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -293,6 +299,12 @@ export default class GoogleCalendarPlugin extends Plugin {
 
     const refreshActions = () => this.updateNoteActions();
     this.registerEvent(this.app.workspace.on("file-open", refreshActions));
+    this.registerEvent(this.app.workspace.on("file-open", (file) => void this.refreshHubNoteOnOpen(file)));
+    this.registerEvent(this.app.metadataCache.on("resolved", () => {
+      if (this.metadataReady) return;
+      this.metadataReady = true;
+      void this.refreshHubNoteOnOpen(this.app.workspace.getActiveFile());
+    }));
     this.registerEvent(this.app.workspace.on("layout-change", refreshActions));
     this.registerEvent(this.app.metadataCache.on("changed", refreshActions));
     this.app.workspace.onLayoutReady(refreshActions);
@@ -483,9 +495,13 @@ export default class GoogleCalendarPlugin extends Plugin {
    * the plugin's part refreshed; the user's own writing is kept.
    */
   async openWeeklyReview(weeksAgo: number): Promise<void> {
+    await this.openHubNote(await this.rebuildWeeklyReview(isoWeek(addDays(localDate(this.now()), weeksAgo * 7))));
+  }
+
+  /** Rebuild the plugin's part of a week's review (`file`, or the one in the Weekly Reviews folder), creating the note if needed. */
+  private async rebuildWeeklyReview(week: Week, existing?: TFile): Promise<TFile> {
     const now = this.now();
     const today = localDate(now);
-    const week = isoWeek(addDays(today, weeksAgo * 7));
     const body = reviewBody(
       await this.trackerMeetings(),
       week,
@@ -495,18 +511,22 @@ export default class GoogleCalendarPlugin extends Plugin {
     const base = this.hubFolderPath();
     const folder = normalizePath(base ? `${base}/${REVIEW_FOLDER}` : REVIEW_FOLDER);
     const path = normalizePath(`${folder}/${reviewFilename(week)}`);
-    let file = this.app.vault.getAbstractFileByPath(path);
+    let file = existing ?? this.app.vault.getAbstractFileByPath(path);
     if (file instanceof TFile) {
       await this.app.vault.process(file, (content) => refreshReview(content, body));
     } else {
       await this.ensureFolder(folder);
       file = await this.app.vault.create(path, newReview(body, week));
     }
-    await this.app.workspace.getLeaf(false).openFile(file as TFile);
+    return this.rebuilt(file as TFile);
   }
 
   /** Rebuild the Meeting Tracker note in the Meeting Hub folder and open it. */
   async openTracker(): Promise<void> {
+    await this.openHubNote(await this.rebuildTracker());
+  }
+
+  private async rebuildTracker(): Promise<TFile> {
     const now = this.now();
     const content = buildTracker(
       await this.trackerMeetings(),
@@ -522,7 +542,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       if (folder) await this.ensureFolder(folder);
       file = await this.app.vault.create(path, content);
     }
-    await this.app.workspace.getLeaf(false).openFile(file as TFile);
+    return this.rebuilt(file as TFile);
   }
 
   /**
@@ -536,6 +556,11 @@ export default class GoogleCalendarPlugin extends Plugin {
       new Notice("Calendar Notes: This isn't a recurring meeting, so it has no series note.");
       return;
     }
+    await this.openHubNote(await this.rebuildSeriesNote(id, title));
+  }
+
+  /** Rebuild the plugin's part of a series note, creating it if needed, and link each occurrence to it. */
+  private async rebuildSeriesNote(id: string, title: string): Promise<TFile> {
     const now = this.now();
     const occurrences = (await this.trackerMeetings()).filter((m) => m.id && seriesId(m.id) === id);
     const body = seriesBody(occurrences, `${localDate(now)} ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`, localDate(now));
@@ -563,7 +588,7 @@ export default class GoogleCalendarPlugin extends Plugin {
         await this.app.vault.process(note, (c) => setSeriesLink(c, seriesPath));
       }
     }
-    await this.app.workspace.getLeaf(false).openFile(file);
+    return this.rebuilt(file);
   }
 
   /** Open the series note of the recurring meeting whose note is `file`. */
@@ -617,6 +642,7 @@ export default class GoogleCalendarPlugin extends Plugin {
         file = await this.app.vault.create(path, newAccountNote(account, body));
         existing.set(key, file);
       }
+      this.rebuilt(file);
       paths.set(key, file.path.replace(/\.md$/, ""));
     }
     return paths;
@@ -626,7 +652,7 @@ export default class GoogleCalendarPlugin extends Plugin {
   async openAccountOverview(account: string): Promise<void> {
     const paths = await this.updateAccountNotes(await this.trackerMeetings(), [account]);
     const file = this.app.vault.getAbstractFileByPath(`${paths.get(account.toLowerCase())}.md`);
-    if (file instanceof TFile) await this.app.workspace.getLeaf(false).openFile(file);
+    if (file instanceof TFile) await this.openHubNote(file);
   }
 
   /**
@@ -634,6 +660,10 @@ export default class GoogleCalendarPlugin extends Plugin {
    * overview note of every account it lists, then open it.
    */
   async openInsights(): Promise<void> {
+    await this.openHubNote(await this.rebuildInsights());
+  }
+
+  private async rebuildInsights(): Promise<TFile> {
     const meetings = await this.trackerMeetings();
     const accounts = [...new Map(
       meetings.filter((m) => m.account?.trim()).sort((a, b) => b.date.localeCompare(a.date))
@@ -653,7 +683,50 @@ export default class GoogleCalendarPlugin extends Plugin {
       if (folder) await this.ensureFolder(folder);
       file = await this.app.vault.create(path, content);
     }
-    await this.app.workspace.getLeaf(false).openFile(file as TFile);
+    return this.rebuilt(file as TFile);
+  }
+
+  /** A note the plugin generates in the Meeting Hub, which can be rebuilt from the meeting notes. */
+  hubNoteKind(file: TFile | null): "tracker" | "insights" | "account" | "series" | "review" | undefined {
+    if (!file) return undefined;
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+    if (fm?.type === "meeting-account" && text(fm.account)) return "account";
+    if (fm?.type === "meeting-series" && text(fm.series_id)) return "series";
+    if (fm?.type === "weekly-review" && /^\d{4}-\d{2}-\d{2}/.test(text(fm.week_start))) return "review";
+    const folder = this.hubFolderPath();
+    const inHub = (name: string) => file.path === normalizePath(folder ? `${folder}/${name}` : name);
+    if (inHub(TRACKER_FILENAME)) return "tracker";
+    if (inHub(INSIGHTS_FILENAME)) return "insights";
+    return undefined;
+  }
+
+  /** Rebuild a Meeting Hub note in place; false if `file` isn't one. */
+  async refreshHubNote(file: TFile): Promise<boolean> {
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    switch (this.hubNoteKind(file)) {
+      case "tracker": await this.rebuildTracker(); return true;
+      case "insights": await this.rebuildInsights(); return true;
+      case "account": await this.updateAccountNotes(await this.trackerMeetings(), [String(fm.account).trim()]); return true;
+      case "series": await this.rebuildSeriesNote(String(fm.series_id).trim(), typeof fm.title === "string" && fm.title.trim() ? fm.title.trim() : file.basename); return true;
+      case "review": await this.rebuildWeeklyReview(isoWeek(String(fm.week_start).trim().slice(0, 10)), file); return true;
+      default: return false;
+    }
+  }
+
+  /** Rebuild a Meeting Hub note when it's opened, unless the plugin has just rebuilt it. */
+  private async refreshHubNoteOnOpen(file: TFile | null): Promise<void> {
+    if (!file || !this.metadataReady || Date.now() - (this.hubRebuiltAt.get(file.path) ?? 0) < HUB_REBUILT_RECENTLY_MS) return;
+    await this.refreshHubNote(file);
+  }
+
+  private rebuilt(file: TFile): TFile {
+    this.hubRebuiltAt.set(file.path, Date.now());
+    return file;
+  }
+
+  private async openHubNote(file: TFile): Promise<void> {
+    await this.app.workspace.getLeaf(false).openFile(file);
   }
 
   /**
@@ -751,33 +824,42 @@ export default class GoogleCalendarPlugin extends Plugin {
   /**
    * Show one-click icons in the header of every open meeting note (a note
    * with a calendar_event_id): import the Krisp transcript, copy the meeting
-   * for an AI assistant, and add the assistant's reply. Other notes get none.
+   * for an AI assistant, and add the assistant's reply. Meeting Hub notes get
+   * a refresh icon. Other notes get none.
    */
   updateNoteActions(): void {
     const views = new Set<MarkdownView>();
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       if (leaf.view instanceof MarkdownView) views.add(leaf.view);
     }
-    for (const [view, icons] of this.noteActions) {
-      if (views.has(view) && this.isMeetingNote(view.file)) continue;
+    const kindOf = (file: TFile | null) =>
+      this.isMeetingNote(file) ? (this.isRecurringMeetingNote(file) ? "recurring" : "meeting") : this.hubNoteKind(file) ? "hub" : "";
+    for (const [view, { kind, icons }] of this.noteActions) {
+      if (views.has(view) && kindOf(view.file) === kind) continue;
       icons.forEach((icon) => icon.remove());
       this.noteActions.delete(view);
     }
     for (const view of views) {
-      if (this.noteActions.has(view) || !this.isMeetingNote(view.file)) continue;
-      const run = (action: (file: TFile) => Promise<void>) => () => {
+      const kind = kindOf(view.file);
+      if (this.noteActions.has(view) || !kind) continue;
+      const run = (action: (file: TFile) => Promise<unknown>) => () => {
         if (view.file) void action.call(this, view.file);
       };
       // addAction puts each new icon to the left of the previous one.
-      this.noteActions.set(view, [
-        view.addAction("clipboard-paste", "Add AI reply to this meeting", run(this.addAssistantReply)),
-        view.addAction("clipboard-copy", "Copy meeting for AI assistant", run(this.copyForAssistant)),
-        view.addAction("file-audio", "Import Krisp transcript into this note", run(this.importKrispTranscript)),
-        ...(this.isRecurringMeetingNote(view.file)
-          ? [view.addAction("repeat", "Open series note", run(this.openSeriesNoteForFile))]
-          : []),
-      ]);
+      const icons = kind === "hub"
+        ? [view.addAction("refresh-cw", "Refresh this note from the meeting notes", run(this.refreshHubNoteNow))]
+        : [
+            view.addAction("clipboard-paste", "Add AI reply to this meeting", run(this.addAssistantReply)),
+            view.addAction("clipboard-copy", "Copy meeting for AI assistant", run(this.copyForAssistant)),
+            view.addAction("file-audio", "Import Krisp transcript into this note", run(this.importKrispTranscript)),
+            ...(kind === "recurring" ? [view.addAction("repeat", "Open series note", run(this.openSeriesNoteForFile))] : []),
+          ];
+      this.noteActions.set(view, { kind, icons });
     }
+  }
+
+  private async refreshHubNoteNow(file: TFile): Promise<void> {
+    if (await this.refreshHubNote(file)) new Notice("Calendar Notes: Refreshed from your meeting notes.");
   }
 
   private isRecurringMeetingNote(file: TFile | null): boolean {
@@ -791,7 +873,7 @@ export default class GoogleCalendarPlugin extends Plugin {
   }
 
   onunload(): void {
-    for (const icons of this.noteActions.values()) icons.forEach((icon) => icon.remove());
+    for (const { icons } of this.noteActions.values()) icons.forEach((icon) => icon.remove());
     this.noteActions.clear();
     if (this.startupTimeoutId !== undefined) {
       window.clearTimeout(this.startupTimeoutId);
@@ -1631,12 +1713,35 @@ export default class GoogleCalendarPlugin extends Plugin {
       result = applyReply(content, reply, this.settings.aiSaveProperties, localDate(this.now()));
       return result.content;
     });
+    if (this.settings.aiSaveProperties && reply.account) {
+      await this.propertiesUpdated(file, (fm) => fm?.account === reply.account);
+      await this.updateAccountNotes(await this.trackerMeetings(), [reply.account]);
+    }
     const plural = (n: number, word: string) => `${n} new ${word}${n !== 1 ? "s" : ""}`;
     new Notice(
       `Calendar Notes: ${reply.summary.length > 0 ? "Updated the summary; added" : "Added"} ` +
         `${plural(result?.decisions ?? 0, "decision")} and ${plural(result?.actionItems ?? 0, "next step")}.`
     );
     return true;
+  }
+
+  /**
+   * Wait until Obsidian has re-read `file`'s properties after a write (it
+   * does so shortly after), at most a few seconds.
+   */
+  private propertiesUpdated(file: TFile, ready: (fm: Record<string, unknown> | undefined) => boolean): Promise<void> {
+    if (ready(this.app.metadataCache.getFileCache(file)?.frontmatter)) return Promise.resolve();
+    return new Promise((resolve) => {
+      const done = () => {
+        this.app.metadataCache.offref(ref);
+        window.clearTimeout(timer);
+        resolve();
+      };
+      const ref = this.app.metadataCache.on("changed", (changed) => {
+        if (changed.path === file.path && ready(this.app.metadataCache.getFileCache(file)?.frontmatter)) done();
+      });
+      const timer = window.setTimeout(done, 3_000);
+    });
   }
 
   async addAssistantReply(file: TFile): Promise<void> {

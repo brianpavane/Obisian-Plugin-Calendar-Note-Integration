@@ -42,7 +42,7 @@ export function accountBody(meetings: TrackerMeeting[], today: string, updated: 
 
   return [
     ACCOUNT_START,
-    `*Updated ${updated}. Everything below comes from the account's meeting notes — change it there.*`,
+    `*Updated ${updated}. Everything below comes from the account's meeting notes — change it there. Refreshes each time you open it, or click ↻ at the top right.*`,
     "",
     "| Meetings held | Last met | Next meeting | Open items | Overdue | Sentiment (oldest → newest) |",
     "| ---: | --- | --- | ---: | ---: | --- |",

@@ -32,7 +32,7 @@ export function seriesBody(occurrences: TrackerMeeting[], updated: string, today
 
   return [
     SERIES_START,
-    `*Updated ${updated}. Items and decisions come from each meeting's own note — change them there, then reopen this note.*`,
+    `*Updated ${updated}. Items and decisions come from each meeting's own note — change them there. Refreshes each time you open it, or click ↻ at the top right.*`,
     "",
     "| Meetings held | Open items | Decisions |",
     "| --- | --- | --- |",
