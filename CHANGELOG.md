@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+**Account saved from more AI reply layouts, so meetings show up in the Meeting Hub again**
+**Add AI reply** missed the account when the assistant wrote `Account/Project` without spaces, put the Meeting Metadata in a table or without bold labels, or placed it after the six sections. The meeting then had no `account` property and was left out of account overviews and Insights' accounts. All of these layouts are now read; run **Add AI reply** again on an affected note to add the account.
+
+---
+
 ## [6.21.0] – 2026-10-08
 
 ### Fixed

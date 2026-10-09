@@ -364,6 +364,34 @@ test("metadata placeholders such as General, TBD and None aren't saved", () => {
   assert.equal(reply.sentiment, undefined);
 });
 
+test("the account is read however the assistant writes the metadata block", () => {
+  const sections = "\n## Executive Summary\nShort.\n\n## Next Steps\n- [ ] **[[Ann Lee]]**: Send the deck\n";
+  for (const meta of [
+    "## Meeting Metadata\n- **Category:** Customer\n- **Account/Project:** CVS",
+    "## Meeting Metadata\n- **Customer / Account:** CVS",
+    "## Meeting Metadata\n- Category: Customer\n- Account / Project: CVS",
+    "## Meeting Metadata\n| Field | Value |\n| --- | --- |\n| Category | Customer |\n| **Account / Project** | CVS |",
+  ]) {
+    assert.equal(parseReply(meta + "\n" + sections)?.account, "CVS", meta);
+  }
+});
+
+test("a Meeting Metadata block after the six sections is read and not filed into Speakers", () => {
+  const reply = parseReply([
+    "## Executive Summary", "Short.", "",
+    "## Speakers", "| Transcript Reference | Identified Name |", "| --- | --- |", "| Speaker 0 | [[Ann Lee]] |", "",
+    "## Meeting Metadata", "- **Account / Project:** CVS", "- **Sentiment:** Positive",
+  ].join("\n"))!;
+  assert.equal(reply.account, "CVS");
+  assert.equal(reply.sentiment, "Positive");
+  assert.doesNotMatch(reply.speakers.join("\n"), /Metadata|CVS/);
+});
+
+test("unbolded Label: value lines outside the metadata block aren't read as metadata", () => {
+  const reply = parseReply("## Executive Summary\n- Outcome: we shipped it.\n\n## Next Steps\n- [ ] **[[Ann Lee]]**: Send the deck\n")!;
+  assert.equal(reply.outcome, undefined);
+});
+
 const SCRIBE_REPLY = `## 1. Executive Summary
 [[CVS]] and Zscaler reviewed the **ZIA** POV. The team agreed to pilot TLS Decryption.
 ---

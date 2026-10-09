@@ -148,6 +148,8 @@ const PLAIN_HEADING_RE = /^\s*(summary|decisions|action items)\s*:?\s*$/i;
 const BULLET_RE = /^\s*(?:[-*+•]|\d+[.)])\s+(?:\[[ xX]?\]\s*)?/;
 const RULE_RE = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
 const FIELD_RE = /^\s*(?:[-*]\s+)?\*\*([^*]+?)\s*:?\s*\*\*\s*:?\s*(.*)$/;
+/** "- Label: value" without bold, read only inside the Meeting Metadata block. */
+const PLAIN_FIELD_RE = /^\s*(?:[-*]\s+)?([A-Za-z][A-Za-z /]{1,40}?)\s*:\s*(.*)$/;
 
 /** The text of a heading or a bold label line ("**Key Decisions Made:**"), without numbering or colon. */
 function headingText(line: string): { level: number; text: string } | undefined {
@@ -320,20 +322,22 @@ const SIX_SECTIONS: Array<[ReplySection, RegExp]> = [
  * The six-section report, or undefined if the reply has no Executive Summary
  * or Next Steps heading. A section runs to the next of the six headings, so
  * the topic subheadings stay inside Summary (by topic); headings below the
- * level of Executive Summary never start a section.
+ * level of Executive Summary never start a section. A Meeting Metadata
+ * heading ends a section too, so metadata placed after the six is still read.
  */
-function parseSixSections(lines: string[]): Omit<AssistantReply, keyof Metadata | "speakerNames"> & { before: string[] } | undefined {
+function parseSixSections(lines: string[]): Omit<AssistantReply, keyof Metadata | "speakerNames"> & { metadataLines: string[] } | undefined {
   const headings = lines.map(headingText);
   const anchor = headings.findIndex((h) => !!h && /^(executive summary|next steps)$/i.test(h.text));
   if (anchor === -1) return undefined;
   const top = headings[anchor]!.level;
-  const starts: Array<[number, ReplySection]> = [];
+  const starts: Array<[number, ReplySection | "metadata"]> = [];
   headings.forEach((h, i) => {
+    if (h && /^meeting metadata$/i.test(h.text) && !starts.some(([, k]) => k === "metadata")) starts.push([i, "metadata"]);
     if (!h || h.level > top) return;
     const key = SIX_SECTIONS.find(([, re]) => re.test(h.text.toLowerCase()))?.[0];
     if (key && !starts.some(([, k]) => k === key)) starts.push([i, key]);
   });
-  const body = (key: ReplySection) => {
+  const body = (key: ReplySection | "metadata") => {
     const at = starts.findIndex(([, k]) => k === key);
     if (at === -1) return [];
     const end = starts.find(([i]) => i > starts[at][0])?.[0];
@@ -355,7 +359,7 @@ function parseSixSections(lines: string[]): Omit<AssistantReply, keyof Metadata 
     decisions: bullets("decisions"),
     additional: block("additional"),
     speakers: block("speakers"),
-    before: lines.slice(0, Math.min(...starts.map(([i]) => i))),
+    metadataLines: [...lines.slice(0, Math.min(...starts.map(([i]) => i))), ...body("metadata")],
   };
 }
 
@@ -367,13 +371,20 @@ const listValue = (value?: string) =>
 
 /**
  * The Meeting Metadata fields: "**Label:** value" lines, also inside a quote
- * or several on one line split by " | ".
+ * or several on one line split by " | ". With `loose`, for lines known to be
+ * the metadata block, also "Label: value" lines and "| Label | Value |" table rows.
  */
-function metadata(lines: string[]): Metadata {
+function metadata(lines: string[], loose = false): Metadata {
   const field = (re: RegExp) => {
     for (const line of lines) {
-      for (const part of line.replace(QUOTE_RE, "").split(/\s+\|\s+/)) {
-        const m = part.match(FIELD_RE);
+      const unquoted = line.replace(QUOTE_RE, "");
+      if (loose && unquoted.trim().startsWith("|")) {
+        const [label, value] = cells(unquoted).map((c) => c.replace(/\*\*/g, "").replace(/:\s*$/, "").trim());
+        if (label && re.test(label)) return value || undefined;
+        continue;
+      }
+      for (const part of unquoted.split(/\s+\|\s+/)) {
+        const m = part.match(FIELD_RE) ?? (loose ? part.match(PLAIN_FIELD_RE) : null);
         if (m && re.test(m[1].trim())) return m[2].trim() || undefined;
       }
     }
@@ -383,7 +394,7 @@ function metadata(lines: string[]): Metadata {
     const value = raw && unlink(raw);
     return value && !isNone(value) && !/^\[?tbd\]?$/i.test(value) ? value.replace(/^\[|\]$/g, "") : undefined;
   };
-  const account = single(field(/^(primary )?(account|project)( \/ (project|account))?$/i));
+  const account = single(field(/^(primary )?(account|project|customer)(\s*\/\s*(project|account|customer|initiative))?$/i));
   return {
     category: single(field(/^(meeting )?category$/i)),
     account: account && !/^general$/i.test(account) ? account : undefined,
@@ -412,8 +423,8 @@ export function parseReply(text: string): AssistantReply | undefined {
   const lines = replyLines(text);
   const six = parseSixSections(lines);
   if (six) {
-    const { before, ...sections } = six;
-    return { ...sections, ...metadata(before), speakerNames: speakerNames(six.speakers) };
+    const { metadataLines, ...sections } = six;
+    return { ...sections, ...metadata(metadataLines, true), speakerNames: speakerNames(six.speakers) };
   }
   const headings = lines.map(headingText);
   const find = (test: (t: string) => boolean) => headings.findIndex((h) => !!h && test(h.text.toLowerCase()));
