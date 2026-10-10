@@ -39,7 +39,7 @@ import {
 } from "./assistant";
 import { appendToSection, continuityItems, sectionText } from "./sections";
 import { isSkipped } from "./skipRules";
-import { ActionItemsView, ACTION_ITEMS_VIEW, completeTask, localDate, parseTaskMeta } from "./actionItems";
+import { ActionItemsView, ACTION_ITEMS_VIEW, completeTask, localDate, parseTaskMeta, tasksQueryExcludes } from "./actionItems";
 import { addDays, buildTracker, itemText, tickedItem, TRACKER_FILENAME, type TrackerMeeting } from "./tracker";
 import { isoWeek, newReview, type Week, refreshReview, REVIEW_FOLDER, reviewBody, reviewFilename } from "./weeklyReview";
 import { addMissingViews, DASHBOARD_CONTENT, DASHBOARD_FILENAME, DASHBOARD_VIEW_NAMES } from "./dashboard";
@@ -734,6 +734,30 @@ export default class GoogleCalendarPlugin extends Plugin {
     if (completed === 0) return;
     await this.refreshHubNote(file);
     new Notice(`Calendar Notes: Checked off ${completed} item${completed !== 1 ? "s" : ""} in ${completed !== 1 ? "their meeting notes" : "its meeting note"}.`);
+  }
+
+  /**
+   * A warning for the settings when the Tasks plugin is installed and its
+   * global query doesn't leave out the Meeting Hub folder, whose notes list
+   * open items as checkboxes. Tasks' settings are only read, never changed.
+   */
+  async tasksQueryWarning(): Promise<string | undefined> {
+    const dir = normalizePath(`${this.app.vault.configDir}/plugins/obsidian-tasks-plugin`);
+    const adapter = this.app.vault.adapter;
+    if (!(await adapter.exists(`${dir}/manifest.json`))) return undefined;
+    const hub = this.hubFolderPath();
+    if (!this.settings.hubFolder.trim() || hub === this.noteFolderPath()) {
+      return "The Tasks plugin is installed. Set a Meeting Hub folder of its own, so Tasks queries can leave out the hub notes' copies of your open items.";
+    }
+    let globalQuery = "";
+    try {
+      const data = JSON.parse(await adapter.read(`${dir}/data.json`)) as { globalQuery?: unknown };
+      if (typeof data.globalQuery === "string") globalQuery = data.globalQuery;
+    } catch {
+      // No data.json until Tasks' settings are first saved: no global query yet.
+    }
+    if (tasksQueryExcludes(globalQuery, hub)) return undefined;
+    return `The Tasks plugin's queries will also list the open items shown in the Meeting Hub notes. In Settings → Tasks → Global query, add this line: path does not include ${hub}`;
   }
 
   /** Rebuild a Meeting Hub note when it's opened, unless the plugin has just rebuilt it. */

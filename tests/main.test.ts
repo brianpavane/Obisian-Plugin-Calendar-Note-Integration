@@ -1238,3 +1238,24 @@ test("ticking an item in a Meeting Hub note checks it off in its meeting note an
   await plugin.completeTickedHubItems(app.files.get("Meeting Notes/Pilot.md") as never);
   assert.equal((app.files.get("Meeting Notes/Pilot.md") as TFile).content, before, "ticks in meeting notes themselves are left to Obsidian");
 });
+
+test("the settings warn when the Tasks plugin's global query doesn't leave out the Meeting Hub folder", async () => {
+  const app = createMemoryApp();
+  const disk = new Map<string, string>([[".obsidian/plugins/obsidian-tasks-plugin/manifest.json", "{}"]]);
+  Object.assign(app.vault, {
+    configDir: ".obsidian",
+    adapter: { exists: async (p: string) => disk.has(p), read: async (p: string) => disk.get(p) ?? "" },
+  });
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ hubFolder: "" });
+  assert.match((await plugin.tasksQueryWarning()) ?? "", /Set a Meeting Hub folder of its own/);
+
+  plugin.settings = appleSettings({ hubFolder: "Meeting Hub" });
+  assert.match((await plugin.tasksQueryWarning()) ?? "", /add this line: path does not include Meeting Hub$/, "no data.json yet");
+
+  disk.set(".obsidian/plugins/obsidian-tasks-plugin/data.json", JSON.stringify({ globalQuery: "not done\npath does not include meeting hub" }));
+  assert.equal(await plugin.tasksQueryWarning(), undefined);
+
+  disk.clear();
+  assert.equal(await plugin.tasksQueryWarning(), undefined, "no warning without the Tasks plugin");
+});

@@ -20,7 +20,7 @@ When a reply saves an account, that account's overview note is brought up to dat
 ### Added
 
 **Check items off straight from the Meeting Hub**
-Open items in the Meeting Tracker, account overviews, series notes and weekly reviews are now checkboxes. Ticking one checks it off in the meeting note it came from and removes it from the hub note, so you no longer have to open each meeting to clear its items. If you use Tasks plugin queries, exclude your Meeting Hub folder (for example in Tasks' Global query) so items aren't listed twice.
+Open items in the Meeting Tracker, account overviews, series notes and weekly reviews are now checkboxes. Ticking one checks it off in the meeting note it came from and removes it from the hub note, so you no longer have to open each meeting to clear its items. If you use Tasks plugin queries, exclude your Meeting Hub folder (for example in Tasks' Global query) so items aren't listed twice; the plugin's settings show a warning with the line to add until you do.
 
 **Refresh icon on Meeting Hub notes**
 A ↻ icon at the top right of each Meeting Hub note rebuilds it while it's open, for example after adding an AI reply in another tab.

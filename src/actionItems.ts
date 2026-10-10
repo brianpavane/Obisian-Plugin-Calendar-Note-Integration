@@ -277,3 +277,16 @@ export class ActionItemsView extends ItemView {
     }
   }
 }
+
+/**
+ * Whether a Tasks plugin global query keeps notes in `folder` out of every
+ * Tasks query, with a "path (or folder) does not include …" line that
+ * matches the folder.
+ */
+export function tasksQueryExcludes(globalQuery: string, folder: string): boolean {
+  const path = `${folder}/`.toLowerCase();
+  return globalQuery.split("\n").some((line) => {
+    const m = line.trim().match(/^(?:path|folder) does not include\s+(.+)$/i);
+    return !!m && path.includes(m[1].trim().toLowerCase());
+  });
+}

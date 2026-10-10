@@ -638,8 +638,18 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.hubFolder = value.trim();
             await this.plugin.saveSettings();
+            void showTasksWarning();
           });
       });
+
+    const tasksWarning = containerEl.createDiv({ cls: "setting-item-description mod-warning" });
+    tasksWarning.hide();
+    const showTasksWarning = async () => {
+      const warning = await this.plugin.tasksQueryWarning();
+      tasksWarning.setText(warning ? `⚠ ${warning}` : "");
+      tasksWarning.toggle(!!warning);
+    };
+    void showTasksWarning();
 
     new Setting(containerEl)
       .setName("Move existing files")

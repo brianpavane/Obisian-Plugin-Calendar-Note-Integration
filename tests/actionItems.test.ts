@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { collectOpenItems, completeTask, groupItems, parseTaskMeta, type MeetingTasks } from "../src/actionItems";
+import { collectOpenItems, completeTask, groupItems, parseTaskMeta, tasksQueryExcludes, type MeetingTasks } from "../src/actionItems";
 import { TFile } from "./support/obsidianStub";
 import { createMemoryApp } from "./support/testHelpers";
 
@@ -112,4 +112,12 @@ test("groupItems groups by person and by due date", () => {
   ]);
 
   assert.deepEqual(groupItems(meetings, "meeting", today).map((g) => [g.label, g.rows.length]), [["Review", 2], ["Sync", 2]]);
+});
+
+test("tasksQueryExcludes spots a global query line that leaves out a folder", () => {
+  assert.equal(tasksQueryExcludes("", "Meeting Hub"), false);
+  assert.equal(tasksQueryExcludes("path does not include Meeting Hub", "Meeting Hub"), true);
+  assert.equal(tasksQueryExcludes("not done\n  folder does not include Work/Meeting Hub  ", "Work/Meeting Hub"), true);
+  assert.equal(tasksQueryExcludes("path does not include Archive", "Meeting Hub"), false);
+  assert.equal(tasksQueryExcludes("path includes Meeting Hub", "Meeting Hub"), false);
 });
