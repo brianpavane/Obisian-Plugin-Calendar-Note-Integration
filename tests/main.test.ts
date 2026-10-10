@@ -737,7 +737,7 @@ test("Open meeting tracker builds the tracker from notes anywhere and rebuilds i
 
   await plugin.openTracker();
   const tracker = app.files.get("Meeting Notes/Meeting Tracker.md") as TFile;
-  assert.match(tracker.content ?? "", /## Overdue\n\n- Send scope @\[\[Bob Jones\]\] · ⏫ 📅 2026-04-01 · \[\[Clients\/Acme\/2026\/Q4\/Pilot\|Pilot\]\]/);
+  assert.match(tracker.content ?? "", /## Overdue\n\n- \[ \] Send scope @\[\[Bob Jones\]\] · ⏫ 📅 2026-04-01 · \[\[Clients\/Acme\/2026\/Q4\/Pilot\|Pilot\]\]/);
   assert.match(tracker.content ?? "", /### Acme \(1\)/);
   assert.match(tracker.content ?? "", /- Go live/);
   assert.deepEqual(app.openedFiles, ["Meeting Notes/Meeting Tracker.md"]);
@@ -819,7 +819,7 @@ test("Open this week's review creates the Weekly Reviews folder and keeps the us
   assert.ok(app.files.has("Work/Meeting Notes/Weekly Reviews"));
   const review = app.files.get(path) as TFile;
   assert.match(review.content ?? "", /- Go live/);
-  assert.match(review.content ?? "", /## Still open from this week's meetings\n\n- Send scope · 📅 2026-04-10/);
+  assert.match(review.content ?? "", /## Still open from this week's meetings\n\n- \[ \] Send scope · 📅 2026-04-10/);
   assert.deepEqual(app.openedFiles, [path]);
 
   review.content = (review.content ?? "").replace("### Wins\n\n- ", "### Wins\n\n- Shipped it");
@@ -1046,7 +1046,7 @@ test("Open series note creates it in the Meeting Hub, links the occurrences both
   assert.match(series.content ?? "", /^series_id: "weekly@google\.com"$/m);
   assert.match(series.content ?? "", /## Purpose\n\n- \n\n## Standing agenda/);
   assert.match(series.content ?? "", /## Meetings\n\n- 2026-04-04 · \[\[Meeting Notes\/2026-04-04 - Weekly Sync\|Weekly Sync\]\]\n- 2026-04-03 · \[\[Meeting Notes\/2026-04-03 - Weekly Sync\|Weekly Sync\]\] · 1 open/);
-  assert.match(series.content ?? "", /## Open items\n\n- Send deck · /);
+  assert.match(series.content ?? "", /## Open items\n\n- \[ \] Send deck · /);
   assert.match(series.content ?? "", /## Recent decisions\n\n### [^\n]+ · 2026-04-03\n\n- Ship it/);
   assert.match(first.content ?? "", /^series: "\[\[Meeting Hub\/Series\/Weekly Sync\|Weekly Sync\]\]"$/m);
   assert.match(first.content ?? "", /^> \*\*Series:\*\* \[\[Meeting Hub\/Series\/Weekly Sync\|Weekly Sync\]\]$/m);
@@ -1211,4 +1211,30 @@ test("Add AI reply with an account brings that account's overview note up to dat
   assert.match(overview, /\[\[Meeting Notes\/Pilot\|Pilot\]\]/);
   assert.match(overview, /Send the deck/);
   assert.deepEqual(app.openedFiles, [], "the overview isn't opened");
+});
+
+test("ticking an item in a Meeting Hub note checks it off in its meeting note and drops it from the hub note", async () => {
+  const app = createMemoryApp([
+    { path: "Meeting Notes/Pilot.md", content: "---\ntitle: \"Pilot\"\nstart: 2026-04-02T10:00\naccount: \"Acme\"\ncalendar_event_id: \"p\"\n---\n\n## Next Steps\n\n- [ ] Fix certs @[[Bob Jones]] ⏫ 📅 2026-04-01\n- [ ] Book room\n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ hubFolder: "Meeting Hub" });
+  await plugin.openTracker();
+  const tracker = app.files.get("Meeting Hub/Meeting Tracker.md") as TFile;
+  assert.match(tracker.content ?? "", /- \[ \] Fix certs @\[\[Bob Jones\]\] · ⏫ 📅 2026-04-01 · \[\[Meeting Notes\/Pilot\|Pilot\]\]/);
+
+  // The Tasks plugin adds a done date after the link when a box is ticked.
+  tracker.content = (tracker.content ?? "").replace(/- \[ \] (Fix certs[^\n]*)/, "- [x] $1 ✅ 2026-04-03");
+  await plugin.completeTickedHubItems(tracker as never);
+
+  const meeting = (app.files.get("Meeting Notes/Pilot.md") as TFile).content ?? "";
+  assert.match(meeting, /- \[x\] Fix certs @\[\[Bob Jones\]\] ⏫ 📅 2026-04-01 ✅ 2026-04-03/);
+  assert.match(meeting, /- \[ \] Book room/, "other items stay open");
+  assert.doesNotMatch(tracker.content ?? "", /Fix certs/, "the hub note is rebuilt without it");
+  assert.match(tracker.content ?? "", /- \[ \] Book room/);
+  assert.match(getNotices().at(-1)?.message ?? "", /Checked off 1 item in its meeting note/);
+
+  const before = meeting;
+  await plugin.completeTickedHubItems(app.files.get("Meeting Notes/Pilot.md") as never);
+  assert.equal((app.files.get("Meeting Notes/Pilot.md") as TFile).content, before, "ticks in meeting notes themselves are left to Obsidian");
 });

@@ -70,20 +70,37 @@ export function link(meeting: TrackerMeeting, inTable = false): string {
 
 const PRIORITY_MARK: Record<string, string> = { highest: "🔺", high: "⏫", medium: "🔼", low: "🔽", lowest: "⏬" };
 
-function itemLine({ meta, meeting }: Item): string {
+/** An item's wording with its priority and due date, as listed in the Meeting Hub notes. */
+export function itemText(meta: TaskMeta): string {
   const extras = [
     meta.priority ? PRIORITY_MARK[meta.priority] : "",
     meta.due ? `📅 ${meta.due}` : "",
   ].filter(Boolean).join(" ");
-  return `- ${meta.text}${extras ? ` · ${extras}` : ""} · ${link(meeting)}`;
+  return `${meta.text}${extras ? ` · ${extras}` : ""}`;
+}
+
+/**
+ * An open item is a checkbox, so it can be ticked in a Meeting Hub note (the
+ * plugin then checks it off in its meeting note); a done item is a plain bullet.
+ */
+function itemLine({ meta, meeting }: Item, done: boolean): string {
+  return `- ${done ? "" : "[ ] "}${itemText(meta)} · ${link(meeting)}`;
+}
+
+/** A ticked item line in a Meeting Hub note: its wording (as {@link itemText}) and its meeting's path. */
+export function tickedItem(line: string): { text: string; path: string } | undefined {
+  const m = line
+    .replace(/\s*✅\s*\d{4}-\d{2}-\d{2}\s*$/, "")
+    .match(/^\s*[-*+] \[[xX]\] (.+?) · \[\[([^\]|]+)(?:\|[^\]]*)?\]\]\s*$/);
+  return m ? { text: m[1].trim(), path: m[2] } : undefined;
 }
 
 export const byPriorityThenDue = (a: Item, b: Item) =>
   priorityRank(a.meta.priority) - priorityRank(b.meta.priority) ||
   (a.meta.due ?? "9999").localeCompare(b.meta.due ?? "9999");
 
-export function list(items: Item[], sort: (a: Item, b: Item) => number = byPriorityThenDue): string[] {
-  return items.length > 0 ? [...items].sort(sort).map(itemLine) : ["Nothing here."];
+export function list(items: Item[], sort: (a: Item, b: Item) => number = byPriorityThenDue, done = false): string[] {
+  return items.length > 0 ? [...items].sort(sort).map((item) => itemLine(item, done)) : ["Nothing here."];
 }
 
 function grouped(items: Item[], key: (item: Item) => string | undefined, none: string): string[] {

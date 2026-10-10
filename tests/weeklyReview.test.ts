@@ -36,8 +36,8 @@ test("reviewBody summarizes the week's meetings, decisions, done, open and overd
   assert.match(body, /## Decisions\n\n### \[\[Clients\/Acme\/Pilot\|Pilot\]\]\n\n- Go to pilot\n/);
   assert.doesNotMatch(body, /Not this week|Old thing/);
   assert.match(body, /## Done this week\n\n- Book room · \[\[Clients\/Acme\/Pilot\|Pilot\]\]\n/);
-  assert.match(body, /## Still open from this week's meetings\n\n- Send scope @\[\[Bob Jones\]\] · ⏫ 📅 2026-10-09 · [^\n]+\n- Write notes · /);
-  assert.match(body, /## Overdue\n\n- Late report · 📅 2026-10-01 · \[\[Old\/Kickoff\|Kickoff\]\]\n/);
+  assert.match(body, /## Still open from this week's meetings\n\n- \[ \] Send scope @\[\[Bob Jones\]\] · ⏫ 📅 2026-10-09 · [^\n]+\n- \[ \] Write notes · /);
+  assert.match(body, /## Overdue\n\n- \[ \] Late report · 📅 2026-10-01 · \[\[Old\/Kickoff\|Kickoff\]\]\n/);
 });
 
 test("refreshReview replaces only the plugin's part and keeps the user's writing", () => {
@@ -61,5 +61,5 @@ test("reviewBody doesn't count a meeting that didn't happen, but keeps its open 
 
   assert.match(body, /\| 1 \| 0 \| 0 \| 1 \| 0 \|/);
   assert.doesNotMatch(body, /### Thursday, October 8/);
-  assert.match(body, /## Still open from this week's meetings\n\n- Reschedule demo · \[\[Team\/Skipped\|Skipped\]\]/);
+  assert.match(body, /## Still open from this week's meetings\n\n- \[ \] Reschedule demo · \[\[Team\/Skipped\|Skipped\]\]/);
 });

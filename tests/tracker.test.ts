@@ -23,14 +23,13 @@ test("buildTracker summarizes open items, decisions and this week's meetings", (
   ], "2026-10-07", "2026-10-07 9:00 AM");
 
   assert.match(content, /\| 3 \| 1 \| 1 \| 1 \| 2 \|/);
-  assert.match(content, /## Overdue\n\n- Confirm window \(owner: Customer IT team\) · 📅 2026-10-01 · \[\[Clients\/Acme\/Pilot review\|Pilot review\]\]\n/);
-  assert.match(content, /## Due in the next 7 days\n\n- Send scope @\[\[Bob Jones\]\] · ⏫ 📅 2026-10-09 ·/);
-  assert.match(content, /### Acme Corp \(2\)[\s\S]*### No account \(1\)\n\n- Book room · \[\[Team\/Sync\|Sync\]\]/);
+  assert.match(content, /## Overdue\n\n- \[ \] Confirm window \(owner: Customer IT team\) · 📅 2026-10-01 · \[\[Clients\/Acme\/Pilot review\|Pilot review\]\]\n/);
+  assert.match(content, /## Due in the next 7 days\n\n- \[ \] Send scope @\[\[Bob Jones\]\] · ⏫ 📅 2026-10-09 ·/);
+  assert.match(content, /### Acme Corp \(2\)[\s\S]*### No account \(1\)\n\n- \[ \] Book room · \[\[Team\/Sync\|Sync\]\]/);
   assert.match(content, /### Bob Jones \(1\)[\s\S]*### Customer IT team \(1\)[\s\S]*### Unassigned \(1\)/);
   assert.match(content, /## Decisions in the last 30 days\n\n### \[\[Clients\/Acme\/Pilot review\|Pilot review\]\] · 2026-10-06\n\n- Move to a production pilot\n/);
   assert.doesNotMatch(content, /Too old to list/);
   assert.match(content, /## Meetings this week \(2026-10-05 to 2026-10-11\)\n\n\| Category \| Meetings \|\n\| --- \| --- \|\n\| External Customer \(1\) \| \[\[Clients\/Acme\/Pilot review\\\|Pilot review\]\] \|\n\| Team Sync \(1\) \| \[\[Team\/Sync\\\|Sync\]\] \|/);
-  assert.doesNotMatch(content, /- \[ \]/, "no checkboxes, so items are never counted twice");
 });
 
 test("buildTracker says so when there is nothing to show", () => {
@@ -47,5 +46,5 @@ test("buildTracker leaves cancelled, removed and declined meetings out of this w
 
   assert.match(content, /\| Team Sync \(1\) \| \[\[Team\/Sync\\\|Sync\]\] \|/);
   assert.doesNotMatch(content, /\| [^\n]*Skipped sync\\\|/);
-  assert.match(content, /- Reschedule demo · \[\[Team\/Skipped sync\|Skipped sync\]\]/);
+  assert.match(content, /- \[ \] Reschedule demo · \[\[Team\/Skipped sync\|Skipped sync\]\]/);
 });

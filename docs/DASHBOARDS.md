@@ -57,6 +57,10 @@ The Meeting Tracker, Meeting Insights, weekly reviews, series notes and account 
 
 Each note's *Updated …* line at the top says when it was last rebuilt.
 
+**Checking items off from a hub note.** Open items in these notes are checkboxes. Tick one and the plugin checks it off in the meeting note it came from (with today's ✅ date), then rebuilds the hub note so the item leaves every list. Done items in a weekly review are plain bullets. Every item still lives only in its meeting note; the hub notes just show it.
+
+> **Using the Tasks plugin's queries?** The hub notes list open items as checkboxes, so a vault-wide Tasks query would show each item again from the hub notes. Add `path does not include Meeting Hub` (your Meeting Hub folder's name) to the query, or once to **Settings → Tasks → Global query** to apply it to every query.
+
 ---
 
 ## 1. Today's meetings
@@ -274,7 +278,7 @@ It needs no other plugins. Accounts and categories come from the `account` and `
 
 Click the **gauge** button in the left ribbon, or press **Cmd + P** and run **Open meeting tracker**.
 
-It's a snapshot: each time you open it, the plugin rebuilds `Meeting Tracker.md` in your Meeting Hub folder with the latest numbers (click **↻** at the top right to rebuild it while it's open). Don't write in it — your edits are replaced the next time. To tick an item off, use the **Meeting action items** panel or the meeting's own note, then click **↻**. Meetings that were cancelled, deleted from your calendar or declined aren't listed under this week's meetings, but their open items still are.
+It's a snapshot: each time you open it, the plugin rebuilds `Meeting Tracker.md` in your Meeting Hub folder with the latest numbers (click **↻** at the top right to rebuild it while it's open). Don't write in it — your edits are replaced the next time. To tick an item off, tick its box right here (the plugin checks it off in the meeting's own note), or use the **Meeting action items** panel. Meetings that were cancelled, deleted from your calendar or declined aren't listed under this week's meetings, but their open items still are.
 
 The items are plain bullets, not checkboxes, so the action items panel and the Tasks plugin never count them twice.
 

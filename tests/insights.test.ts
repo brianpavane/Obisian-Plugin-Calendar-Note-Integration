@@ -65,7 +65,7 @@ test("account notes list the account's meetings, items, decisions, topics and pe
   const body = accountBody(acme, "2026-10-08", "2026-10-08 9:00 AM");
   assert.match(body, /\| 2 \| 2026-10-05 \| 2026-10-12 \[\[M\/Acme next\\\|Acme next\]\] \| 1 \| 1 \| 🟢 🔴 \|/);
   assert.match(body, /- 2026-10-05 · \[\[M\/Acme pilot\|Acme pilot\]\] · Customer · 🔴 Negative · Blocked/);
-  assert.match(body, /## Open items\n\n- Fix certs/);
+  assert.match(body, /## Open items\n\n- \[ \] Fix certs/);
   assert.match(body, /## Recent decisions\n\n### \[\[M\/Acme pilot\|Acme pilot\]\] · 2026-10-05\n\n- Pause the rollout/);
   assert.match(body, /## Key topics\n\n- Pilot scope \(2\)\n- TLS inspection \(1\)/);
   assert.match(body, /## Where we left off\n\nNothing here\./);

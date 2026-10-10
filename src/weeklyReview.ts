@@ -85,7 +85,7 @@ export function reviewBody(meetings: TrackerMeeting[], week: Week, today: string
     "",
     "## Done this week",
     "",
-    ...list(done, (a, b) => (a.meta.doneOn ?? "").localeCompare(b.meta.doneOn ?? "")),
+    ...list(done, (a, b) => (a.meta.doneOn ?? "").localeCompare(b.meta.doneOn ?? ""), true),
     "",
     "## Still open from this week's meetings",
     "",

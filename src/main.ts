@@ -39,8 +39,8 @@ import {
 } from "./assistant";
 import { appendToSection, continuityItems, sectionText } from "./sections";
 import { isSkipped } from "./skipRules";
-import { ActionItemsView, ACTION_ITEMS_VIEW, localDate, parseTaskMeta } from "./actionItems";
-import { addDays, buildTracker, TRACKER_FILENAME, type TrackerMeeting } from "./tracker";
+import { ActionItemsView, ACTION_ITEMS_VIEW, completeTask, localDate, parseTaskMeta } from "./actionItems";
+import { addDays, buildTracker, itemText, tickedItem, TRACKER_FILENAME, type TrackerMeeting } from "./tracker";
 import { isoWeek, newReview, type Week, refreshReview, REVIEW_FOLDER, reviewBody, reviewFilename } from "./weeklyReview";
 import { addMissingViews, DASHBOARD_CONTENT, DASHBOARD_FILENAME, DASHBOARD_VIEW_NAMES } from "./dashboard";
 import { buildInsights, INSIGHTS_FILENAME } from "./insights";
@@ -300,6 +300,9 @@ export default class GoogleCalendarPlugin extends Plugin {
     const refreshActions = () => this.updateNoteActions();
     this.registerEvent(this.app.workspace.on("file-open", refreshActions));
     this.registerEvent(this.app.workspace.on("file-open", (file) => void this.refreshHubNoteOnOpen(file)));
+    this.registerEvent(this.app.vault.on("modify", (file) => {
+      if (file instanceof TFile) void this.completeTickedHubItems(file);
+    }));
     this.registerEvent(this.app.metadataCache.on("resolved", () => {
       if (this.metadataReady) return;
       this.metadataReady = true;
@@ -712,6 +715,25 @@ export default class GoogleCalendarPlugin extends Plugin {
       case "review": await this.rebuildWeeklyReview(isoWeek(String(fm.week_start).trim().slice(0, 10)), file); return true;
       default: return false;
     }
+  }
+
+  /**
+   * Check off, in their meeting notes, the items ticked in Meeting Hub note
+   * `file`, then rebuild it so they leave its lists.
+   */
+  async completeTickedHubItems(file: TFile): Promise<void> {
+    if (!this.hubNoteKind(file)) return;
+    const ticked = (await this.app.vault.read(file)).split("\n").map(tickedItem).filter((t): t is { text: string; path: string } => t !== undefined);
+    let completed = 0;
+    for (const { text, path } of ticked) {
+      const note = this.app.vault.getAbstractFileByPath(`${path}.md`);
+      if (!(note instanceof TFile)) continue;
+      const task = openTasks(await this.app.vault.read(note)).find((t) => itemText(parseTaskMeta(t.text)) === text);
+      if (task && (await completeTask(this.app, note, task, localDate(this.now())))) completed++;
+    }
+    if (completed === 0) return;
+    await this.refreshHubNote(file);
+    new Notice(`Calendar Notes: Checked off ${completed} item${completed !== 1 ? "s" : ""} in ${completed !== 1 ? "their meeting notes" : "its meeting note"}.`);
   }
 
   /** Rebuild a Meeting Hub note when it's opened, unless the plugin has just rebuilt it. */
