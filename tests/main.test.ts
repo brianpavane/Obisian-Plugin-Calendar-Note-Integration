@@ -1400,3 +1400,19 @@ test("an old weekly review isn't rewritten when opened; this week's and last wee
   assert.match((app.files.get("Weekly Reviews/2026-W10 Weekly Review.md") as TFile).content ?? "", /\nold\n/);
   assert.doesNotMatch((app.files.get("Weekly Reviews/2026-W13 Weekly Review.md") as TFile).content ?? "", /\nold\n/);
 });
+
+test("two quick ticks handled at the same time check each item off once", async () => {
+  const app = createMemoryApp([
+    { path: "Meeting Notes/Sync.md", content: "---\ntitle: \"Sync\"\nstart: 2026-04-01T10:00\ncalendar_event_id: \"s\"\n---\n\n## Next Steps\n\n- [ ] Send deck 📅 2026-04-02\n- [ ] Book room 📅 2026-04-02\n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ hubFolder: "Meeting Hub" });
+  await plugin.openTracker();
+  const tracker = app.files.get("Meeting Hub/Meeting Tracker.md") as TFile;
+  tracker.content = (tracker.content ?? "").replace("- [ ] Send deck", "- [x] Send deck").replace("- [ ] Book room", "- [x] Book room");
+  await Promise.all([plugin.completeTickedHubItems(tracker as never), plugin.completeTickedHubItems(tracker as never)]);
+  const meeting = (app.files.get("Meeting Notes/Sync.md") as TFile).content ?? "";
+  assert.equal(meeting.match(/✅/g)?.length, 2, meeting);
+  assert.match(meeting, /- \[x\] Send deck 📅 2026-04-02 ✅ 2026-04-03\n- \[x\] Book room 📅 2026-04-02 ✅ 2026-04-03/);
+  assert.doesNotMatch(getNotices().map((n) => n.message).join("\n"), /Couldn't find/, "the second handler finding them already done isn't an error");
+});

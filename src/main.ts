@@ -341,6 +341,8 @@ export default class GoogleCalendarPlugin extends Plugin {
     this.registerEvent(this.app.vault.on("modify", (file) => {
       if (file instanceof TFile) void this.completeTickedHubItems(file);
     }));
+    // Loaded after startup (enabled, or reloaded by an update): the vault is already read.
+    if (this.app.workspace.layoutReady) this.metadataReady = true;
     this.registerEvent(this.app.metadataCache.on("resolved", () => {
       if (this.metadataReady) return;
       this.metadataReady = true;

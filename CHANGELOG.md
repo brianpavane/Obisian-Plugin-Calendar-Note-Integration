@@ -20,6 +20,15 @@ Opening a weekly review older than last week no longer rewrites it with today's 
 **A hub tick that can't be matched says so**
 Ticking an item in a Meeting Hub note after its wording changed in the meeting note used to do nothing silently. The plugin now says it couldn't find the item and rebuilds the list from the notes as they are. Ticked lines you write yourself, outside the part the plugin rebuilds, are left alone.
 
+**Meeting Brief shows only this account's items**
+The brief's *They owe you* listed an attendee's open items from every meeting, so a colleague's items for another customer could appear in a customer meeting's note. It now lists only items from this meeting's series or account; a meeting with neither, like an ad-hoc 1:1, still shows everything the attendees owe you.
+
+**AI priorities read in more shapes**
+A next step's priority is now read when the assistant writes it as `(2026-10-09 – High)`, `[High]`, `(**High**)` or `(High priority)`, not only `(2026-10-09, High)`.
+
+**Hub notes refresh on open right after an update**
+After the plugin was updated or re-enabled mid-session, hub notes and Meeting Briefs didn't refresh when opened until some note changed. They now do straight away.
+
 **Meeting Brief kept apart from the Meeting details box**
 The brief is always separated from the details box above it by a blank line, so a template without one can't pull the brief into the box.
 

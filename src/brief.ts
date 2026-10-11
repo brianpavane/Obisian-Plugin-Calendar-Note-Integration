@@ -1,8 +1,9 @@
 /**
  * @file brief.ts
  * @description The Meeting Brief: a short section at the top of an upcoming
- * meeting's note — where things were left, what the attendees owe you, what
- * you owe from this series or account, and how the account stands. The
+ * meeting's note — where things were left, what the attendees owe you and
+ * what you owe (from this series or account, if it has one), and how the
+ * account stands. The
  * plugin rebuilds it between two markers until the AI reply is added, then
  * removes it. Items are plain bullets linking to their meetings, so they are
  * never counted as this meeting's own tasks.
@@ -53,7 +54,10 @@ export function briefBlock(input: BriefInput): string {
   const me = new Set(myNames.map((n) => n.toLowerCase()));
   const attendees = new Set(input.attendees.map((a) => a.trim().toLowerCase()).filter((a) => a && !me.has(a)));
   const items = (ms: TrackerMeeting[]): Item[] => ms.flatMap((meeting) => meeting.openItems.map((meta) => ({ meta, meeting })));
-  const theyOwe = items(meetings).filter((i) => i.meta.owners.some((o) => attendees.has(o.toLowerCase())));
+  // Scoped to this series or account, so another customer's items never show up in this
+  // meeting; a meeting with neither (an ad-hoc 1:1, say) shows all the attendees owe.
+  const scope = series || account ? related : meetings;
+  const theyOwe = items(scope).filter((i) => i.meta.owners.some((o) => attendees.has(o.toLowerCase())));
   const youOwe = items(related).filter((i) => isMine(i.meta, myNames));
   const late = (i: Item) => (i.meta.due && i.meta.due < today ? "overdue" : undefined);
   const shortList = (all: Item[]) => {
@@ -86,7 +90,7 @@ export function briefBlock(input: BriefInput): string {
     ...(input.skipLeftOff ? [] : ["### Where we left off", "", ...leftOff(related, today), ""]),
     "### They owe you",
     "",
-    ...(theyOwe.length > 0 ? shortList(theyOwe) : ["Nothing open from this meeting's attendees."]),
+    ...(theyOwe.length > 0 ? shortList(theyOwe) : [`Nothing open from this meeting's attendees${series || account ? " in this series or account" : ""}.`]),
     "",
     "### You owe",
     "",

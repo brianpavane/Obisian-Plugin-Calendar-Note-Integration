@@ -300,11 +300,12 @@ function nextStep(text: string): ActionItem {
   const m = text.match(/^\*\*(.+?)\*\*\s*:?\s*(.+)$/);
   if (!m) return { task: text, raw: text };
   let task = m[2].trim();
-  const tail = task.match(/\s*\(([^()]*)\)\s*$/);
-  const parts = tail ? tail[1].split(/\s*[,;]\s*/) : [];
+  // "(2026-10-09, High)", also "(2026-10-09 – High)", "[High]", "(**High**)" and "(High priority)".
+  const tail = task.match(/\s*\(([^()]*)\)\s*$/) ?? task.match(/\s*\[((?:high|medium|low|someday)(?: priority)?)\]\s*$/i);
+  const parts = tail ? tail[1].replace(/\*\*/g, "").split(/\s*[,;]\s*|\s+[–—-]\s+/) : [];
   const due = parts.map((p) => p.match(/\d{4}-\d{2}-\d{2}/)?.[0]).find(Boolean);
   const level = parts
-    .map((p) => p.replace(/^\[|\]$/g, "").replace(/^priority:\s*/i, "").trim())
+    .map((p) => p.replace(/^\[|\]$/g, "").replace(/^priority:\s*/i, "").replace(/\s+priority$/i, "").trim())
     .find((p) => /^(high|medium|low|someday)$/i.test(p));
   if (tail && (due || level)) task = task.slice(0, tail.index).trim();
   return { task, ...owner(m[1].replace(/:\s*$/, "").trim()), due, priority: level ? priority(level) : undefined };

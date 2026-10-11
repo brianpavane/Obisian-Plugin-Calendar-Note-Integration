@@ -508,3 +508,12 @@ test("the copied meeting names the user, and the built-in instructions ask for c
   assert.match(DEFAULT_INSTRUCTIONS, /High, Medium, Low or Someday/);
   assert.match(DEFAULT_INSTRUCTIONS, /at most 5 High next steps per meeting across everyone, ideally 3 or fewer, and at most 2 of them owned by me/);
 });
+
+test("Next Steps priorities are read in the other shapes assistants write them", () => {
+  const tail = (step: string) =>
+    actionLine(parseReply(`## Executive Summary\nx\n\n## Next Steps\n- [ ] **[[Ann Lee]]**: Send the runbook ${step}\n`)!.actionItems[0])
+      .replace("- [ ] Send the runbook @[[Ann Lee]]", "").trim();
+  assert.deepEqual(["(2026-10-09 – High)", "[High]", "(**Low**)", "(Medium priority)"].map(tail), ["⏫ 📅 2026-10-09", "⏫", "🔽", "🔼"]);
+  assert.equal(actionLine(parseReply("## Executive Summary\nx\n\n## Next Steps\n- [ ] **[[Ann Lee]]**: Send the runbook (P1)\n")!.actionItems[0]),
+    "- [ ] Send the runbook (P1) @[[Ann Lee]]", "unknown labels stay in the task");
+});

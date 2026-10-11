@@ -31,8 +31,12 @@ test("the brief shows the account's state, where things were left, and what each
   assert.match(block, /\*\*Account:\*\* \*\*Acme\*\* · last met 2026-10-01 \(\[\[M\/Pilot 1\|Pilot 1\]\]\) · 🔴 Negative · Blocked · ⚠ at risk/, "the account comes from the series");
   assert.match(block, /### Where we left off\n\nFrom \[\[M\/Pilot 1\|Pilot 1\]\] · 2026-10-01:\n\n- Agree the TLS scope/);
   const theyOwe = block.split("### They owe you")[1].split("###")[0];
-  assert.match(theyOwe, /^\n\n- Send runbook @\[\[Ann Lee\]\] · 📅 2026-10-05 · \[\[M\/Pilot 1\|Pilot 1\]\] · \*overdue\*\n- Review plan @\[\[Ann Lee\]\]/);
+  assert.match(theyOwe, /^\n\n- Send runbook @\[\[Ann Lee\]\] · 📅 2026-10-05 · \[\[M\/Pilot 1\|Pilot 1\]\] · \*overdue\*\n\n/);
   assert.doesNotMatch(theyOwe, /Bob Jones|Fix certs/, "only attendees other than the user");
+  assert.doesNotMatch(theyOwe, /Review plan/, "not from another account's meetings");
+
+  const adHoc = briefBlock({ meetings, id: "chat", date: "2026-10-08", attendees: ["Ann Lee"], myNames: ["Brian Pavane"], today: "2026-10-08", updated: "now" });
+  assert.match(adHoc.split("### They owe you")[1], /Send runbook[\s\S]*Review plan/, "a meeting with no series or account shows all they owe");
   const youOwe = block.split("### You owe")[1];
   assert.match(youOwe, /- Fix certs @\[\[Brian Pavane\]\]/);
   assert.doesNotMatch(youOwe, /Unrelated mine/, "only from this series or account");
