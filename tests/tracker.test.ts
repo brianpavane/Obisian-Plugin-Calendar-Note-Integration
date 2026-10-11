@@ -22,7 +22,7 @@ test("buildTracker summarizes open items, decisions and this week's meetings", (
     meeting("Old/Kickoff", "2026-08-01", { decisions: ["Too old to list"] }),
   ], "2026-10-07", "2026-10-07 9:00 AM");
 
-  assert.match(content, /\| 3 \| 1 \| 1 \| 1 \| 0 \| 0 \| 2 \|/);
+  assert.match(content, /\| 3 \| 1 \| 1 \| 1 \| 0 \| 0 \| 0 \| 2 \|/);
   assert.match(content, /## Overdue\n\n- \[ \] Confirm window \(owner: Customer IT team\) · 📅 2026-10-01 · \[\[Clients\/Acme\/Pilot review\|Pilot review\]\]\n/);
   assert.match(content, /## Due in the next 7 days\n\n- \[ \] Send scope @\[\[Bob Jones\]\] · ⏫ 📅 2026-10-09 ·/);
   assert.match(content, /### Acme Corp \(2\)[\s\S]*### No account \(1\)\n\n- \[ \] Book room · \[\[Team\/Sync\|Sync\]\]/);
@@ -34,7 +34,7 @@ test("buildTracker summarizes open items, decisions and this week's meetings", (
 
 test("buildTracker says so when there is nothing to show", () => {
   const content = buildTracker([], "2026-10-07", "now");
-  assert.match(content, /\| 0 \| 0 \| 0 \| 0 \| 0 \| 0 \| 0 \|/);
+  assert.match(content, /\| 0 \| 0 \| 0 \| 0 \| 0 \| 0 \| 0 \| 0 \|/);
   assert.equal(content.match(/Nothing here\./g)?.length, 7);
 });
 
@@ -80,7 +80,7 @@ test("buildTracker puts the user's items first: Focus, then their own lists, Wai
   assert.match(section("Waiting on others"), /### Bob \(1\)[\s\S]*### Danny Ward \(1\)\n\n- \[ \] Send runbook [^\n]+ · \*overdue\*/);
   assert.match(section("Gone stale?"), /Tick one here to drop it[\s\S]*- \[ \] Old idea ·[\s\S]*- \[ \] Ask Bob/);
   assert.doesNotMatch(section("Gone stale?"), /Tidy wiki/);
-  assert.match(content, /\| 6 \| 1 \| 1 \| 1 \| 2 \| 2 \| 2 \|/);
+  assert.match(content, /\| 6 \| 1 \| 1 \| 1 \| 2 \| 2 \| 0 \| 2 \|/);
 });
 
 test("Someday items never reach Focus and go straight to Gone stale?", () => {
@@ -91,4 +91,30 @@ test("Someday items never reach Focus and go straight to Gone stale?", () => {
   assert.doesNotMatch(focus, /Explore partner idea/);
   assert.match(focus, /Book room/);
   assert.match(content.split("## Gone stale?")[1].split("\n## ")[0], /Marked Someday[\s\S]*- \[ \] Explore partner idea · ⏬ ·/);
+});
+
+test("parked items are off the user's lists but stay under their account, marked parked", () => {
+  const content = buildTracker([
+    meeting("Clients/Acme/Pilot", "2026-10-06", {
+      account: "Acme",
+      openItems: [parseTaskMeta("Draft SOW ⏫ 📅 2026-10-01 #parked"), parseTaskMeta("Chase legal @Bob #parked"), parseTaskMeta("Send deck")],
+    }),
+  ], "2026-10-08", "now", ["Me"]);
+  const section = (name: string) => content.split(`## ${name}`)[1]?.split("\n## ")[0] ?? "";
+  for (const name of ["Focus", "Overdue", "High priority", "Waiting on others", "Gone stale?"]) assert.doesNotMatch(section(name), /Draft SOW|Chase legal/, name);
+  assert.match(section("Open items by account"), /- \[ \] Draft SOW · ⏫ 📅 2026-10-01 · \[\[Clients\/Acme\/Pilot\|Pilot\]\] · \*parked, overdue\*/);
+  assert.match(section("Open items by account"), /- \[ \] Chase legal @Bob · \[\[Clients\/Acme\/Pilot\|Pilot\]\] · \*parked\*/);
+  assert.match(content, /\| 1 \| 0 \| 0 \| 0 \| 0 \| 0 \| 2 \| 1 \|/);
+});
+
+test("long account and person groups are capped, pointing to where the rest are", () => {
+  const many = (who: string) => Array.from({ length: 13 }, (_, i) => parseTaskMeta(`Item ${who} ${i} @${who}`));
+  const content = buildTracker([
+    meeting("Clients/Acme/Pilot", "2026-10-06", { account: "Acme", openItems: many("Bob") }),
+    meeting("Clients/Beta/Kickoff", "2026-10-06", { account: "Beta", openItems: many("Ann") }),
+  ], "2026-10-08", "now", ["Me"], [], (account) => (account === "Acme" ? "[[Hub/Accounts/Acme|Acme overview]]" : undefined));
+  const byAccount = content.split("## Open items by account")[1];
+  assert.match(byAccount, /### Acme \(13\)\n\n(- \[ \] [^\n]+\n){10}- …and 3 more in \[\[Hub\/Accounts\/Acme\|Acme overview\]\]\n/);
+  assert.match(byAccount, /### Beta \(13\)\n\n(- \[ \] [^\n]+\n){10}- …and 3 more\n/);
+  assert.match(content.split("## Waiting on others")[1], /### Ann \(13\)\n\n(- \[ \] [^\n]+\n){10}- …and 3 more in the action items panel/);
 });

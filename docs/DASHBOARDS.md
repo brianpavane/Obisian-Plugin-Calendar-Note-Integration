@@ -243,6 +243,12 @@ Tasks that aren't from a meeting go in **My To-Dos**, a note in your Meeting Hub
 
 To-dos are always yours. They lead this panel, are ranked into the Tracker's **Focus** with your meeting items, go to **Gone stale?** when old and undated (or marked Someday), and count in the weekly review's Done and Overdue lists.
 
+### Park: keep it for the account, off your list
+
+Some items still matter for a customer or a 1:1 series, but aren't something you'll work on now. Hover over the item and click **⏸ Park**. It stays open — and keeps showing, marked *parked*, in the account overview, the series note, the Meeting Brief, the Tracker's **Open items by account** and the next meeting's Agenda — so it comes up when that account or series does. But it's off your own lists: the Tracker's Focus, Overdue, Due soon, High priority, Waiting on others and Gone stale?, and this panel's **Mine** and **Waiting on others**.
+
+Parking adds a `#parked` tag to the task in its meeting note; type or delete the tag to park or unpark by hand. Choose **Parked** in the panel's menu to see everything parked, and click **▶ Unpark** to put one back on your list. Park someone else's item to stop chasing it without dropping it.
+
 ### Won't do
 
 Not every item is worth doing. Hover over an item and click **×** to drop it: it's marked cancelled in its meeting note (`- [-] … ❌ 2026-10-10`, the Tasks plugin's format), leaves every list, and isn't counted as done.
@@ -300,12 +306,13 @@ One page summarizing every meeting note, your own items first:
 
 | Section | What's in it |
 |---|---|
-| **At a glance** | Counts of your open, overdue, due-soon and high-priority items, what others owe you, items gone stale, and this week's meetings |
+| **At a glance** | Counts of your open, overdue, due-soon and high-priority items, what others owe you, items gone stale, parked items, and this week's meetings |
 | **Focus** | Your 7 most pressing items, each tagged with why: *overdue* (longest overdue first), *due soon* (next 7 days), *high priority*, *at-risk account* (its latest meeting was Negative or Blocked), then *from this week* |
 | **Overdue**, **Due in the next 7 days**, **High priority** | Your items only |
-| **Waiting on others** | Items someone else owns, by person, late ones marked *overdue* — your follow-up list |
+| **Waiting on others** | Items someone else owns, by person, late ones marked *overdue* — your follow-up list (10 per person; the rest are in the action items panel) |
 | **Gone stale?** | Items with no due date from meetings over 30 days ago (not high priority). **Ticking one here marks it won't do**, not done |
-| **Open items by account**, **Decisions in the last 30 days**, **Meetings this week** | Everyone's, as before |
+| **Open items by account** | Everyone's, parked ones included and marked *parked*; 10 per account, with a link to the account overview for the rest |
+| **Decisions in the last 30 days**, **Meetings this week** | As before |
 
 Your items are those owned by you or by no one; see [Mine, or waiting on others](#mine-or-waiting-on-others) for how the plugin knows your name. Without it, every item counts as yours. Each item links to its meeting.
 

@@ -6,7 +6,7 @@
  * and recent decisions — is rebuilt between two markers each time it opens.
  */
 
-import { leftOff, link, list, type Item, type TrackerMeeting } from "./tracker";
+import { byPriorityThenDue, itemStatus, leftOff, link, list, type Item, type TrackerMeeting } from "./tracker";
 import { replaceBetweenMarkers } from "./weeklyReview";
 
 export const SERIES_FOLDER = "Series";
@@ -48,7 +48,7 @@ export function seriesBody(occurrences: TrackerMeeting[], updated: string, today
     "",
     "## Open items",
     "",
-    ...list(open),
+    ...list(open, byPriorityThenDue, false, itemStatus(today)),
     "",
     "## Recent decisions",
     "",

@@ -8,7 +8,7 @@
  */
 
 import { groupBy, sentimentMark, sentimentTrend } from "./insights";
-import { leftOff, link, list, type Item, type TrackerMeeting } from "./tracker";
+import { itemStatus, leftOff, link, list, byPriorityThenDue, type Item, type TrackerMeeting } from "./tracker";
 import { replaceBetweenMarkers } from "./weeklyReview";
 
 export const ACCOUNTS_FOLDER = "Accounts";
@@ -58,7 +58,7 @@ export function accountBody(meetings: TrackerMeeting[], today: string, updated: 
     "",
     "## Open items",
     "",
-    ...list(open),
+    ...list(open, byPriorityThenDue, false, itemStatus(today)),
     "",
     "## Recent decisions",
     "",

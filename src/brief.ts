@@ -12,7 +12,7 @@
 import { isMine, priorityRank } from "./actionItems";
 import { sentimentMark } from "./insights";
 import { seriesId } from "./noteCreator";
-import { atRiskAccounts, leftOff, link, list, type Item, type TrackerMeeting } from "./tracker";
+import { atRiskAccounts, itemStatus, leftOff, link, list, type Item, type TrackerMeeting } from "./tracker";
 
 export const BRIEF_START = "<!-- meeting-brief:start — the plugin rebuilds this brief until the AI reply is added. -->";
 export const BRIEF_END = "<!-- meeting-brief:end -->";
@@ -59,10 +59,9 @@ export function briefBlock(input: BriefInput): string {
   const scope = series || account ? related : meetings;
   const theyOwe = items(scope).filter((i) => i.meta.owners.some((o) => attendees.has(o.toLowerCase())));
   const youOwe = items(related).filter((i) => isMine(i.meta, myNames));
-  const late = (i: Item) => (i.meta.due && i.meta.due < today ? "overdue" : undefined);
   const shortList = (all: Item[]) => {
     const sorted = [...all].sort(urgentFirst);
-    const shown = list(sorted.slice(0, MAX_ITEMS), () => 0, true, late);
+    const shown = list(sorted.slice(0, MAX_ITEMS), () => 0, true, itemStatus(today));
     return sorted.length > MAX_ITEMS ? [...shown, `- …and ${sorted.length - MAX_ITEMS} more in the Meeting Tracker`] : shown;
   };
 

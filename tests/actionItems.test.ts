@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cancelTask, collectOpenItems, completeTask, filterByOwner, groupItems, isMine, parseTaskMeta, tasksQueryExcludes, type MeetingTasks } from "../src/actionItems";
+import { cancelTask, collectOpenItems, completeTask, filterByOwner, groupItems, isMine, parkTask, parseTaskMeta, tasksQueryExcludes, type MeetingTasks } from "../src/actionItems";
 import { TFile } from "./support/obsidianStub";
 import { createMemoryApp } from "./support/testHelpers";
 
@@ -154,4 +154,27 @@ test("cancelTask marks an item won't do with the Tasks plugin's cancelled status
 test("isMine counts (owner: me), as AI replies write You or Me, as the user's", () => {
   assert.equal(isMine(parseTaskMeta("Send notes (owner: me)"), ["Brian Pavane"]), true);
   assert.equal(isMine(parseTaskMeta("Send notes (owner: me)"), []), true);
+});
+
+test("parkTask tags an item #parked and unparks it; a parked item stays open but leaves Mine and Waiting on others", async () => {
+  const app = createMemoryApp([{ path: "Meetings/Sync.md", content: "## Next Steps\n\n- [ ] Draft SOW @[[Ann Lee]] 📅 2026-10-20\n- [ ] Keep\n" }]);
+  const file = app.files.get("Meetings/Sync.md") as TFile;
+  assert.equal(await parkTask(app as never, file as never, { line: 2, text: "Draft SOW @[[Ann Lee]] 📅 2026-10-20" }, true), true);
+  assert.equal(file.content, "## Next Steps\n\n- [ ] Draft SOW @[[Ann Lee]] 📅 2026-10-20 #parked\n- [ ] Keep\n");
+  const meta = parseTaskMeta("Draft SOW @[[Ann Lee]] 📅 2026-10-20 #parked");
+  assert.equal(meta.parked, true);
+  assert.equal(meta.text, "Draft SOW @[[Ann Lee]]");
+  assert.equal(meta.due, "2026-10-20");
+  assert.equal(parseTaskMeta("Read #parkedcars").parked, undefined);
+
+  const meeting: MeetingTasks = { file: file as never, title: "Sync", start: "", tasks: [{ line: 2, text: "Draft SOW @[[Ann Lee]] 📅 2026-10-20 #parked" }, { line: 3, text: "Keep" }] };
+  const texts = (f: "mine" | "others" | "parked" | "everyone", names: string[]) => filterByOwner([meeting], f, names).flatMap((m) => m.tasks.map((t) => t.text.split(" ")[0]));
+  assert.deepEqual(texts("mine", ["Me"]), ["Keep"]);
+  assert.deepEqual(texts("others", ["Me"]), []);
+  assert.deepEqual(texts("parked", ["Me"]), ["Draft"]);
+  assert.deepEqual(texts("everyone", ["Me"]), ["Draft", "Keep"]);
+  assert.deepEqual(texts("mine", []), ["Keep"], "without names, Mine is everything not parked");
+
+  assert.equal(await parkTask(app as never, file as never, { line: 2, text: "Draft SOW @[[Ann Lee]] 📅 2026-10-20 #parked" }, false), true);
+  assert.match(file.content ?? "", /- \[ \] Draft SOW @\[\[Ann Lee\]\] 📅 2026-10-20\n/);
 });

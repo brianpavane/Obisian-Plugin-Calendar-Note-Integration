@@ -6,7 +6,7 @@
  * part, between two markers; everything else in the note is left alone.
  */
 
-import { addDays, byPriorityThenDue, link, list, type Item, type TrackerMeeting } from "./tracker";
+import { addDays, byPriorityThenDue, itemStatus, link, list, type Item, type TrackerMeeting } from "./tracker";
 
 export const REVIEW_FOLDER = "Weekly Reviews";
 export const START_MARKER =
@@ -92,7 +92,7 @@ export function reviewBody(meetings: TrackerMeeting[], week: Week, today: string
     "",
     "## Still open from this week's meetings",
     "",
-    ...list(open, byPriorityThenDue),
+    ...list(open, byPriorityThenDue, false, itemStatus(today)),
     "",
     "## Overdue",
     "",

@@ -14,6 +14,9 @@ export const TRACKER_FILENAME = "Meeting Tracker.md";
 /** Ticking an item under this heading marks it won't do rather than done. */
 export const STALE_HEADING = "## Gone stale?";
 const FOCUS_SIZE = 7;
+/** Items shown per account or person before "…and N more", so the tracker stays readable. */
+const GROUP_SIZE = 10;
+const STALE_SIZE = 25;
 /** An undated item from a meeting this many days ago, or more, has gone stale. */
 const STALE_DAYS = 30;
 
@@ -113,7 +116,26 @@ export function list(items: Item[], sort: (a: Item, b: Item) => number = byPrior
   return items.length > 0 ? [...items].sort(sort).map((item) => itemLine(item, done, reason?.(item))) : ["Nothing here."];
 }
 
-function grouped(items: Item[], key: (item: Item) => string | undefined, none: string, reason?: (item: Item) => string | undefined): string[] {
+/** Why an item stands out: parked, overdue, or both. */
+export const itemStatus = (today: string) => (i: Item): string | undefined =>
+  [i.meta.parked && "parked", i.meta.due && i.meta.due < today && "overdue"].filter(Boolean).join(", ") || undefined;
+
+/** The first `size` lines of a list, then a line saying how many more there are and where to see them. */
+function capped(lines: string[], size: number, more: (hidden: number) => string): string[] {
+  return lines.length > size ? [...lines.slice(0, size), more(lines.length - size)] : lines;
+}
+
+/**
+ * Items grouped under `### heading (count)`, at most {@link GROUP_SIZE} per
+ * group (most pressing first), then "…and N more" with `more(key)` saying where.
+ */
+function grouped(
+  items: Item[],
+  key: (item: Item) => string | undefined,
+  none: string,
+  reason?: (item: Item) => string | undefined,
+  more: (key: string) => string = () => ""
+): string[] {
   if (items.length === 0) return ["Nothing here."];
   const groups = new Map<string, Item[]>();
   for (const item of items) {
@@ -121,7 +143,12 @@ function grouped(items: Item[], key: (item: Item) => string | undefined, none: s
     groups.set(k, [...(groups.get(k) ?? []), item]);
   }
   const keys = [...groups.keys()].sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)));
-  return keys.flatMap((k) => [`### ${k || none} (${groups.get(k)!.length})`, "", ...list(groups.get(k)!, byPriorityThenDue, false, reason), ""]).slice(0, -1);
+  return keys.flatMap((k) => [
+    `### ${k || none} (${groups.get(k)!.length})`,
+    "",
+    ...capped(list(groups.get(k)!, byPriorityThenDue, false, reason), GROUP_SIZE, (n) => `- …and ${n} more${more(k)}`),
+    "",
+  ]).slice(0, -1);
 }
 
 const isHigh = (i: Item) => i.meta.priority === "high" || i.meta.priority === "highest";
@@ -179,20 +206,35 @@ export function staleItems(items: Item[], today: string): Item[] {
  * The tracker note's content. `today` is YYYY-MM-DD; `updated` is shown as
  * the time it was built. `myNames` are the names the user is written as in
  * action items: items owned by someone else go under Waiting on others.
- * Without names, every item counts as the user's. `todos` (My To-Dos) add
- * their items to the lists but aren't counted as meetings.
+ * Without names, every item counts as the user's. Parked items are left
+ * off the user's lists and only shown by account. `todos` (My To-Dos) add
+ * their items to the lists but aren't counted as meetings. `accountLink`
+ * links an account's name to its overview note, if it has one.
  */
-export function buildTracker(meetings: TrackerMeeting[], today: string, updated: string, myNames: string[] = [], todos: TrackerMeeting[] = []): string {
+export function buildTracker(
+  meetings: TrackerMeeting[],
+  today: string,
+  updated: string,
+  myNames: string[] = [],
+  todos: TrackerMeeting[] = [],
+  accountLink: (account: string) => string | undefined = () => undefined
+): string {
   const items: Item[] = [...todos, ...meetings].flatMap((meeting) => meeting.openItems.map((meta) => ({ meta, meeting })));
-  const mine = myNames.length > 0 ? items.filter((i) => isMine(i.meta, myNames)) : items;
-  const others = myNames.length > 0 ? items.filter((i) => !isMine(i.meta, myNames)) : [];
+  const active = items.filter((i) => !i.meta.parked);
+  const parked = items.length - active.length;
+  const mine = myNames.length > 0 ? active.filter((i) => isMine(i.meta, myNames)) : active;
+  const others = myNames.length > 0 ? active.filter((i) => !isMine(i.meta, myNames)) : [];
   const weekAhead = addDays(today, 7);
   const overdue = mine.filter((i) => i.meta.due && i.meta.due < today);
   const dueSoon = mine.filter((i) => i.meta.due && i.meta.due >= today && i.meta.due <= weekAhead);
   const high = mine.filter(isHigh);
   const focus = focusItems(mine, today, atRiskAccounts(meetings, today));
-  const stale = staleItems(items, today);
+  const stale = staleItems(active, today);
   const late = (i: Item) => (i.meta.due && i.meta.due < today ? "overdue" : undefined);
+  const inOverview = (account: string) => {
+    const overview = account && accountLink(account);
+    return overview ? ` in ${overview}` : "";
+  };
 
   const day = new Date(`${today}T12:00:00`).getDay();
   const monday = addDays(today, -((day + 6) % 7));
@@ -218,9 +260,9 @@ export function buildTracker(meetings: TrackerMeeting[], today: string, updated:
     "",
     "## At a glance",
     "",
-    "| My open items | Overdue | Due in 7 days | High priority | Waiting on others | Gone stale | Meetings this week |",
-    "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
-    `| ${mine.length} | ${overdue.length} | ${dueSoon.length} | ${high.length} | ${others.length} | ${stale.length} | ${thisWeek.length} |`,
+    "| My open items | Overdue | Due in 7 days | High priority | Waiting on others | Gone stale | Parked | Meetings this week |",
+    "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    `| ${mine.length} | ${overdue.length} | ${dueSoon.length} | ${high.length} | ${others.length} | ${stale.length} | ${parked} | ${thisWeek.length} |`,
     "",
     "## Focus",
     "",
@@ -243,18 +285,18 @@ export function buildTracker(meetings: TrackerMeeting[], today: string, updated:
     "## Waiting on others",
     "",
     ...(myNames.length > 0
-      ? grouped(others, (i) => i.meta.owner, "Unassigned", late)
+      ? grouped(others, (i) => i.meta.owner, "Unassigned", late, () => " in the action items panel (Waiting on others, By person)")
       : ["Set **Your name** in the plugin's settings to list here what others owe you."]),
     "",
     STALE_HEADING,
     "",
     ...(stale.length > 0
-      ? [`*Marked Someday (⏬), or with no due date and from a meeting over ${STALE_DAYS} days ago. Tick one here to drop it (marked won't do); tick it anywhere else to mark it done.*`, "", ...list(stale, () => 0)]
+      ? [`*Marked Someday (⏬), or with no due date and from a meeting over ${STALE_DAYS} days ago. Tick one here to drop it (marked won't do); tick it anywhere else to mark it done.*`, "", ...capped(list(stale, () => 0), STALE_SIZE, (n) => `- …and ${n} more; they'll show here as you clear these`)]
       : ["Nothing here."]),
     "",
     "## Open items by account",
     "",
-    ...grouped(items, (i) => i.meeting.account, "No account"),
+    ...grouped(items, (i) => i.meeting.account, "No account", itemStatus(today), inOverview),
     "",
     "## Decisions in the last 30 days",
     "",

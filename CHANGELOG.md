@@ -9,6 +9,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+**Park an item: kept for the account or series, off your list**
+A new **Park** button (⏸) in the action items panel tags an item `#parked`. It stays open and keeps showing, marked *parked*, in the account overview, series note, Meeting Brief, the Tracker's Open items by account and the next meeting's Agenda — but leaves your Focus, Overdue, Due soon, High priority, Waiting on others and Gone stale? lists and the panel's Mine view. A new **Parked** view in the panel lists them, with **Unpark** to put one back.
+
+### Changed
+
+**A readable Meeting Tracker, however many items you have**
+Open items by account and Waiting on others now show 10 items per account or person, most pressing first, then "…and N more" with a link to the account overview (or a pointer to the action items panel). Gone stale? shows 25 at a time. In a vault with thousands of open items the tracker shrinks from about 14,000 lines to about 1,200.
+
 ### Fixed
 
 **Items assigned to "me" count as yours**

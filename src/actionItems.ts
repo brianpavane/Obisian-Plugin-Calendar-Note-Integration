@@ -9,6 +9,8 @@
  * `[due:: 2026-10-10]`; ⏫ high, 🔼 medium, 🔽 low). Ticking a task adds the
  * Tasks plugin's done date (`✅ 2026-10-07`); "Won't do" marks it cancelled
  * (`- [-] … ❌ 2026-10-07`), so it leaves every list without counting as done.
+ * "Park" tags it `#parked`: it stays open for its account or series, but off
+ * the user's own lists.
  */
 
 import { App, debounce, ItemView, setIcon, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
@@ -39,8 +41,11 @@ export interface TaskMeta {
   doneOn?: string;
   /** The Tasks plugin's created date (`➕ 2026-10-08`), if the task has one. */
   created?: string;
+  /** Tagged `#parked`: still open for its account or series, but off the user's own lists. */
+  parked?: boolean;
 }
 
+const PARKED_RE = /(?:^|\s)#parked(?![\w/-])/i;
 const DUE_RE = /\s*(?:📅\s*(\d{4}-\d{2}-\d{2})|\[due::\s*(\d{4}-\d{2}-\d{2})\s*\])/u;
 const OWNER_RE = /(?:^|\s)@(?:\[\[([^\]|]+)(?:\|[^\]]*)?\]\]|([\p{L}\p{N}_.-]+))/gu;
 const ROLE_OWNER_RE = /\(owner:\s*([^)]+)\)/i;
@@ -62,13 +67,14 @@ export function parseTaskMeta(text: string): TaskMeta {
   const doneOn = text.match(/✅\s*(\d{4}-\d{2}-\d{2})/u)?.[1];
   const created = text.match(/➕\s*(\d{4}-\d{2}-\d{2})/u)?.[1];
   return {
-    text: text.replace(DUE_RE, "").replace(OTHER_MARKS_RE, "").replace(/\s+/g, " ").trim(),
+    text: text.replace(DUE_RE, "").replace(OTHER_MARKS_RE, "").replace(PARKED_RE, " ").replace(/\s+/g, " ").trim(),
     owner: owners[0],
     owners,
     due: due ? due[1] ?? due[2] : undefined,
     priority: PRIORITY_MARKS.find(([re]) => re.test(text))?.[1],
     ...(doneOn ? { doneOn } : {}),
     ...(created ? { created } : {}),
+    ...(PARKED_RE.test(text) ? { parked: true } : {}),
   };
 }
 
@@ -191,20 +197,49 @@ async function closeTask(app: App, file: TFile, task: OpenTask, status: "x" | "-
   return completed;
 }
 
+/** Park an open task (tag it `#parked`), or unpark it. Returns false if it is no longer open. */
+export async function parkTask(app: App, file: TFile, task: OpenTask, park: boolean): Promise<boolean> {
+  let changed = false;
+  await app.vault.process(file, (content) => {
+    const lines = content.split("\n");
+    const isTask = (i: number) => openTasks(lines[i] ?? "").some((t) => t.text === task.text);
+    const index = isTask(task.line) ? task.line : lines.findIndex((_, i) => isTask(i));
+    if (index === -1) return content;
+    const unparked = lines[index].replace(/\s+#parked(?![\w/-])/gi, "").replace(/\s+$/, "");
+    lines[index] = park ? `${unparked} #parked` : unparked;
+    changed = true;
+    return lines.join("\n");
+  });
+  return changed;
+}
+
 /** A date as YYYY-MM-DD in this machine's time zone. */
 export function localDate(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-export type OwnerFilter = "mine" | "others" | "everyone";
+export type OwnerFilter = "mine" | "others" | "parked" | "everyone";
 
-/** Keep only the tasks `filter` asks for; meetings left with none are dropped. */
+/**
+ * Keep only the tasks `filter` asks for; meetings left with none are dropped.
+ * Mine and Waiting on others leave out parked items. Without names, Mine is
+ * every item that isn't parked.
+ */
 export function filterByOwner(meetings: MeetingTasks[], filter: OwnerFilter, myNames: string[]): MeetingTasks[] {
-  if (filter === "everyone" || myNames.length === 0) return meetings;
+  if (filter === "everyone") return meetings;
+  const keep = (meta: TaskMeta) =>
+    filter === "parked"
+      ? !!meta.parked
+      : !meta.parked && (myNames.length === 0 ? filter === "mine" : isMine(meta, myNames) === (filter === "mine"));
   return meetings
-    .map((m) => ({ ...m, tasks: m.tasks.filter((t) => isMine(parseTaskMeta(t.text), myNames) === (filter === "mine")) }))
+    .map((m) => ({ ...m, tasks: m.tasks.filter((t) => keep(parseTaskMeta(t.text))) }))
     .filter((m) => m.tasks.length > 0);
+}
+
+/** Whether an item belongs on the user's own lists: theirs and not parked. */
+export function onMyList(meta: TaskMeta, myNames: string[]): boolean {
+  return !meta.parked && isMine(meta, myNames);
 }
 
 export class ActionItemsView extends ItemView {
@@ -243,7 +278,7 @@ export class ActionItemsView extends ItemView {
   async setState(state: unknown, result: ViewStateResult): Promise<void> {
     const { groupBy, owner } = (state ?? {}) as { groupBy?: unknown; owner?: unknown };
     if (groupBy === "meeting" || groupBy === "person" || groupBy === "due") this.groupBy = groupBy;
-    if (owner === "mine" || owner === "others" || owner === "everyone") this.owner = owner;
+    if (owner === "mine" || owner === "others" || owner === "parked" || owner === "everyone") this.owner = owner;
     await this.render();
     await super.setState(state, result);
   }
@@ -278,18 +313,19 @@ export class ActionItemsView extends ItemView {
       this.app.workspace.requestSaveLayout();
       await this.render();
     });
-    if (myNames.length > 0) {
-      const whose = header.createEl("select", { cls: "dropdown" });
-      for (const [value, label] of [["mine", "Mine"], ["others", "Waiting on others"], ["everyone", "Everyone"]] as const) {
-        whose.createEl("option", { value, text: label });
-      }
-      whose.value = this.owner;
-      whose.addEventListener("change", async () => {
-        this.owner = whose.value as OwnerFilter;
-        this.app.workspace.requestSaveLayout();
-        await this.render();
-      });
-    } else {
+    const whose = header.createEl("select", { cls: "dropdown" });
+    const filters: Array<[OwnerFilter, string]> = myNames.length > 0
+      ? [["mine", "Mine"], ["others", "Waiting on others"], ["parked", "Parked"], ["everyone", "Everyone"]]
+      : [["mine", "Not parked"], ["parked", "Parked"], ["everyone", "Everyone"]];
+    for (const [value, label] of filters) whose.createEl("option", { value, text: label });
+    if (!filters.some(([value]) => value === this.owner)) this.owner = "mine";
+    whose.value = this.owner;
+    whose.addEventListener("change", async () => {
+      this.owner = whose.value as OwnerFilter;
+      this.app.workspace.requestSaveLayout();
+      await this.render();
+    });
+    if (myNames.length === 0) {
       el.createDiv({
         cls: "cal-notes-item-meta",
         text: "Showing everyone's items. Set Your name in the plugin's settings to see only yours.",
@@ -297,7 +333,12 @@ export class ActionItemsView extends ItemView {
     }
 
     if (meetings.length === 0) {
-      const empty = this.owner === "others" && myNames.length > 0 ? "No one owes you anything right now." : "No open action items in your meeting notes.";
+      const empty = {
+        mine: "No open action items in your meeting notes.",
+        others: "No one owes you anything right now.",
+        parked: "Nothing parked. Park an item with its pause icon to keep it for its account or series but off your lists.",
+        everyone: "No open action items in your meeting notes.",
+      }[this.owner];
       el.createDiv({ cls: "cal-notes-empty", text: empty });
       return;
     }
@@ -321,9 +362,10 @@ export class ActionItemsView extends ItemView {
         body.createSpan({ text: row.meta.text });
         const details = body.createDiv({ cls: "cal-notes-item-meta" });
         if (row.meta.priority) {
-          const label = row.meta.priority[0].toUpperCase() + row.meta.priority.slice(1);
+          const label = row.meta.priority === "lowest" ? "Someday" : row.meta.priority[0].toUpperCase() + row.meta.priority.slice(1);
           details.createSpan({ cls: `cal-notes-priority is-${row.meta.priority}`, text: label });
         }
+        if (row.meta.parked) details.createSpan({ cls: "cal-notes-parked", text: "Parked" });
         if (row.meta.due) {
           details.createSpan({ cls: row.overdue ? "cal-notes-due is-overdue" : "cal-notes-due", text: `📅 ${row.meta.due}` });
         }
@@ -334,6 +376,16 @@ export class ActionItemsView extends ItemView {
         box.addEventListener("change", async () => {
           box.disabled = true;
           await completeTask(this.app, row.meeting.file, row.task, localDate(new Date()));
+          await this.render();
+        });
+        const park = item.createEl("a", {
+          cls: "cal-notes-wont-do clickable-icon",
+          attr: { "aria-label": row.meta.parked ? "Unpark: back on your lists" : "Park: keep it for its account or series, but off your lists" },
+        });
+        setIcon(park, row.meta.parked ? "play" : "pause");
+        park.addEventListener("click", async () => {
+          box.disabled = true;
+          await parkTask(this.app, row.meeting.file, row.task, !row.meta.parked);
           await this.render();
         });
         const drop = item.createEl("a", { cls: "cal-notes-wont-do clickable-icon", attr: { "aria-label": "Won't do" } });

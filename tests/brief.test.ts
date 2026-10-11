@@ -79,3 +79,11 @@ test("a brief with a deleted marker is replaced cleanly, without touching the us
     assert.match(removeBrief(c), /- Mine\n\n## Notes\n\n- My notes/);
   }
 });
+
+test("the brief still lists parked items for the series, marked parked", () => {
+  const block = briefBlock({
+    meetings: [meeting("M/Pilot 1", "2026-10-01", { id: "pilot::2026-10-01", openItems: [parseTaskMeta("Draft SOW @[[Brian Pavane]] #parked")] })],
+    id: "pilot::2026-10-08", date: "2026-10-08", attendees: [], myNames: ["Brian Pavane"], today: "2026-10-08", updated: "now",
+  });
+  assert.match(block.split("### You owe")[1], /- Draft SOW @\[\[Brian Pavane\]\] · \[\[M\/Pilot 1\|Pilot 1\]\] · \*parked\*/);
+});

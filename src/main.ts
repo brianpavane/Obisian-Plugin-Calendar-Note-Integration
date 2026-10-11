@@ -590,12 +590,17 @@ export default class GoogleCalendarPlugin extends Plugin {
 
   private async rebuildTracker(): Promise<TFile> {
     const now = this.now();
+    const accountNotes = this.findAccountNotes();
     const content = buildTracker(
       await this.trackerMeetings(),
       localDate(now),
       `${localDate(now)} ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`,
       this.myNames(),
-      await this.todoMeetings()
+      await this.todoMeetings(),
+      (account) => {
+        const note = accountNotes.get(account.trim().toLowerCase());
+        return note ? `[[${note.path.replace(/\.md$/, "")}|${account.replace(/[[\]|#^]/g, " ").trim()} overview]]` : undefined;
+      }
     );
     const folder = this.hubFolderPath();
     const path = normalizePath(folder ? `${folder}/${TRACKER_FILENAME}` : TRACKER_FILENAME);
