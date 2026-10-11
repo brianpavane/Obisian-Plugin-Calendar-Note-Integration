@@ -40,9 +40,17 @@ export interface BriefInput {
 const urgentFirst = (a: Item, b: Item) =>
   (a.meta.due ?? "9999").localeCompare(b.meta.due ?? "9999") || priorityRank(a.meta.priority) - priorityRank(b.meta.priority);
 
-/** The brief, markers included, ready to go into the note. */
-export function briefBlock(input: BriefInput): string {
-  const { meetings, today, date, myNames } = input;
+export type MeetingContext = Pick<BriefInput, "meetings" | "id" | "date" | "attendees" | "account" | "myNames">;
+
+/**
+ * A meeting's context: its account (or its series' latest one), the earlier
+ * meetings of its series or account, what the attendees owe the user and
+ * what the user owes there. What attendees owe is scoped to the series or
+ * account, so another customer's items never show up in this meeting; a
+ * meeting with neither (an ad-hoc 1:1, say) gets all the attendees owe.
+ */
+export function meetingContext(input: MeetingContext): { account?: string; related: TrackerMeeting[]; theyOwe: Item[]; youOwe: Item[] } {
+  const { meetings, date, myNames } = input;
   const series = seriesId(input.id);
   const inSeries = (m: TrackerMeeting) => !!series && !!m.id && seriesId(m.id) === series;
   const before = meetings.filter((m) => !m.date || m.date <= date);
@@ -50,15 +58,23 @@ export function briefBlock(input: BriefInput): string {
     || before.filter(inSeries).filter((m) => m.account?.trim()).sort((a, b) => b.date.localeCompare(a.date))[0]?.account?.trim();
   const sameAccount = (m: TrackerMeeting) => !!account && m.account?.trim().toLowerCase() === account.toLowerCase();
   const related = before.filter((m) => inSeries(m) || sameAccount(m));
-
   const me = new Set(myNames.map((n) => n.toLowerCase()));
   const attendees = new Set(input.attendees.map((a) => a.trim().toLowerCase()).filter((a) => a && !me.has(a)));
   const items = (ms: TrackerMeeting[]): Item[] => ms.flatMap((meeting) => meeting.openItems.map((meta) => ({ meta, meeting })));
-  // Scoped to this series or account, so another customer's items never show up in this
-  // meeting; a meeting with neither (an ad-hoc 1:1, say) shows all the attendees owe.
-  const scope = series || account ? related : meetings;
-  const theyOwe = items(scope).filter((i) => i.meta.owners.some((o) => attendees.has(o.toLowerCase())));
-  const youOwe = items(related).filter((i) => isMine(i.meta, myNames));
+  return {
+    account,
+    related,
+    theyOwe: items(series || account ? related : meetings).filter((i) => i.meta.owners.some((o) => attendees.has(o.toLowerCase()))),
+    youOwe: items(related).filter((i) => isMine(i.meta, myNames)),
+  };
+}
+
+/** The brief, markers included, ready to go into the note. */
+export function briefBlock(input: BriefInput): string {
+  const { meetings, today } = input;
+  const { account, related, theyOwe, youOwe } = meetingContext(input);
+  const series = seriesId(input.id);
+  const sameAccount = (m: TrackerMeeting) => !!account && m.account?.trim().toLowerCase() === account.toLowerCase();
   const shortList = (all: Item[]) => {
     const sorted = [...all].sort(urgentFirst);
     const shown = list(sorted.slice(0, MAX_ITEMS), () => 0, true, itemStatus(today));

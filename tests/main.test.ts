@@ -1456,3 +1456,61 @@ test("a note created for an upcoming event gets its brief from the event; a past
   });
   assert.doesNotMatch((app.files.get("Meeting Notes/Old.md") as TFile).content ?? "", /Meeting Brief/);
 });
+
+test("Prepare my day creates the day's notes with briefs, rebuilds the Tracker and My Day, and copies the Daily Briefing", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "briefing-"));
+  try {
+    const app = createMemoryApp([
+      { path: "Meeting Notes/Pilot 1.md", content: "---\ntitle: \"Pilot\"\nstart: 2026-03-27T10:00\naccount: \"Acme\"\ncalendar_event_id: \"pilot::2026-03-27\"\n---\n\n## Next Steps\n\n- [ ] Send runbook @[[Ann Lee]]\n" },
+    ]);
+    const plugin = createPlugin(app);
+    plugin.settings = appleSettings({ hubFolder: "Meeting Hub", briefingFolder: join(dir, "Drive", "Briefing") });
+    plugin.loadDayEvents = async () => [
+      buildEvent({ id: "pilot::2026-04-03", summary: "Pilot", attendees: [{ email: "ann@example.com", displayName: "Ann Lee" }] }),
+      buildEvent({ id: "gone", summary: "Cancelled thing", cancelled: true }),
+    ];
+    await plugin.prepareDay(true);
+
+    const created = [...app.files.keys()].find((p) => p.startsWith("Meeting Notes/") && p.includes("Pilot") && !p.endsWith("Pilot 1.md"));
+    assert.ok(created, [...app.files.keys()].join(", "));
+    assert.match((app.files.get(created!) as TFile).content ?? "", /## Meeting Brief[\s\S]*Send runbook @\[\[Ann Lee\]\]/);
+    assert.ok(!([...app.files.keys()].some((p) => p.includes("Cancelled thing"))));
+    assert.ok(app.files.get("Meeting Hub/Meeting Tracker.md"));
+    const day = (app.files.get("Meeting Hub/My Day.md") as TFile).content ?? "";
+    assert.match(day, /# Friday, April 3, 2026[\s\S]*## Meetings\n\n- 10:00 AM–11:00 AM · \[\[[^\]]*Pilot[^\]]*\]\] · with Ann Lee · brief ready/);
+    const { readFile } = await import("fs/promises");
+    const briefing = await readFile(join(dir, "Drive", "Briefing", "Daily Briefing.md"), "utf8");
+    assert.match(briefing, /^# Friday, April 3, 2026/);
+    assert.doesNotMatch(briefing, /\[\[/);
+    assert.match(getNotices().at(-1)?.message ?? "", /Prepared Friday, April 3, 2026 — 1 meeting, 1 new note; Daily Briefing copied/);
+    assert.ok(plugin.settings.lastPreparedAt);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("the nightly prep runs once after its time, catches up after a missed night, and plans tomorrow from 6 PM", async () => {
+  const plugin = createPlugin(createMemoryApp());
+  plugin.settings = appleSettings({ prepTime: "00:30" });
+  plugin.metadataReady = true;
+  let runs = 0;
+  plugin.prepareDay = async () => {
+    runs++;
+    plugin.settings.lastPreparedAt = plugin.now().toISOString();
+  };
+  plugin.now = () => new Date(2026, 3, 3, 0, 20);
+  await plugin.prepareIfDue();
+  assert.equal(runs, 0, "not before its time");
+  plugin.now = () => new Date(2026, 3, 3, 0, 31);
+  await plugin.prepareIfDue();
+  await plugin.prepareIfDue();
+  assert.equal(runs, 1, "once a night");
+  plugin.now = () => new Date(2026, 3, 5, 8, 0);
+  await plugin.prepareIfDue();
+  assert.equal(runs, 2, "catches up when Obsidian is next open");
+
+  plugin.now = () => new Date(2026, 3, 5, 17, 59);
+  assert.equal(plugin.planDate(), "2026-04-05");
+  plugin.now = () => new Date(2026, 3, 5, 18, 0);
+  assert.equal(plugin.planDate(), "2026-04-06");
+});

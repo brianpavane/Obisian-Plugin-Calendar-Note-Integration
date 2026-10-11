@@ -22,6 +22,7 @@ The **ribbon** is the thin strip of icons down the far-left edge of the Obsidian
 
 | Button | Opens |
 |---|---|
+| **Sun** icon | **My Day**: today's meetings, your focus and loose ends, prepared each night |
 | **Calendar-with-clock** icon | **Today's meetings** |
 | **Checklist** icon (☑ with lines) | **Meeting action items** |
 | **List with a plus** icon | **Add a to-do**: a quick box for a task that isn't from a meeting |
@@ -35,6 +36,26 @@ The **ribbon** is the thin strip of icons down the far-left edge of the Obsidian
 Hover over a button and a tooltip says what it opens. Click it to open the dashboard.
 
 **Don't see the buttons?** Make sure the plugin is updated (6.15.0 or later for the gauge). If the ribbon itself is hidden, turn it back on under **Settings → Appearance → Show ribbon**. If a button is missing, right-click the ribbon and tick it in the list.
+
+## My Day and the Daily Briefing
+
+**My Day** (`My Day.md` in your Meeting Hub folder) is the page to start from. Its sections are the same every day:
+
+| Section | What's in it |
+|---|---|
+| **At a glance** | How many meetings, when the first one is, your focus and due-today counts, what's overdue, loose ends |
+| **Meetings** | The day's meetings in order: time, a link to the note, account, who's in it, whether its brief is ready or its AI reply added, and a **Join** link |
+| **Focus** | Your 5 most pressing items (as in the Tracker), plus anything else due that day — tick them here |
+| **Before your meetings** | For each meeting, what its attendees owe you (from that series or account), so you can follow up in the meeting |
+| **Waiting on others: overdue** | What others owe you that's past due |
+| **Loose ends** | Meetings from the last two days still without their AI reply, and Krisp recordings to import |
+| **Done today** | What you've checked off that day |
+
+From 6 PM, My Day shows tomorrow, so you can see what's coming before you finish.
+
+**Prepared each night.** At **12:30 AM** (set under **Prepare my day each night** in the settings) the plugin gets the day ready: it creates the notes for the day's meetings with their Meeting Brief, refreshes briefs of notes already made, rebuilds the Meeting Tracker and My Day, and writes the Daily Briefing. Obsidian has to be open and the Mac on power; if a night is missed, it runs as soon as Obsidian is open again. Run **Prepare my day** (or click **Prepare now** in the settings) to do it yourself, for example as you finish for the day.
+
+**The Daily Briefing for Gemini.** Set **Copy the Daily Briefing to** to a folder that Google Drive for desktop syncs (for example `~/Library/CloudStorage/GoogleDrive-you@company.com/My Drive/Obsidian Briefing`). Each time My Day is rebuilt, the plugin writes it there as `Daily Briefing.md` in plain text — no properties, links reduced to names — for Gemini Enterprise's 2 AM and 7 AM runs to read. The plugin only writes a file on your Mac; Google Drive does the syncing.
 
 ## The other way: the command palette
 

@@ -73,6 +73,14 @@ export interface GoogleCalendarSettings {
   processedEventIds: string[];
   /** Plugin version of the last completed startup sweep; a change triggers a rebuild. */
   lastRunVersion: string;
+  /** Prepare the day (My Day, meeting notes and briefs, Daily Briefing) each night at `prepTime`. */
+  prepEnabled: boolean;
+  /** "HH:MM", 24-hour. */
+  prepTime: string;
+  /** When the day was last prepared (ISO time); empty = never. */
+  lastPreparedAt: string;
+  /** Folder outside the vault (e.g. a Google Drive folder) to copy the Daily Briefing to; empty = don't copy. */
+  briefingFolder: string;
   /** Sections of the built-in note format (ignored when a template file is set). */
   noteSections: NoteSections;
   /** Title fragments (one per line) of meetings that never get a note automatically. */
@@ -124,6 +132,10 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   maxEvents: 20,
   processedEventIds: [],
   lastRunVersion: "",
+  prepEnabled: true,
+  prepTime: "00:30",
+  lastPreparedAt: "",
+  briefingFolder: "",
   noteSections: { ...ALL_SECTIONS },
   skipTitles: "",
   skipSolo: false,
@@ -694,6 +706,55 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
             button.setDisabled(false);
           }
         })
+      );
+
+    new Setting(containerEl)
+      .setName("Prepare my day each night")
+      .setDesc(
+        "At the time below, build My Day, create the day's meeting notes with their Meeting Brief, and rebuild the Meeting Tracker, " +
+          "so everything is ready (and the Daily Briefing written) before you start. Obsidian must be open and the Mac awake or on power. " +
+          "If a night is missed, it runs as soon as Obsidian is open again."
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.prepEnabled).onChange(async (value) => {
+          this.plugin.settings.prepEnabled = value;
+          await this.plugin.saveSettings();
+        })
+      )
+      .addText((text) => {
+        text.inputEl.type = "time";
+        text.setValue(this.plugin.settings.prepTime.padStart(5, "0")).onChange(async (value) => {
+          if (!/^\d{1,2}:\d{2}$/.test(value)) return;
+          this.plugin.settings.prepTime = value;
+          await this.plugin.saveSettings();
+        });
+      })
+      .addButton((button) =>
+        button.setButtonText("Prepare now").onClick(async () => {
+          button.setDisabled(true);
+          try {
+            await this.plugin.prepareDay(true);
+          } finally {
+            button.setDisabled(false);
+          }
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Copy the Daily Briefing to")
+      .setDesc(
+        "A folder outside the vault, such as one Google Drive for desktop syncs, for an assistant like Gemini to read: " +
+          "e.g. ~/Library/CloudStorage/GoogleDrive-you@company.com/My Drive/Obsidian Briefing. " +
+          "My Day is written there as \"Daily Briefing.md\" each time it's rebuilt. Leave empty to keep it in the vault only."
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("~/Library/CloudStorage/GoogleDrive-…/My Drive/Obsidian Briefing")
+          .setValue(this.plugin.settings.briefingFolder)
+          .onChange(async (value) => {
+            this.plugin.settings.briefingFolder = value.trim();
+            await this.plugin.saveSettings();
+          })
       );
 
     new Setting(containerEl)

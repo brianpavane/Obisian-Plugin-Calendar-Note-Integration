@@ -17,6 +17,9 @@
  */
 
 import { MarkdownView, normalizePath, Notice, Plugin, TFile } from "obsidian";
+import { promises as fs } from "fs";
+import { homedir } from "os";
+import { join } from "path";
 import {
   candidateRecordings,
   listRecordings,
@@ -48,6 +51,7 @@ import { accountBody, ACCOUNTS_FOLDER, newAccountNote, refreshAccount } from "./
 import { newSeriesNote, refreshSeries, SERIES_FOLDER, seriesBody } from "./series";
 import { canonicalEventId } from "./appleCalendarApi";
 import { briefBlock, hasBrief, removeBrief, upsertBrief } from "./brief";
+import { BRIEFING_FILENAME, briefingText, DAY_FILENAME, DAY_TYPE, dayNote, longDay, type DayMeeting } from "./myDay";
 import { AddTodoModal, addTodo as appendTodo, newTodosNote, TODOS_FILENAME, TODOS_TITLE, TODOS_TYPE, type NewTodo } from "./todos";
 import { TodayView, TODAY_VIEW, type NoteAction } from "./todayView";
 import { currentOrNextMeeting, meetingToJoin, statusText } from "./meetingStatus";
@@ -117,6 +121,7 @@ const JOIN_WINDOW_MS = 30 * 60 * 1_000;
 /** A duplicate-notes warning from a background sync closes after this long; one from Refresh stays until clicked. */
 const DUPLICATE_NOTICE_MS = 20_000;
 const RIBBON_ICONS: Array<[string, string, (plugin: GoogleCalendarPlugin) => unknown]> = [
+  ["sun", "My Day: today's meetings, focus and loose ends, prepared each night", (p) => p.openMyDay()],
   ["calendar-days", "Create a note from a calendar event", (p) => p.pickEventAndCreateNote()],
   ["calendar-clock", "Today's meetings: join links, notes and follow-ups", (p) => p.openSidebarView(TODAY_VIEW)],
   ["list-checks", "Meeting action items: tick off, filter by mine or others", (p) => p.openSidebarView(ACTION_ITEMS_VIEW)],
@@ -188,6 +193,10 @@ export default class GoogleCalendarPlugin extends Plugin {
   private readonly hubRebuiltAt = new Map<string, number>();
   /** Obsidian has finished reading the vault's properties since startup, so hub notes can be rebuilt on open. */
   metadataReady = false;
+  /** Prepare my day is running. */
+  private preparing = false;
+  /** A failed Daily Briefing copy is reported once per session. */
+  private briefingErrorShown = false;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -211,6 +220,18 @@ export default class GoogleCalendarPlugin extends Plugin {
       id: "auto-create-upcoming-notes",
       name: "Auto-create notes for events in the next N hours",
       callback: () => this.autoCreateUpcomingNotes(true),
+    });
+
+    this.addCommand({
+      id: "open-my-day",
+      name: "Open My Day",
+      callback: () => this.openMyDay(),
+    });
+
+    this.addCommand({
+      id: "prepare-my-day",
+      name: "Prepare my day (tomorrow's, after 6 PM)",
+      callback: () => this.prepareDay(true),
     });
 
     this.addCommand({
@@ -365,6 +386,8 @@ export default class GoogleCalendarPlugin extends Plugin {
     this.updateStatusBar();
 
     this.startupTimeoutId = window.setTimeout(() => this.runStartupSweep(), 5_000);
+    // Each minute: prepare the day once its time has passed, catching up after a missed night.
+    this.registerInterval(window.setInterval(() => void this.prepareIfDue(), 60_000));
     this.restartPolling();
   }
 
@@ -755,10 +778,11 @@ export default class GoogleCalendarPlugin extends Plugin {
   }
 
   /** A note the plugin generates in the Meeting Hub, which can be rebuilt from the meeting notes. */
-  hubNoteKind(file: TFile | null): "tracker" | "insights" | "account" | "series" | "review" | undefined {
+  hubNoteKind(file: TFile | null): "tracker" | "insights" | "account" | "series" | "review" | "day" | undefined {
     if (!file) return undefined;
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
     const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+    if (fm?.type === DAY_TYPE) return "day";
     if (fm?.type === "meeting-account" && text(fm.account)) return "account";
     if (fm?.type === "meeting-series" && text(fm.series_id)) return "series";
     if (fm?.type === "weekly-review" && /^\d{4}-\d{2}-\d{2}/.test(text(fm.week_start))) return "review";
@@ -775,6 +799,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     switch (this.hubNoteKind(file)) {
       case "tracker": await this.rebuildTracker(); return true;
       case "insights": await this.rebuildInsights(); return true;
+      case "day": await this.rebuildMyDay(); return true;
       case "account": await this.updateAccountNotes(await this.trackerMeetings(), [String(fm.account).trim()]); return true;
       case "series": await this.rebuildSeriesNote(String(fm.series_id).trim(), typeof fm.title === "string" && fm.title.trim() ? fm.title.trim() : file.basename); return true;
       case "review": await this.rebuildWeeklyReview(isoWeek(String(fm.week_start).trim().slice(0, 10)), file); return true;
@@ -869,6 +894,160 @@ export default class GoogleCalendarPlugin extends Plugin {
 
   private async openHubNote(file: TFile): Promise<void> {
     await this.app.workspace.getLeaf(false).openFile(file);
+  }
+
+  /** The day My Day and Prepare my day plan: tomorrow from 6 PM, otherwise today. */
+  planDate(): string {
+    const now = this.now();
+    return now.getHours() >= 18 ? addDays(localDate(now), 1) : localDate(now);
+  }
+
+  /**
+   * Rebuild My Day for `date` (creating it in the Meeting Hub folder) from
+   * the calendar and the meeting notes, and copy it as the Daily Briefing.
+   */
+  async rebuildMyDay(date = this.planDate()): Promise<TFile> {
+    const events = await this.loadDayEvents(new Date(`${date}T00:00:00`));
+    const notesById = findNotesByEventId(this.app);
+    let meetings: DayMeeting[] | null = null;
+    if (events) {
+      meetings = [];
+      const timed = events.filter((e) => !e.cancelled && e.start.dateTime)
+        .sort((a, b) => new Date(a.start.dateTime!).getTime() - new Date(b.start.dateTime!).getTime());
+      for (const event of timed) {
+        const note = notesById.get(event.id);
+        const fm = note ? this.app.metadataCache.getFileCache(note)?.frontmatter : undefined;
+        meetings.push({
+          id: event.id,
+          title: event.summary?.trim() || "Untitled Event",
+          start: new Date(event.start.dateTime!),
+          end: new Date(event.end.dateTime ?? event.start.dateTime!),
+          path: note?.path.replace(/\.md$/, ""),
+          account: typeof fm?.account === "string" && fm.account.trim() ? fm.account.trim() : undefined,
+          attendees: (event.attendees ?? []).filter((a) => !a.self).map((a) => a.displayName?.trim() || a.email),
+          joinUrl: joinUrl(event),
+          briefed: note ? hasBrief(await this.app.vault.cachedRead(note)) : false,
+          summarized: !!fm?.ai_summarized,
+        });
+      }
+    }
+    const notes = await this.trackerMeetings();
+    let recordings = 0;
+    try {
+      recordings = (await this.transcriptProposals()).length;
+    } catch {
+      // The Krisp folder can't be read: no loose end to show.
+    }
+    const content = dayNote({
+      date,
+      meetings,
+      notes,
+      todos: await this.todoMeetings(),
+      myNames: this.myNames(),
+      unsummarized: notes.filter((m) => !m.summarized && !m.skipped && m.date >= addDays(date, -2) && m.date < date),
+      recordings,
+      updated: this.updatedStamp(),
+    });
+    let file = this.app.vault.getMarkdownFiles().find((f) => this.app.metadataCache.getFileCache(f)?.frontmatter?.type === DAY_TYPE);
+    if (file) {
+      await this.app.vault.process(file, () => content);
+    } else {
+      const folder = this.hubFolderPath();
+      if (folder) await this.ensureFolder(folder);
+      file = await this.app.vault.create(normalizePath(folder ? `${folder}/${DAY_FILENAME}` : DAY_FILENAME), content);
+    }
+    await this.copyBriefing(content);
+    return this.rebuilt(file);
+  }
+
+  async openMyDay(): Promise<void> {
+    await this.openHubNote(await this.rebuildMyDay());
+  }
+
+  /** Copy My Day, as plain text, to the Daily Briefing folder (e.g. one Google Drive syncs). */
+  private async copyBriefing(dayContent: string): Promise<boolean> {
+    const folder = this.settings.briefingFolder.trim();
+    if (!folder) return false;
+    const dir = folder.replace(/^~(?=$|\/)/, homedir());
+    try {
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(join(dir, BRIEFING_FILENAME), briefingText(dayContent), "utf8");
+      return true;
+    } catch (err) {
+      if (!this.briefingErrorShown) {
+        this.briefingErrorShown = true;
+        new Notice(`Calendar Notes: Couldn't copy the Daily Briefing to ${folder} — ${safeErrorMessage(err)}`);
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Get the planned day ready: notes (with their Meeting Brief) for its
+   * meetings, briefs of notes made earlier, the Meeting Tracker, My Day and
+   * the Daily Briefing. Runs each night at the prep time, and on demand.
+   */
+  async prepareDay(manual: boolean): Promise<void> {
+    if (this.preparing) return;
+    this.preparing = true;
+    try {
+      const date = this.planDate();
+      const events = (await this.loadDayEvents(new Date(`${date}T00:00:00`))) ?? [];
+      const options = await this.getNoteOptions(false);
+      const notesById = findNotesByEventId(this.app);
+      const seriesNotes = findSeriesNotes(this.app);
+      const skipRules = { titles: this.settings.skipTitles, solo: this.settings.skipSolo };
+      let meetings: TrackerMeeting[] | undefined;
+      let created = 0;
+      for (const event of events) {
+        if (event.cancelled || !event.start.dateTime) continue;
+        const existing = notesById.get(event.id);
+        if (existing) {
+          const meeting = this.noteMeeting(existing);
+          if (this.canHaveBrief(existing) && meeting && meeting.start > this.now()) await this.refreshBrief(existing);
+          continue;
+        }
+        if (isSkipped(event, skipRules)) continue;
+        if (this.app.vault.getAbstractFileByPath(resolveNoteFilePath(event, options)) instanceof TFile) continue;
+        const series = await seriesOptions(this.app, notesById, event, true, seriesNotes);
+        const result = await createNoteFile(this.app, event, { ...options, ...series });
+        notesById.set(event.id, result.file as TFile);
+        if (!this.settings.processedEventIds.includes(event.id)) this.settings.processedEventIds.push(event.id);
+        if (result.wasCreated) {
+          created++;
+          meetings ??= await this.trackerMeetings();
+          await this.writeNewNoteBrief(result.file as TFile, event, meetings);
+        }
+      }
+      await this.rebuildTracker();
+      await this.rebuildMyDay(date);
+      this.settings.lastPreparedAt = this.now().toISOString();
+      await this.saveSettings();
+      if (manual) {
+        const timed = events.filter((e) => !e.cancelled && e.start.dateTime).length;
+        new Notice(
+          `Calendar Notes: Prepared ${longDay(date)} — ${timed} meeting${timed !== 1 ? "s" : ""}` +
+            `${created > 0 ? `, ${created} new note${created !== 1 ? "s" : ""}` : ""}` +
+            `${this.settings.briefingFolder.trim() ? "; Daily Briefing copied" : ""}.`
+        );
+      }
+    } catch (err) {
+      console.warn("[CalendarNoteIntegration] Couldn't prepare the day:", err);
+      if (manual) new Notice(`Calendar Notes: Couldn't prepare the day — ${safeErrorMessage(err)}`);
+    } finally {
+      this.preparing = false;
+    }
+  }
+
+  /** Prepare the day once the prep time has passed and it hasn't run since; catches up after a missed night. */
+  async prepareIfDue(): Promise<void> {
+    if (!this.settings.prepEnabled || !this.metadataReady || !this.isConfigured()) return;
+    const now = this.now();
+    const [hours, minutes] = this.settings.prepTime.split(":").map(Number);
+    const due = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes);
+    const last = this.settings.lastPreparedAt ? new Date(this.settings.lastPreparedAt) : undefined;
+    if (now < due || (last && last >= due)) return;
+    await this.prepareDay(false);
   }
 
   /** The My To-Dos note: wherever it was moved, or in the Meeting Hub folder. */
@@ -1197,6 +1376,10 @@ export default class GoogleCalendarPlugin extends Plugin {
     if (typeof merged.showStatusBar !== "boolean") {
       merged.showStatusBar = DEFAULT_SETTINGS.showStatusBar;
     }
+    if (typeof merged.prepEnabled !== "boolean") merged.prepEnabled = DEFAULT_SETTINGS.prepEnabled;
+    if (typeof merged.prepTime !== "string" || !/^\d{1,2}:\d{2}$/.test(merged.prepTime)) merged.prepTime = DEFAULT_SETTINGS.prepTime;
+    if (typeof merged.lastPreparedAt !== "string") merged.lastPreparedAt = DEFAULT_SETTINGS.lastPreparedAt;
+    if (typeof merged.briefingFolder !== "string") merged.briefingFolder = DEFAULT_SETTINGS.briefingFolder;
     if (typeof merged.openTodayOnStartup !== "boolean") {
       merged.openTodayOnStartup = DEFAULT_SETTINGS.openTodayOnStartup;
     }

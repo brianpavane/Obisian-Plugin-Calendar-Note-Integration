@@ -11,6 +11,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+**My Day, prepared each night, and a Daily Briefing for Gemini**
+A new **My Day** page (sun icon) shows the day's meetings with their brief status and Join links, your focus, what the people you're meeting owe you, others' overdue items, loose ends (meetings without their AI reply, Krisp recordings to import) and what you've done — tomorrow's from 6 PM. Each night at 12:30 AM (or with **Prepare my day**) the plugin creates the day's meeting notes with their briefs, rebuilds the Tracker and My Day, and can copy My Day as plain text to a Google Drive folder as `Daily Briefing.md` for Gemini Enterprise to read. A missed night is caught up as soon as Obsidian is open.
+
 **Warning for a first name alone in Your name**
 The **Your name** setting now warns when an entry is a single name like "Brian": items owned by anyone else written as just "Brian" would count as yours. Matching is always on the whole name, so with your full name only, another Brian's items stay theirs.
 
