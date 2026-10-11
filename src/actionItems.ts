@@ -423,3 +423,11 @@ export function isMine(meta: TaskMeta, myNames: string[]): boolean {
   const mine = new Set(["me", ...myNames.map((n) => n.trim().toLowerCase()).filter(Boolean)]);
   return meta.owners.some((o) => mine.has(o.toLowerCase()));
 }
+
+/**
+ * Entries of the Your name setting that are a single word, like "Brian":
+ * they would also claim items owned by anyone else written by that first name.
+ */
+export function singleWordNames(value: string): string[] {
+  return value.split(",").map((n) => n.trim()).filter((n) => n && !/\s/.test(n));
+}

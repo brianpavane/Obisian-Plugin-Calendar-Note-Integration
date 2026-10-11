@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cancelTask, collectOpenItems, completeTask, filterByOwner, groupItems, isMine, parkTask, parseTaskMeta, tasksQueryExcludes, type MeetingTasks } from "../src/actionItems";
+import { cancelTask, collectOpenItems, completeTask, filterByOwner, groupItems, isMine, parkTask, parseTaskMeta, singleWordNames, tasksQueryExcludes, type MeetingTasks } from "../src/actionItems";
 import { TFile } from "./support/obsidianStub";
 import { createMemoryApp } from "./support/testHelpers";
 
@@ -177,4 +177,9 @@ test("parkTask tags an item #parked and unparks it; a parked item stays open but
 
   assert.equal(await parkTask(app as never, file as never, { line: 2, text: "Draft SOW @[[Ann Lee]] 📅 2026-10-20 #parked" }, false), true);
   assert.match(file.content ?? "", /- \[ \] Draft SOW @\[\[Ann Lee\]\] 📅 2026-10-20\n/);
+});
+
+test("singleWordNames flags first names alone in the Your name setting", () => {
+  assert.deepEqual(singleWordNames("Brian Pavane, Brian,  , Brian P. Pavane"), ["Brian"]);
+  assert.deepEqual(singleWordNames(""), []);
 });

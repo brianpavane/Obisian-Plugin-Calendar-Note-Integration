@@ -28,6 +28,7 @@ import { encrypt, decrypt } from "./secureStorage";
 import { listAppleCalendars, runAppleCalendarDiagnostic } from "./appleCalendarApi";
 import { ALL_SECTIONS, NoteSections } from "./noteCreator";
 import { DEFAULT_INSTRUCTIONS } from "./assistant";
+import { singleWordNames } from "./actionItems";
 
 // ---------------------------------------------------------------------------
 // Settings interface & defaults
@@ -616,7 +617,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Your name")
       .setDesc(
-        "How you're written as an owner in action items, e.g. Brian Pavane. Separate several with commas. " +
+        "How you're written as an owner in action items: your full name, e.g. Brian Pavane. Separate other spellings with commas. " +
           "Items owned by you, or by no one, are yours; the rest are listed as Waiting on others. " +
           "Your name in calendar invites (found with Your email address above) is used too."
       )
@@ -627,8 +628,18 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.myNames = value;
             await this.plugin.saveSettings();
+            showNameWarning();
           })
       );
+    const nameWarning = containerEl.createDiv({ cls: "setting-item-description mod-warning" });
+    const showNameWarning = () => {
+      const single = singleWordNames(this.plugin.settings.myNames);
+      nameWarning.setText(single.length > 0
+        ? `⚠ "${single[0]}" is a single name: items owned by anyone else written as just "${single[0]}" would count as yours. Use full names.`
+        : "");
+      nameWarning.toggle(single.length > 0);
+    };
+    showNameWarning();
 
     // ----- Note Settings ----------------------------------------------------
     containerEl.createEl("h3", { text: "Note Settings" });

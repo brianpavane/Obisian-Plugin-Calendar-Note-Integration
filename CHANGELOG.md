@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+**Warning for a first name alone in Your name**
+The **Your name** setting now warns when an entry is a single name like "Brian": items owned by anyone else written as just "Brian" would count as yours. Matching is always on the whole name, so with your full name only, another Brian's items stay theirs.
+
+---
+
 ## [6.23.0] – 2026-10-10
 
 ### Added
