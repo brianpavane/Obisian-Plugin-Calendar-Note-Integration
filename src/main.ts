@@ -39,8 +39,8 @@ import {
 } from "./assistant";
 import { appendToSection, continuityItems, sectionText } from "./sections";
 import { isSkipped } from "./skipRules";
-import { ActionItemsView, ACTION_ITEMS_VIEW, completeTask, localDate, parseTaskMeta, tasksQueryExcludes } from "./actionItems";
-import { addDays, buildTracker, itemText, tickedItem, TRACKER_FILENAME, type TrackerMeeting } from "./tracker";
+import { ActionItemsView, ACTION_ITEMS_VIEW, cancelTask, completeTask, localDate, parseTaskMeta, tasksQueryExcludes } from "./actionItems";
+import { addDays, buildTracker, itemText, STALE_HEADING, tickedItem, TRACKER_FILENAME, type TrackerMeeting } from "./tracker";
 import { isoWeek, newReview, type Week, refreshReview, REVIEW_FOLDER, reviewBody, reviewFilename } from "./weeklyReview";
 import { addMissingViews, DASHBOARD_CONTENT, DASHBOARD_FILENAME, DASHBOARD_VIEW_NAMES } from "./dashboard";
 import { buildInsights, INSIGHTS_FILENAME } from "./insights";
@@ -222,7 +222,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       callback: () => this.openDashboard(),
     });
 
-    this.registerView(ACTION_ITEMS_VIEW, (leaf) => new ActionItemsView(leaf));
+    this.registerView(ACTION_ITEMS_VIEW, (leaf) => new ActionItemsView(leaf, () => this.myNames()));
     this.registerView(TODAY_VIEW, (leaf) => new TodayView(leaf, {
       loadDay: (day) => this.loadDayEvents(day),
       notedEventIds: () => new Set(findNotesByEventId(this.app).keys()),
@@ -385,6 +385,24 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
   }
 
+  /**
+   * The names the user is written as in action items: the Your name setting,
+   * plus their own name in calendar invites (the attendee with their email).
+   */
+  myNames(): string[] {
+    const names = this.settings.myNames.split(",").map((n) => n.trim()).filter(Boolean);
+    const selfEmail = this.settings.selfEmail.trim().toLowerCase();
+    if (selfEmail) {
+      for (const file of findNotesByEventId(this.app).values()) {
+        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+        for (const a of frontmatterList(fm?.attendees).map(personName)) {
+          if (a.email?.toLowerCase() === selfEmail && a.name.toLowerCase() !== selfEmail) names.push(a.name);
+        }
+      }
+    }
+    return [...new Map(names.map((n) => [n.toLowerCase(), n])).values()];
+  }
+
   /** Every meeting note's open items, decisions and AI metadata, for the tracker, insights and overviews. */
   async trackerMeetings(): Promise<TrackerMeeting[]> {
     const meetings: TrackerMeeting[] = [];
@@ -534,7 +552,8 @@ export default class GoogleCalendarPlugin extends Plugin {
     const content = buildTracker(
       await this.trackerMeetings(),
       localDate(now),
-      `${localDate(now)} ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+      `${localDate(now)} ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`,
+      this.myNames()
     );
     const folder = this.hubFolderPath();
     const path = normalizePath(folder ? `${folder}/${TRACKER_FILENAME}` : TRACKER_FILENAME);
@@ -723,17 +742,28 @@ export default class GoogleCalendarPlugin extends Plugin {
    */
   async completeTickedHubItems(file: TFile): Promise<void> {
     if (!this.hubNoteKind(file)) return;
-    const ticked = (await this.app.vault.read(file)).split("\n").map(tickedItem).filter((t): t is { text: string; path: string } => t !== undefined);
-    let completed = 0;
-    for (const { text, path } of ticked) {
+    let heading = "";
+    const ticked: Array<{ text: string; path: string; drop: boolean }> = [];
+    for (const line of (await this.app.vault.read(file)).split("\n")) {
+      if (/^#{1,6}\s/.test(line)) heading = line.trim();
+      const item = tickedItem(line);
+      if (item) ticked.push({ text: item.text, path: item.path, drop: item.cancelled || heading === STALE_HEADING });
+    }
+    let done = 0;
+    let dropped = 0;
+    const today = localDate(this.now());
+    for (const { text, path, drop } of ticked) {
       const note = this.app.vault.getAbstractFileByPath(`${path}.md`);
       if (!(note instanceof TFile)) continue;
       const task = openTasks(await this.app.vault.read(note)).find((t) => itemText(parseTaskMeta(t.text)) === text);
-      if (task && (await completeTask(this.app, note, task, localDate(this.now())))) completed++;
+      if (!task) continue;
+      if (drop && (await cancelTask(this.app, note, task, today))) dropped++;
+      if (!drop && (await completeTask(this.app, note, task, today))) done++;
     }
-    if (completed === 0) return;
+    if (done + dropped === 0) return;
     await this.refreshHubNote(file);
-    new Notice(`Calendar Notes: Checked off ${completed} item${completed !== 1 ? "s" : ""} in ${completed !== 1 ? "their meeting notes" : "its meeting note"}.`);
+    const count = (n: number) => `${n} item${n !== 1 ? "s" : ""}`;
+    new Notice(`Calendar Notes: ${[done && `Checked off ${count(done)}`, dropped && `Marked ${count(dropped)} won't do`].filter(Boolean).join("; ")} in ${done + dropped !== 1 ? "their meeting notes" : "its meeting note"}.`);
   }
 
   /**
@@ -979,6 +1009,9 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
     if (typeof merged.dailyNoteLink !== "boolean") {
       merged.dailyNoteLink = DEFAULT_SETTINGS.dailyNoteLink;
+    }
+    if (typeof merged.myNames !== "string") {
+      merged.myNames = DEFAULT_SETTINGS.myNames;
     }
     if (typeof merged.hubFolder !== "string") {
       merged.hubFolder = DEFAULT_SETTINGS.hubFolder;

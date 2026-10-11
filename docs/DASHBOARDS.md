@@ -221,6 +221,14 @@ At the top of the panel is a menu, set to **By meeting** at first. Change it to 
 
 When grouped by person or due date, each item shows which meeting it came from. Click that name to open the meeting's note. The panel remembers your choice.
 
+### Mine, or waiting on others
+
+Once the plugin knows your name, a second menu shows **Mine** (items owned by you, or by no one), **Waiting on others** (items someone else owns: your follow-ups) or **Everyone**. It finds your name from **Your name** in the plugin's settings, and from your entry in calendar invites when **Your email address** is set. Until then the panel shows everyone's items.
+
+### Won't do
+
+Not every item is worth doing. Hover over an item and click **×** to drop it: it's marked cancelled in its meeting note (`- [-] … ❌ 2026-10-10`, the Tasks plugin's format), leaves every list, and isn't counted as done.
+
 ---
 
 ## 3. Meetings dashboard
@@ -270,7 +278,18 @@ The day views are grouped by day. The account, category, sentiment, outcome and 
 
 ### What it is
 
-One page summarizing every meeting note: how many items are open, overdue, due in the next 7 days and high priority; then lists of **Overdue**, **Due in the next 7 days**, **High priority**, **Open items by account**, **Open items by person**, **Decisions in the last 30 days**, and **Meetings this week** by category. Each item links to its meeting.
+One page summarizing every meeting note, your own items first:
+
+| Section | What's in it |
+|---|---|
+| **At a glance** | Counts of your open, overdue, due-soon and high-priority items, what others owe you, items gone stale, and this week's meetings |
+| **Focus** | Your 7 most pressing items, each tagged with why: *overdue* (longest overdue first), *due soon* (next 7 days), *high priority*, *at-risk account* (its latest meeting was Negative or Blocked), then *from this week* |
+| **Overdue**, **Due in the next 7 days**, **High priority** | Your items only |
+| **Waiting on others** | Items someone else owns, by person, late ones marked *overdue* — your follow-up list |
+| **Gone stale?** | Items with no due date from meetings over 30 days ago (not high priority). **Ticking one here marks it won't do**, not done |
+| **Open items by account**, **Decisions in the last 30 days**, **Meetings this week** | Everyone's, as before |
+
+Your items are those owned by you or by no one; see [Mine, or waiting on others](#mine-or-waiting-on-others) for how the plugin knows your name. Without it, every item counts as yours. Each item links to its meeting.
 
 It needs no other plugins. Accounts and categories come from the `account` and `meeting_category` properties that **Add AI reply to this meeting** saves (or that you type yourself).
 

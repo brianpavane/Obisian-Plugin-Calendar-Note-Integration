@@ -11,6 +11,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+**Tracker sections reorganized around your own items**
+**Open items by person** is replaced by **Waiting on others**, and the At a glance counts are now your items, plus what others owe you and what's gone stale.
+
 **Meeting Hub notes keep themselves up to date**
 The Meeting Tracker, Meeting Insights, weekly reviews, series notes and account overviews are now rebuilt whenever you open them — from the file list, a link or search, not only from their ribbon button or command — so they no longer show stale meetings. Their *Updated* line says so.
 
@@ -18,6 +21,15 @@ The Meeting Tracker, Meeting Insights, weekly reviews, series notes and account 
 When a reply saves an account, that account's overview note is brought up to date (or created) straight away, so the meeting shows up there without any other step.
 
 ### Added
+
+**Focus: your most pressing items at the top of the Tracker**
+The Meeting Tracker opens with a short Focus list of your 7 most pressing items, each tagged with why: overdue, due soon, high priority, for an at-risk account (latest meeting Negative or Blocked), or from this week. Overdue, Due soon and High priority now list only your items.
+
+**Mine vs. Waiting on others**
+A new **Your name** setting (plus your name from calendar invites) tells the plugin which items are yours. Items others own move to a **Waiting on others** section in the Tracker, grouped by person, and the action items panel gets a **Mine / Waiting on others / Everyone** menu.
+
+**Won't do, and Gone stale?**
+Drop an item you won't do with the **×** next to it in the action items panel: it's marked cancelled (`- [-]`, the Tasks plugin's format) and leaves every list without counting as done. The Tracker's new **Gone stale?** section lists undated items from meetings over 30 days ago; ticking one there marks it won't do.
 
 **Check items off straight from the Meeting Hub**
 Open items in the Meeting Tracker, account overviews, series notes and weekly reviews are now checkboxes. Ticking one checks it off in the meeting note it came from and removes it from the hub note, so you no longer have to open each meeting to clear its items. If you use Tasks plugin queries, exclude your Meeting Hub folder (for example in Tasks' Global query) so items aren't listed twice; the plugin's settings show a warning with the line to add until you do.

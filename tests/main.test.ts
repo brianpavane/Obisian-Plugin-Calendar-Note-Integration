@@ -1259,3 +1259,32 @@ test("the settings warn when the Tasks plugin's global query doesn't leave out t
   disk.clear();
   assert.equal(await plugin.tasksQueryWarning(), undefined, "no warning without the Tasks plugin");
 });
+
+test("ticking an item under Gone stale? marks it won't do; [-] anywhere does too", async () => {
+  const app = createMemoryApp([
+    { path: "Meeting Notes/Kickoff.md", content: "---\ntitle: \"Kickoff\"\nstart: 2026-01-05T10:00\ncalendar_event_id: \"k\"\n---\n\n## Next Steps\n\n- [ ] Old idea\n- [ ] Other old idea\n- [ ] Done one\n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ hubFolder: "Meeting Hub" });
+  await plugin.openTracker();
+  const tracker = app.files.get("Meeting Hub/Meeting Tracker.md") as TFile;
+  const [stale, byAccount] = (tracker.content ?? "").split("## Open items by account");
+  tracker.content = stale.replace("- [ ] Old idea", "- [x] Old idea") + "## Open items by account" +
+    byAccount.replace("- [ ] Done one", "- [x] Done one").replace("- [ ] Other old idea", "- [-] Other old idea");
+  await plugin.completeTickedHubItems(tracker as never);
+
+  const meeting = (app.files.get("Meeting Notes/Kickoff.md") as TFile).content ?? "";
+  assert.match(meeting, /- \[-\] Old idea ❌ 2026-04-03/);
+  assert.match(meeting, /- \[-\] Other old idea ❌ 2026-04-03/);
+  assert.match(meeting, /- \[x\] Done one ✅ 2026-04-03/);
+  assert.match(getNotices().at(-1)?.message ?? "", /Checked off 1 item; Marked 2 items won't do in their meeting notes/);
+});
+
+test("myNames combines the Your name setting with the user's own name in calendar invites", () => {
+  const app = createMemoryApp([
+    { path: "Meeting Notes/Sync.md", content: "---\ncalendar_event_id: \"s\"\nattendees:\n  - \"Brian Pavane <me@example.com>\"\n  - \"Ann Lee <ann@example.com>\"\n---\n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ selfEmail: "me@example.com", myNames: "Brian, brian pavane" });
+  assert.deepEqual(plugin.myNames(), ["Brian", "Brian Pavane"]);
+});

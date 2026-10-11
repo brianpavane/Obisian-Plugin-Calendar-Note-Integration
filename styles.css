@@ -123,6 +123,25 @@
   font-weight: 600;
 }
 
+.cal-notes-action-items .cal-notes-header {
+  flex-wrap: wrap;
+}
+
+.cal-notes-action-items .cal-notes-item {
+  flex: 1;
+}
+
+.cal-notes-wont-do {
+  color: var(--text-faint);
+  opacity: 0;
+  padding: 0 0.2em;
+}
+
+.cal-notes-action-items .task-list-item:hover .cal-notes-wont-do,
+.cal-notes-wont-do:focus-visible {
+  opacity: 1;
+}
+
 /* ----------------------------------------------------------
    Today's meetings view
    ---------------------------------------------------------- */

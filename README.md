@@ -117,6 +117,7 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 | Setting | Description |
 |---------|-------------|
 | Your email address | Identifies your own attendee entry when the calendar doesn't. Used to omit you from the attendee table and skip events you have declined. |
+| Your name | How you're written as an owner in action items (comma-separate several, e.g. `Brian Pavane, Brian`). Your items, and items with no owner, are listed as yours in the Tracker's Focus and the action items panel; the rest go under **Waiting on others**. Your name from calendar invites is used too |
 
 ### Note Settings
 

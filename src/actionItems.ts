@@ -7,10 +7,11 @@
  * Tasks may name an owner (`@Bob`, `@[[Bob Jones]]`, or `(owner: IT team)`),
  * a due date and a priority in the Tasks plugin's formats (`📅 2026-10-10` or
  * `[due:: 2026-10-10]`; ⏫ high, 🔼 medium, 🔽 low). Ticking a task adds the
- * Tasks plugin's done date (`✅ 2026-10-07`).
+ * Tasks plugin's done date (`✅ 2026-10-07`); "Won't do" marks it cancelled
+ * (`- [-] … ❌ 2026-10-07`), so it leaves every list without counting as done.
  */
 
-import { App, debounce, ItemView, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { App, debounce, ItemView, setIcon, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { findNotesByEventId, openTasks, OpenTask } from "./noteCreator";
 
 export const ACTION_ITEMS_VIEW = "calendar-notes-action-items";
@@ -27,7 +28,10 @@ export type Priority = "highest" | "high" | "medium" | "low" | "lowest";
 export interface TaskMeta {
   /** Task text without the due date, priority and created/done date markers. */
   text: string;
+  /** The first owner named. */
   owner?: string;
+  /** Every owner named (`@Bob @[[Ann Lee]]`, or a role). */
+  owners: string[];
   due?: string;
   priority?: Priority;
   /** The Tasks plugin's done date (`✅ 2026-10-08`), if the task has one. */
@@ -37,7 +41,7 @@ export interface TaskMeta {
 }
 
 const DUE_RE = /\s*(?:📅\s*(\d{4}-\d{2}-\d{2})|\[due::\s*(\d{4}-\d{2}-\d{2})\s*\])/u;
-const OWNER_RE = /(?:^|\s)@(?:\[\[([^\]|]+)(?:\|[^\]]*)?\]\]|([\p{L}\p{N}_.-]+))/u;
+const OWNER_RE = /(?:^|\s)@(?:\[\[([^\]|]+)(?:\|[^\]]*)?\]\]|([\p{L}\p{N}_.-]+))/gu;
 const ROLE_OWNER_RE = /\(owner:\s*([^)]+)\)/i;
 const PRIORITY_MARKS: Array<[RegExp, Priority]> = [
   [/🔺/u, "highest"],
@@ -46,18 +50,20 @@ const PRIORITY_MARKS: Array<[RegExp, Priority]> = [
   [/🔽|\(priority:\s*low\)/iu, "low"],
   [/⏬/u, "lowest"],
 ];
-const OTHER_MARKS_RE = /\s*(?:[🔺⏫🔼🔽⏬]|\(priority:\s*\w+\)|(?:➕|✅|⏳|🛫)\s*\d{4}-\d{2}-\d{2})/giu;
+const OTHER_MARKS_RE = /\s*(?:[🔺⏫🔼🔽⏬]|\(priority:\s*\w+\)|(?:➕|✅|❌|⏳|🛫)\s*\d{4}-\d{2}-\d{2})/giu;
 
 /** Owner, due date and priority written in a task's text. */
 export function parseTaskMeta(text: string): TaskMeta {
   const due = text.match(DUE_RE);
-  const person = text.match(OWNER_RE);
-  const role = text.match(ROLE_OWNER_RE);
+  const people = [...text.matchAll(OWNER_RE)].map((m) => (m[1] ?? m[2]).trim());
+  const role = text.match(ROLE_OWNER_RE)?.[1].trim();
+  const owners = [...people, ...(role ? [role] : [])];
   const doneOn = text.match(/✅\s*(\d{4}-\d{2}-\d{2})/u)?.[1];
   const created = text.match(/➕\s*(\d{4}-\d{2}-\d{2})/u)?.[1];
   return {
     text: text.replace(DUE_RE, "").replace(OTHER_MARKS_RE, "").replace(/\s+/g, " ").trim(),
-    owner: person ? (person[1] ?? person[2]).trim() : role?.[1].trim(),
+    owner: owners[0],
+    owners,
     due: due ? due[1] ?? due[2] : undefined,
     priority: PRIORITY_MARKS.find(([re]) => re.test(text))?.[1],
     ...(doneOn ? { doneOn } : {}),
@@ -156,13 +162,22 @@ export async function collectOpenItems(app: App): Promise<MeetingTasks[]> {
  * since it was listed. Returns false if it is no longer open.
  */
 export async function completeTask(app: App, file: TFile, task: OpenTask, done?: string): Promise<boolean> {
+  return closeTask(app, file, task, "x", done ? `✅ ${done}` : "");
+}
+
+/** Mark an open task "won't do": the Tasks plugin's cancelled status (`- [-]`) and date (`❌ on`). */
+export async function cancelTask(app: App, file: TFile, task: OpenTask, on?: string): Promise<boolean> {
+  return closeTask(app, file, task, "-", on ? `❌ ${on}` : "");
+}
+
+async function closeTask(app: App, file: TFile, task: OpenTask, status: "x" | "-", stamp: string): Promise<boolean> {
   let completed = false;
   await app.vault.process(file, (content) => {
     const lines = content.split("\n");
     const isTask = (i: number) => openTasks(lines[i] ?? "").some((t) => t.text === task.text);
     const index = isTask(task.line) ? task.line : lines.findIndex((_, i) => isTask(i));
     if (index === -1) return content;
-    lines[index] = lines[index].replace("[ ]", "[x]").replace(/\s*$/, done ? ` ✅ ${done}` : "");
+    lines[index] = lines[index].replace("[ ]", `[${status}]`).replace(/\s*$/, stamp ? ` ${stamp}` : "");
     completed = true;
     return lines.join("\n");
   });
@@ -175,11 +190,23 @@ export function localDate(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+export type OwnerFilter = "mine" | "others" | "everyone";
+
+/** Keep only the tasks `filter` asks for; meetings left with none are dropped. */
+export function filterByOwner(meetings: MeetingTasks[], filter: OwnerFilter, myNames: string[]): MeetingTasks[] {
+  if (filter === "everyone" || myNames.length === 0) return meetings;
+  return meetings
+    .map((m) => ({ ...m, tasks: m.tasks.filter((t) => isMine(parseTaskMeta(t.text), myNames) === (filter === "mine")) }))
+    .filter((m) => m.tasks.length > 0);
+}
+
 export class ActionItemsView extends ItemView {
   private readonly refresh = debounce(() => this.render(), 500, true);
   private groupBy: GroupBy = "meeting";
+  private owner: OwnerFilter = "mine";
 
-  constructor(leaf: WorkspaceLeaf) {
+  /** `myNames`: the names the user is written as in action items; none means every item is shown. */
+  constructor(leaf: WorkspaceLeaf, private readonly myNames: () => string[] = () => []) {
     super(leaf);
   }
 
@@ -196,15 +223,14 @@ export class ActionItemsView extends ItemView {
   }
 
   getState(): Record<string, unknown> {
-    return { ...super.getState(), groupBy: this.groupBy };
+    return { ...super.getState(), groupBy: this.groupBy, owner: this.owner };
   }
 
   async setState(state: unknown, result: ViewStateResult): Promise<void> {
-    const groupBy = (state as { groupBy?: unknown } | null)?.groupBy;
-    if (groupBy === "meeting" || groupBy === "person" || groupBy === "due") {
-      this.groupBy = groupBy;
-      await this.render();
-    }
+    const { groupBy, owner } = (state ?? {}) as { groupBy?: unknown; owner?: unknown };
+    if (groupBy === "meeting" || groupBy === "person" || groupBy === "due") this.groupBy = groupBy;
+    if (owner === "mine" || owner === "others" || owner === "everyone") this.owner = owner;
+    await this.render();
     await super.setState(state, result);
   }
 
@@ -216,7 +242,8 @@ export class ActionItemsView extends ItemView {
   }
 
   async render(): Promise<void> {
-    const meetings = await collectOpenItems(this.app);
+    const myNames = this.myNames();
+    const meetings = filterByOwner(await collectOpenItems(this.app), this.owner, myNames);
     const el = this.contentEl;
     el.empty();
     el.addClass("cal-notes-action-items");
@@ -233,9 +260,27 @@ export class ActionItemsView extends ItemView {
       this.app.workspace.requestSaveLayout();
       await this.render();
     });
+    if (myNames.length > 0) {
+      const whose = header.createEl("select", { cls: "dropdown" });
+      for (const [value, label] of [["mine", "Mine"], ["others", "Waiting on others"], ["everyone", "Everyone"]] as const) {
+        whose.createEl("option", { value, text: label });
+      }
+      whose.value = this.owner;
+      whose.addEventListener("change", async () => {
+        this.owner = whose.value as OwnerFilter;
+        this.app.workspace.requestSaveLayout();
+        await this.render();
+      });
+    } else {
+      el.createDiv({
+        cls: "cal-notes-item-meta",
+        text: "Showing everyone's items. Set Your name in the plugin's settings to see only yours.",
+      });
+    }
 
     if (meetings.length === 0) {
-      el.createDiv({ cls: "cal-notes-empty", text: "No open action items in your meeting notes." });
+      const empty = this.owner === "others" && myNames.length > 0 ? "No one owes you anything right now." : "No open action items in your meeting notes.";
+      el.createDiv({ cls: "cal-notes-empty", text: empty });
       return;
     }
 
@@ -273,6 +318,13 @@ export class ActionItemsView extends ItemView {
           await completeTask(this.app, row.meeting.file, row.task, localDate(new Date()));
           await this.render();
         });
+        const drop = item.createEl("a", { cls: "cal-notes-wont-do clickable-icon", attr: { "aria-label": "Won't do" } });
+        setIcon(drop, "x");
+        drop.addEventListener("click", async () => {
+          box.disabled = true;
+          await cancelTask(this.app, row.meeting.file, row.task, localDate(new Date()));
+          await this.render();
+        });
       }
     }
   }
@@ -289,4 +341,15 @@ export function tasksQueryExcludes(globalQuery: string, folder: string): boolean
     const m = line.trim().match(/^(?:path|folder) does not include\s+(.+)$/i);
     return !!m && path.includes(m[1].trim().toLowerCase());
   });
+}
+
+/**
+ * Whether a task is the user's: it names one of `myNames` as an owner, or
+ * names no owner at all (a task in your own notes is yours). Names match
+ * whatever their capitalization.
+ */
+export function isMine(meta: TaskMeta, myNames: string[]): boolean {
+  if (meta.owners.length === 0) return true;
+  const mine = new Set(myNames.map((n) => n.trim().toLowerCase()).filter(Boolean));
+  return meta.owners.some((o) => mine.has(o.toLowerCase()));
 }

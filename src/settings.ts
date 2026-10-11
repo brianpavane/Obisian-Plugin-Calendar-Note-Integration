@@ -44,6 +44,8 @@ export interface GoogleCalendarSettings {
   calendarId: string;
   appleCalendars: string;
   selfEmail: string;
+  /** Comma-separated names the user is written as in action items. */
+  myNames: string;
   noteFolder: string;
   /** Folder for the Meeting Tracker, dashboard and weekly reviews; empty = the note folder. */
   hubFolder: string;
@@ -101,6 +103,7 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   calendarId: "primary",
   appleCalendars: "",
   selfEmail: "",
+  myNames: "",
   noteFolder: "Meeting Notes",
   hubFolder: "",
   hoursInAdvance: 12,
@@ -606,6 +609,23 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.selfEmail)
           .onChange(async (value) => {
             this.plugin.settings.selfEmail = value.trim().toLowerCase();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Your name")
+      .setDesc(
+        "How you're written as an owner in action items, e.g. Brian Pavane. Separate several with commas. " +
+          "Items owned by you, or by no one, are yours; the rest are listed as Waiting on others. " +
+          "Your name in calendar invites (found with Your email address above) is used too."
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("First Last")
+          .setValue(this.plugin.settings.myNames)
+          .onChange(async (value) => {
+            this.plugin.settings.myNames = value;
             await this.plugin.saveSettings();
           })
       );

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { collectOpenItems, completeTask, groupItems, parseTaskMeta, tasksQueryExcludes, type MeetingTasks } from "../src/actionItems";
+import { cancelTask, collectOpenItems, completeTask, filterByOwner, groupItems, isMine, parseTaskMeta, tasksQueryExcludes, type MeetingTasks } from "../src/actionItems";
 import { TFile } from "./support/obsidianStub";
 import { createMemoryApp } from "./support/testHelpers";
 
@@ -51,17 +51,17 @@ test("completeTask checks off the task, finding it by text if its line moved", a
 });
 
 test("parseTaskMeta reads @owners and due dates in both Tasks formats", () => {
-  assert.deepEqual(parseTaskMeta("Send deck @Bob 📅 2026-10-10"), { text: "Send deck @Bob", owner: "Bob", due: "2026-10-10", priority: undefined });
-  assert.deepEqual(parseTaskMeta("Draft plan @[[Alice Smith]] [due:: 2026-10-08]"), { text: "Draft plan @[[Alice Smith]]", owner: "Alice Smith", due: "2026-10-08", priority: undefined });
-  assert.deepEqual(parseTaskMeta("Email bob@example.com"), { text: "Email bob@example.com", owner: undefined, due: undefined, priority: undefined });
+  assert.deepEqual(parseTaskMeta("Send deck @Bob 📅 2026-10-10"), { text: "Send deck @Bob", owner: "Bob", owners: ["Bob"], due: "2026-10-10", priority: undefined });
+  assert.deepEqual(parseTaskMeta("Draft plan @[[Alice Smith]] [due:: 2026-10-08]"), { text: "Draft plan @[[Alice Smith]]", owner: "Alice Smith", owners: ["Alice Smith"], due: "2026-10-08", priority: undefined });
+  assert.deepEqual(parseTaskMeta("Email bob@example.com"), { text: "Email bob@example.com", owner: undefined, owners: [], due: undefined, priority: undefined });
 });
 
 test("parseTaskMeta reads Tasks priorities, role owners, and hides created and done dates", () => {
   assert.deepEqual(parseTaskMeta("Send scope @[[Bob Jones]] ⏫ ➕ 2026-10-07 📅 2026-10-09"), {
-    text: "Send scope @[[Bob Jones]]", owner: "Bob Jones", due: "2026-10-09", priority: "high", created: "2026-10-07",
+    text: "Send scope @[[Bob Jones]]", owner: "Bob Jones", owners: ["Bob Jones"], due: "2026-10-09", priority: "high", created: "2026-10-07",
   });
   assert.deepEqual(parseTaskMeta("Confirm window (owner: Customer IT team) 🔽"), {
-    text: "Confirm window (owner: Customer IT team)", owner: "Customer IT team", due: undefined, priority: "low",
+    text: "Confirm window (owner: Customer IT team)", owner: "Customer IT team", owners: ["Customer IT team"], due: undefined, priority: "low",
   });
   assert.equal(parseTaskMeta("Old style (priority: Medium)").priority, "medium");
   assert.equal(parseTaskMeta("Old style (priority: Medium)").text, "Old style");
@@ -120,4 +120,33 @@ test("tasksQueryExcludes spots a global query line that leaves out a folder", ()
   assert.equal(tasksQueryExcludes("not done\n  folder does not include Work/Meeting Hub  ", "Work/Meeting Hub"), true);
   assert.equal(tasksQueryExcludes("path does not include Archive", "Meeting Hub"), false);
   assert.equal(tasksQueryExcludes("path includes Meeting Hub", "Meeting Hub"), false);
+});
+
+test("isMine: items naming the user, or no one, are theirs; several owners count if any is the user", () => {
+  const me = ["Brian Pavane", "Brian"];
+  assert.equal(isMine(parseTaskMeta("Book room"), me), true);
+  assert.equal(isMine(parseTaskMeta("Send deck @[[brian pavane]]"), me), true);
+  assert.equal(isMine(parseTaskMeta("Review @[[Jeff Duke]] @[[Brian Pavane]]"), me), true);
+  assert.equal(isMine(parseTaskMeta("Send runbook @[[Danny Ward]]"), me), false);
+  assert.equal(isMine(parseTaskMeta("Open the firewall (owner: CVS Network Team)"), me), false);
+  assert.deepEqual(parseTaskMeta("Review @[[Jeff Duke]] @Ann (owner: IT)").owners, ["Jeff Duke", "Ann", "IT"]);
+});
+
+test("filterByOwner splits the panel into mine and waiting on others, and shows everything without names", () => {
+  const meeting: MeetingTasks = {
+    file: new TFile("Meetings/Sync.md") as never, title: "Sync", start: "2026-10-01T10:00",
+    tasks: [{ line: 0, text: "Mine @Me" }, { line: 1, text: "Theirs @Bob" }, { line: 2, text: "Unowned" }],
+  };
+  const texts = (ms: MeetingTasks[]) => ms.flatMap((m) => m.tasks.map((t) => t.text));
+  assert.deepEqual(texts(filterByOwner([meeting], "mine", ["Me"])), ["Mine @Me", "Unowned"]);
+  assert.deepEqual(texts(filterByOwner([meeting], "others", ["Me"])), ["Theirs @Bob"]);
+  assert.deepEqual(texts(filterByOwner([meeting], "mine", [])), ["Mine @Me", "Theirs @Bob", "Unowned"]);
+  assert.deepEqual(filterByOwner([{ ...meeting, tasks: [{ line: 0, text: "Mine @Me" }] }], "others", ["Me"]), [], "meetings left with nothing are dropped");
+});
+
+test("cancelTask marks an item won't do with the Tasks plugin's cancelled status and date", async () => {
+  const app = createMemoryApp([{ path: "Meetings/Sync.md", content: "## Next Steps\n\n- [ ] Old idea\n- [ ] Keep\n" }]);
+  const file = app.files.get("Meetings/Sync.md") as TFile;
+  assert.equal(await cancelTask(app as never, file as never, { line: 2, text: "Old idea" }, "2026-10-10"), true);
+  assert.equal(file.content, "## Next Steps\n\n- [-] Old idea ❌ 2026-10-10\n- [ ] Keep\n");
 });
