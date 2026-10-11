@@ -1288,3 +1288,22 @@ test("myNames combines the Your name setting with the user's own name in calenda
   plugin.settings = appleSettings({ selfEmail: "me@example.com", myNames: "Brian, brian pavane" });
   assert.deepEqual(plugin.myNames(), ["Brian", "Brian Pavane"]);
 });
+
+test("notes that share a calendar id, such as older recurring-meeting notes, all count in the hub and the action items panel", async () => {
+  const app = createMemoryApp([
+    { path: "Meeting Notes/Sync 1.md", content: "---\ntitle: \"Sync\"\nstart: 2026-03-23T10:00\naccount: \"Acme\"\ncalendar_event_id: \"weekly\"\n---\n\n## Next Steps\n\n- [ ] First week item\n" },
+    { path: "Meeting Notes/Sync 2.md", content: "---\ntitle: \"Sync\"\nstart: 2026-03-30T10:00\naccount: \"Acme\"\ncalendar_event_id: \"weekly\"\n---\n\n## Next Steps\n\n- [ ] Second week item\n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ hubFolder: "Meeting Hub" });
+
+  assert.equal((await plugin.trackerMeetings()).length, 2);
+  await plugin.openTracker();
+  const tracker = (app.files.get("Meeting Hub/Meeting Tracker.md") as TFile).content ?? "";
+  assert.match(tracker, /First week item/);
+  assert.match(tracker, /Second week item/);
+  await plugin.openAccountOverview("Acme");
+  assert.match((app.files.get("Meeting Hub/Accounts/Acme.md") as TFile).content ?? "", /Sync 1[\s\S]*Sync 2|Sync 2[\s\S]*Sync 1/);
+  const { collectOpenItems } = await import("../src/actionItems");
+  assert.equal((await collectOpenItems(app as never)).length, 2);
+});

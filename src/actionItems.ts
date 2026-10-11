@@ -12,7 +12,7 @@
  */
 
 import { App, debounce, ItemView, setIcon, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
-import { findNotesByEventId, openTasks, OpenTask } from "./noteCreator";
+import { findMeetingNotes, openTasks, OpenTask } from "./noteCreator";
 
 export const ACTION_ITEMS_VIEW = "calendar-notes-action-items";
 
@@ -142,7 +142,7 @@ export function groupItems(meetings: MeetingTasks[], groupBy: GroupBy, today: st
 /** Meeting notes anywhere in the vault that have open tasks, newest first. */
 export async function collectOpenItems(app: App): Promise<MeetingTasks[]> {
   const meetings: MeetingTasks[] = [];
-  for (const file of findNotesByEventId(app).values()) {
+  for (const { file } of findMeetingNotes(app)) {
     const tasks = openTasks(await app.vault.cachedRead(file));
     if (tasks.length === 0) continue;
     const fm = app.metadataCache.getFileCache(file)?.frontmatter ?? {};

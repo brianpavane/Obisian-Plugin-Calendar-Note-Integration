@@ -922,6 +922,20 @@ export async function createNoteFile(
 }
 
 /**
+ * Every meeting note in the vault (a note with a `calendar_event_id`), with
+ * its id as {@link findNotesByEventId} indexes it. Unlike that index, notes
+ * sharing an id are all included, so lists and summaries never drop one.
+ */
+export function findMeetingNotes(app: App): Array<{ id: string; file: TFile }> {
+  const notes: Array<{ id: string; file: TFile }> = [];
+  for (const file of app.vault.getMarkdownFiles()) {
+    const stored = app.metadataCache.getFileCache(file)?.frontmatter?.calendar_event_id;
+    if (typeof stored === "string" && stored) notes.push({ id: canonicalEventId(stored), file });
+  }
+  return notes;
+}
+
+/**
  * Index every note in the vault by its `calendar_event_id` property, so notes
  * filed away from the note folder are still found. Ids saved with a moved
  * occurrence's "/RID=…" are indexed without it; if two notes end up with the

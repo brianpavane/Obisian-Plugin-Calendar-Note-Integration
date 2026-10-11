@@ -9,6 +9,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+**Meeting notes no longer hidden from the hub when they share a calendar id**
+If two meeting notes had the same `calendar_event_id`, as older notes for different weeks of a recurring meeting can, the Meeting Tracker, Insights, account overviews, series notes, weekly reviews and the action items panel counted only one of them, so the other's open items silently disappeared. Every meeting note is now included.
+
 ### Changed
 
 **Tracker sections reorganized around your own items**

@@ -62,6 +62,7 @@ import {
   builtInTemplate,
   createNoteFile,
   findDuplicateNotes,
+  findMeetingNotes,
   findNotesByEventId,
   findSeriesNotes,
   isSkippedStatus,
@@ -393,7 +394,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     const names = this.settings.myNames.split(",").map((n) => n.trim()).filter(Boolean);
     const selfEmail = this.settings.selfEmail.trim().toLowerCase();
     if (selfEmail) {
-      for (const file of findNotesByEventId(this.app).values()) {
+      for (const { file } of findMeetingNotes(this.app)) {
         const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
         for (const a of frontmatterList(fm?.attendees).map(personName)) {
           if (a.email?.toLowerCase() === selfEmail && a.name.toLowerCase() !== selfEmail) names.push(a.name);
@@ -407,7 +408,7 @@ export default class GoogleCalendarPlugin extends Plugin {
   async trackerMeetings(): Promise<TrackerMeeting[]> {
     const meetings: TrackerMeeting[] = [];
     const selfEmail = this.settings.selfEmail.trim().toLowerCase();
-    for (const [id, file] of findNotesByEventId(this.app)) {
+    for (const { id, file } of findMeetingNotes(this.app)) {
       const fm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
       const content = await this.app.vault.cachedRead(file);
       const start = frontmatterDate(fm.start) ?? frontmatterDate(fm.date);
@@ -600,11 +601,10 @@ export default class GoogleCalendarPlugin extends Plugin {
       file = await this.app.vault.create(path, newSeriesNote(title, id, body));
     }
 
-    const notesById = findNotesByEventId(this.app);
     const seriesPath = file.path.replace(/\.md$/, "");
     for (const m of occurrences) {
-      const note = m.id ? notesById.get(m.id) : undefined;
-      if (!note) continue;
+      const note = this.app.vault.getAbstractFileByPath(`${m.path}.md`);
+      if (!(note instanceof TFile)) continue;
       const content = await this.app.vault.read(note);
       if (setSeriesLink(content, seriesPath) !== content) {
         await this.app.vault.process(note, (c) => setSeriesLink(c, seriesPath));
@@ -1603,7 +1603,7 @@ export default class GoogleCalendarPlugin extends Plugin {
   /** Recording folders already imported into a note. */
   private usedRecordings(): Set<string> {
     const used = new Set<string>();
-    for (const file of findNotesByEventId(this.app).values()) {
+    for (const { file } of findMeetingNotes(this.app)) {
       const name = this.app.metadataCache.getFileCache(file)?.frontmatter?.krisp_recording;
       if (typeof name === "string") used.add(name);
     }
@@ -1687,7 +1687,7 @@ export default class GoogleCalendarPlugin extends Plugin {
   async transcriptProposals(): Promise<TranscriptProposal<TFile>[]> {
     const now = this.now();
     const since = new Date(now.getTime() - KRISP_LOOKBACK_MS);
-    const ended = [...findNotesByEventId(this.app).values()]
+    const ended = findMeetingNotes(this.app).map(({ file }) => file)
       .filter((file) => !this.dismissedTranscripts.has(file.path))
       .map((file) => ({ file, meeting: this.noteMeeting(file) }))
       .filter((n): n is { file: TFile; meeting: MeetingTime } =>
