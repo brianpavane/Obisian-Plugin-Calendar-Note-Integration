@@ -81,6 +81,14 @@ export interface GoogleCalendarSettings {
   lastPreparedAt: string;
   /** Folder outside the vault (e.g. a Google Drive folder) to copy the Daily Briefing to; empty = don't copy. */
   briefingFolder: string;
+  /** Minutes before a meeting to notify; 0 = off. */
+  notifyBeforeMinutes: number;
+  /** Notify after a meeting ends to import the transcript and add the AI reply. */
+  notifyAfterMeeting: boolean;
+  /** "HH:MM" for the morning summary notification; empty = off. */
+  morningReminderTime: string;
+  /** The day (YYYY-MM-DD) of the last morning summary. */
+  lastMorningReminder: string;
   /** Sections of the built-in note format (ignored when a template file is set). */
   noteSections: NoteSections;
   /** Title fragments (one per line) of meetings that never get a note automatically. */
@@ -136,6 +144,10 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   prepTime: "00:30",
   lastPreparedAt: "",
   briefingFolder: "",
+  notifyBeforeMinutes: 5,
+  notifyAfterMeeting: true,
+  morningReminderTime: "08:30",
+  lastMorningReminder: "",
   noteSections: { ...ALL_SECTIONS },
   skipTitles: "",
   skipSolo: false,
@@ -739,6 +751,44 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           }
         })
       );
+
+    new Setting(containerEl)
+      .setName("Notify before a meeting")
+      .setDesc("Minutes before a meeting starts to show a notification that opens its note and brief. 0 = off.")
+      .addText((text) => {
+        text.inputEl.type = "number";
+        text.inputEl.min = "0";
+        text.inputEl.max = "60";
+        text.setValue(String(this.plugin.settings.notifyBeforeMinutes)).onChange(async (value) => {
+          const minutes = Number(value);
+          if (!Number.isFinite(minutes)) return;
+          this.plugin.settings.notifyBeforeMinutes = Math.max(0, Math.min(60, Math.round(minutes)));
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Notify after a meeting")
+      .setDesc("10 minutes after a meeting ends, if its note has no AI reply yet: a reminder to import the Krisp transcript and add the reply.")
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.notifyAfterMeeting).onChange(async (value) => {
+          this.plugin.settings.notifyAfterMeeting = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Morning summary")
+      .setDesc("A notification with the day's meetings and what's due or overdue, opening My Day. Clear the time to turn it off.")
+      .addText((text) => {
+        text.inputEl.type = "time";
+        text.setValue(this.plugin.settings.morningReminderTime ? this.plugin.settings.morningReminderTime.padStart(5, "0") : "")
+          .onChange(async (value) => {
+            if (value && !/^\d{1,2}:\d{2}$/.test(value)) return;
+            this.plugin.settings.morningReminderTime = value;
+            await this.plugin.saveSettings();
+          });
+      });
 
     new Setting(containerEl)
       .setName("Copy the Daily Briefing to")

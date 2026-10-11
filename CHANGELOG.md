@@ -11,6 +11,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+**Desktop notifications**
+Mac notifications before each meeting (with whether its brief is ready), 10 minutes after a meeting that still has no AI reply (import the Krisp transcript and add the reply), and a morning summary of the day's meetings and what's due or overdue that opens My Day. Each can be set or turned off in the settings.
+
 **My Day, prepared each night, and a Daily Briefing for Gemini**
 A new **My Day** page (sun icon) shows the day's meetings with their brief status and Join links, your focus, what the people you're meeting owe you, others' overdue items, loose ends (meetings without their AI reply, Krisp recordings to import) and what you've done — tomorrow's from 6 PM. Each night at 12:30 AM (or with **Prepare my day**) the plugin creates the day's meeting notes with their briefs, rebuilds the Tracker and My Day, and can copy My Day as plain text to a Google Drive folder as `Daily Briefing.md` for Gemini Enterprise to read. A missed night is caught up as soon as Obsidian is open.
 

@@ -1514,3 +1514,33 @@ test("the nightly prep runs once after its time, catches up after a missed night
   plugin.now = () => new Date(2026, 3, 5, 18, 0);
   assert.equal(plugin.planDate(), "2026-04-06");
 });
+
+test("notifications: before a meeting, after one that has no AI reply yet, and the morning summary, each once", async () => {
+  const app = createMemoryApp([
+    { path: "Meeting Notes/Pilot.md", content: "---\ntitle: \"Pilot\"\nstart: 2026-04-03T10:00\ncalendar_event_id: \"pilot\"\n---\n\n## Next Steps\n\n- [ ] Due today 📅 2026-04-03\n- [ ] Late 📅 2026-04-01\n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ morningReminderTime: "08:30" });
+  const shown: string[] = [];
+  plugin.notify = (title, body) => { shown.push(`${title} | ${body}`); };
+  (plugin as unknown as { liveEvents: unknown[] }).liveEvents = [
+    buildEvent({ id: "pilot", summary: "Pilot", start: { dateTime: "2026-04-03T10:00:00-04:00" }, end: { dateTime: "2026-04-03T10:30:00-04:00" } }),
+  ];
+  const at = (h: number, m: number) => { plugin.now = () => new Date("2026-04-03T00:00:00-04:00".replace("00:00", `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`)); };
+
+  at(8, 20);
+  await plugin.checkNotifications();
+  assert.deepEqual(shown, []);
+  at(8, 31);
+  await plugin.checkNotifications();
+  await plugin.checkNotifications();
+  assert.deepEqual(shown, ["Your day | 1 meeting · 1 due today · 1 overdue. Click to open My Day."]);
+  at(9, 56);
+  await plugin.checkNotifications();
+  await plugin.checkNotifications();
+  assert.match(shown[1], /^Pilot at 10:00 AM \| Click to open the note\.$/);
+  at(10, 41);
+  await plugin.checkNotifications();
+  assert.match(shown[2], /^Pilot has ended \| Import the Krisp transcript and add the AI reply/);
+  assert.equal(shown.length, 3);
+});

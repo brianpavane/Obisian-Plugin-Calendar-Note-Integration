@@ -42,7 +42,7 @@ import {
 } from "./assistant";
 import { appendToSection, continuityItems, sectionText } from "./sections";
 import { isSkipped } from "./skipRules";
-import { ActionItemsView, ACTION_ITEMS_VIEW, cancelTask, completeTask, localDate, parseTaskMeta, tasksQueryExcludes } from "./actionItems";
+import { ActionItemsView, ACTION_ITEMS_VIEW, cancelTask, completeTask, isMine, localDate, parseTaskMeta, tasksQueryExcludes } from "./actionItems";
 import { addDays, buildTracker, itemText, STALE_HEADING, tickedItem, TRACKER_FILENAME, type TrackerMeeting } from "./tracker";
 import { isoWeek, newReview, type Week, refreshReview, REVIEW_FOLDER, reviewBody, reviewFilename } from "./weeklyReview";
 import { addMissingViews, DASHBOARD_CONTENT, DASHBOARD_FILENAME, DASHBOARD_VIEW_NAMES } from "./dashboard";
@@ -131,6 +131,8 @@ const RIBBON_ICONS: Array<[string, string, (plugin: GoogleCalendarPlugin) => unk
   ["calendar-check", "This week's review", (p) => p.openWeeklyReview(0)],
   ["trending-up", "Meeting insights: accounts, time spent and trends", (p) => p.openInsights()],
 ];
+/** The after-meeting notification comes this long after the meeting ends, once Krisp has had time to finish. */
+const AFTER_MEETING_MS = 10 * 60 * 1_000;
 /** The Meeting Brief refreshes itself when its note is opened this long before the meeting starts. */
 const BRIEF_REFRESH_BEFORE_MS = 60 * 60 * 1_000;
 /** The part of a Meeting Hub note between its plugin markers, or all of it if it has none. */
@@ -195,6 +197,8 @@ export default class GoogleCalendarPlugin extends Plugin {
   metadataReady = false;
   /** Prepare my day is running. */
   private preparing = false;
+  /** Notifications already shown this session, as "before:<event id>" or "after:<event id>". */
+  private readonly notified = new Set<string>();
   /** A failed Daily Briefing copy is reported once per session. */
   private briefingErrorShown = false;
 
@@ -387,7 +391,10 @@ export default class GoogleCalendarPlugin extends Plugin {
 
     this.startupTimeoutId = window.setTimeout(() => this.runStartupSweep(), 5_000);
     // Each minute: prepare the day once its time has passed, catching up after a missed night.
-    this.registerInterval(window.setInterval(() => void this.prepareIfDue(), 60_000));
+    this.registerInterval(window.setInterval(() => {
+      void this.prepareIfDue();
+      void this.checkNotifications();
+    }, 60_000));
     this.restartPolling();
   }
 
@@ -1039,6 +1046,71 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
   }
 
+  /** A desktop notification; clicking it brings Obsidian forward and runs `onClick`. */
+  notify(title: string, body: string, onClick: () => unknown): void {
+    const notification = new Notification(title, { body });
+    notification.onclick = () => {
+      window.focus();
+      void onClick();
+    };
+  }
+
+  /**
+   * Desktop notifications, checked each minute: a meeting about to start (its
+   * brief is ready), a meeting that ended without its AI reply, and the
+   * morning summary. Each is shown once.
+   */
+  async checkNotifications(): Promise<void> {
+    const now = this.now();
+    const clock = (d: Date) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    const notesById = findNotesByEventId(this.app);
+    const openNote = (file: TFile) => () => this.app.workspace.getLeaf(false).openFile(file);
+    for (const event of this.liveEvents) {
+      if (!event.start.dateTime) continue;
+      const start = new Date(event.start.dateTime);
+      const end = new Date(event.end.dateTime ?? event.start.dateTime);
+      const title = event.summary?.trim() || "Meeting";
+      const note = notesById.get(event.id);
+      const lead = this.settings.notifyBeforeMinutes * 60_000;
+      if (lead > 0 && start > now && start.getTime() - now.getTime() <= lead && !this.notified.has(`before:${event.id}`)) {
+        this.notified.add(`before:${event.id}`);
+        const briefed = note ? hasBrief(await this.app.vault.cachedRead(note)) : false;
+        this.notify(
+          `${title} at ${clock(start)}`,
+          note ? (briefed ? "Its brief is ready. Click to open the note." : "Click to open the note.") : "Click to create its note.",
+          note ? openNote(note) : () => this.openNoteForEvent(event)
+        );
+      }
+      const followUp = end.getTime() + AFTER_MEETING_MS;
+      if (this.settings.notifyAfterMeeting && note && now.getTime() >= followUp && now.getTime() - followUp < 30 * 60_000
+        && !this.notified.has(`after:${event.id}`) && !this.app.metadataCache.getFileCache(note)?.frontmatter?.ai_summarized) {
+        this.notified.add(`after:${event.id}`);
+        this.notify(`${title} has ended`, "Import the Krisp transcript and add the AI reply. Click to open the note.", openNote(note));
+      }
+    }
+
+    const at = this.settings.morningReminderTime;
+    const today = localDate(now);
+    if (!at || this.settings.lastMorningReminder === today) return;
+    const [hours, minutes] = at.split(":").map(Number);
+    const due = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes);
+    if (now < due || now.getTime() - due.getTime() > 3 * 60 * 60_000) return;
+    this.settings.lastMorningReminder = today;
+    await this.saveSettings();
+    const names = this.myNames();
+    const mine = [...(await this.todoMeetings()), ...(await this.trackerMeetings())]
+      .flatMap((m) => m.openItems)
+      .filter((meta) => !meta.parked && (names.length === 0 || isMine(meta, names)));
+    const meetings = this.liveEvents.filter((e) => e.start.dateTime && localDate(new Date(e.start.dateTime)) === today).length;
+    const dueToday = mine.filter((m) => m.due === today).length;
+    const overdue = mine.filter((m) => m.due && m.due < today).length;
+    this.notify(
+      "Your day",
+      `${meetings} meeting${meetings !== 1 ? "s" : ""} · ${dueToday} due today · ${overdue} overdue. Click to open My Day.`,
+      () => this.openMyDay()
+    );
+  }
+
   /** Prepare the day once the prep time has passed and it hasn't run since; catches up after a missed night. */
   async prepareIfDue(): Promise<void> {
     if (!this.settings.prepEnabled || !this.metadataReady || !this.isConfigured()) return;
@@ -1380,6 +1452,15 @@ export default class GoogleCalendarPlugin extends Plugin {
     if (typeof merged.prepTime !== "string" || !/^\d{1,2}:\d{2}$/.test(merged.prepTime)) merged.prepTime = DEFAULT_SETTINGS.prepTime;
     if (typeof merged.lastPreparedAt !== "string") merged.lastPreparedAt = DEFAULT_SETTINGS.lastPreparedAt;
     if (typeof merged.briefingFolder !== "string") merged.briefingFolder = DEFAULT_SETTINGS.briefingFolder;
+    if (typeof merged.notifyBeforeMinutes !== "number" || !Number.isFinite(merged.notifyBeforeMinutes)) {
+      merged.notifyBeforeMinutes = DEFAULT_SETTINGS.notifyBeforeMinutes;
+    }
+    merged.notifyBeforeMinutes = Math.max(0, Math.min(60, Math.round(merged.notifyBeforeMinutes)));
+    if (typeof merged.notifyAfterMeeting !== "boolean") merged.notifyAfterMeeting = DEFAULT_SETTINGS.notifyAfterMeeting;
+    if (typeof merged.morningReminderTime !== "string" || (merged.morningReminderTime && !/^\d{1,2}:\d{2}$/.test(merged.morningReminderTime))) {
+      merged.morningReminderTime = DEFAULT_SETTINGS.morningReminderTime;
+    }
+    if (typeof merged.lastMorningReminder !== "string") merged.lastMorningReminder = DEFAULT_SETTINGS.lastMorningReminder;
     if (typeof merged.openTodayOnStartup !== "boolean") {
       merged.openTodayOnStartup = DEFAULT_SETTINGS.openTodayOnStartup;
     }

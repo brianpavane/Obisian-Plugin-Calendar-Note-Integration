@@ -57,6 +57,16 @@ From 6 PM, My Day shows tomorrow, so you can see what's coming before you finish
 
 **The Daily Briefing for Gemini.** Set **Copy the Daily Briefing to** to a folder that Google Drive for desktop syncs (for example `~/Library/CloudStorage/GoogleDrive-you@company.com/My Drive/Obsidian Briefing`). Each time My Day is rebuilt, the plugin writes it there as `Daily Briefing.md` in plain text — no properties, links reduced to names — for Gemini Enterprise's 2 AM and 7 AM runs to read. The plugin only writes a file on your Mac; Google Drive does the syncing.
 
+## Notifications
+
+While Obsidian is open, the plugin shows Mac notifications (set them under the plugin's settings):
+
+- **Before a meeting** (5 minutes before, by default): the meeting and time, and whether its brief is ready. Click to open its note.
+- **After a meeting**, 10 minutes after it ends if its note has no AI reply yet: a reminder to import the Krisp transcript and add the reply. Click to open the note.
+- **Morning summary** (8:30 AM by default): the day's meetings and how many of your items are due today or overdue. Click to open My Day.
+
+Each is shown once. If Obsidian's notifications are turned off in **System Settings → Notifications**, turn them on there.
+
 ## The other way: the command palette
 
 You can also open every dashboard with a *command*. Obsidian runs commands from the **command palette**:
