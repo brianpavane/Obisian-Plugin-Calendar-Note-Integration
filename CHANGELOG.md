@@ -11,6 +11,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+**Wrap up my day**
+A new end-of-day window lists your items due today or overdue, and items added today without a date, each with Done, Tomorrow, Next week, Park and Won't do, then **Prepare tomorrow**. Open it from My Day, the command, or a 5:30 PM reminder.
+
 **Desktop notifications**
 Mac notifications before each meeting (with whether its brief is ready), 10 minutes after a meeting that still has no AI reply (import the Krisp transcript and add the reply), and a morning summary of the day's meetings and what's due or overdue that opens My Day. Each can be set or turned off in the settings.
 

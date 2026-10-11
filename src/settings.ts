@@ -89,6 +89,10 @@ export interface GoogleCalendarSettings {
   morningReminderTime: string;
   /** The day (YYYY-MM-DD) of the last morning summary. */
   lastMorningReminder: string;
+  /** "HH:MM" for the wrap-up reminder; empty = off. */
+  wrapUpReminderTime: string;
+  /** The day (YYYY-MM-DD) of the last wrap-up reminder. */
+  lastWrapUpReminder: string;
   /** Sections of the built-in note format (ignored when a template file is set). */
   noteSections: NoteSections;
   /** Title fragments (one per line) of meetings that never get a note automatically. */
@@ -148,6 +152,8 @@ export const DEFAULT_SETTINGS: GoogleCalendarSettings = {
   notifyAfterMeeting: true,
   morningReminderTime: "08:30",
   lastMorningReminder: "",
+  wrapUpReminderTime: "17:30",
+  lastWrapUpReminder: "",
   noteSections: { ...ALL_SECTIONS },
   skipTitles: "",
   skipSolo: false,
@@ -786,6 +792,19 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             if (value && !/^\d{1,2}:\d{2}$/.test(value)) return;
             this.plugin.settings.morningReminderTime = value;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Wrap-up reminder")
+      .setDesc("A notification with how many of your items slipped today, opening Wrap up my day. Clear the time to turn it off.")
+      .addText((text) => {
+        text.inputEl.type = "time";
+        text.setValue(this.plugin.settings.wrapUpReminderTime ? this.plugin.settings.wrapUpReminderTime.padStart(5, "0") : "")
+          .onChange(async (value) => {
+            if (value && !/^\d{1,2}:\d{2}$/.test(value)) return;
+            this.plugin.settings.wrapUpReminderTime = value;
             await this.plugin.saveSettings();
           });
       });

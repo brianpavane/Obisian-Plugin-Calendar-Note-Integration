@@ -115,6 +115,8 @@ export function dayNote(input: DayInput): string {
     "",
     `*Updated ${input.updated}. Prepared each night at 12:30 AM, and refreshed when you open it or click ↻. Edits here are overwritten.*`,
     "",
+    "[Wrap up my day](obsidian://meeting-notes?do=wrap-up) · [Add a to-do](obsidian://meeting-notes?do=add-todo) · [Prepare tomorrow](obsidian://meeting-notes?do=prepare)",
+    "",
     "## At a glance",
     "",
     `| Meetings | First meeting | Focus | Due today | Overdue (mine) | Others overdue | Loose ends |`,
@@ -160,11 +162,13 @@ const listLine = (item: Item, reason: string) => list([item], () => 0, false, ()
 
 /**
  * The Daily Briefing: My Day as plain Markdown for an assistant —
- * no properties, links reduced to their names, checkboxes to bullets.
+ * no properties or Obsidian action links, links reduced to their names,
+ * checkboxes to bullets.
  */
 export function briefingText(dayContent: string): string {
   return dayContent
     .replace(/^---\n[\s\S]*?\n---\n+/, "")
+    .replace(/^.*obsidian:\/\/.*\n\n?/gm, "")
     .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2")
     .replace(/\[\[([^\]]+)\]\]/g, (_, target: string) => target.split("/").pop() ?? target)
     .replace(/^(\s*)- \[[ xX-]\] /gm, "$1- ")

@@ -42,7 +42,7 @@ import {
 } from "./assistant";
 import { appendToSection, continuityItems, sectionText } from "./sections";
 import { isSkipped } from "./skipRules";
-import { ActionItemsView, ACTION_ITEMS_VIEW, cancelTask, completeTask, isMine, localDate, parseTaskMeta, tasksQueryExcludes } from "./actionItems";
+import { ActionItemsView, ACTION_ITEMS_VIEW, cancelTask, collectOpenItems, completeTask, isMine, localDate, parseTaskMeta, tasksQueryExcludes } from "./actionItems";
 import { addDays, buildTracker, itemText, STALE_HEADING, tickedItem, TRACKER_FILENAME, type TrackerMeeting } from "./tracker";
 import { isoWeek, newReview, type Week, refreshReview, REVIEW_FOLDER, reviewBody, reviewFilename } from "./weeklyReview";
 import { addMissingViews, DASHBOARD_CONTENT, DASHBOARD_FILENAME, DASHBOARD_VIEW_NAMES } from "./dashboard";
@@ -52,6 +52,7 @@ import { newSeriesNote, refreshSeries, SERIES_FOLDER, seriesBody } from "./serie
 import { canonicalEventId } from "./appleCalendarApi";
 import { briefBlock, hasBrief, removeBrief, upsertBrief } from "./brief";
 import { BRIEFING_FILENAME, briefingText, DAY_FILENAME, DAY_TYPE, dayNote, longDay, type DayMeeting } from "./myDay";
+import { WrapUpModal, wrapUpRows } from "./wrapUp";
 import { AddTodoModal, addTodo as appendTodo, newTodosNote, TODOS_FILENAME, TODOS_TITLE, TODOS_TYPE, type NewTodo } from "./todos";
 import { TodayView, TODAY_VIEW, type NoteAction } from "./todayView";
 import { currentOrNextMeeting, meetingToJoin, statusText } from "./meetingStatus";
@@ -236,6 +237,23 @@ export default class GoogleCalendarPlugin extends Plugin {
       id: "prepare-my-day",
       name: "Prepare my day (tomorrow's, after 6 PM)",
       callback: () => this.prepareDay(true),
+    });
+
+    this.addCommand({
+      id: "wrap-up-my-day",
+      name: "Wrap up my day",
+      callback: () => this.openWrapUp(),
+    });
+
+    // Links in My Day: obsidian://meeting-notes?do=wrap-up (or add-todo, prepare, my-day).
+    this.registerObsidianProtocolHandler("meeting-notes", (params) => {
+      const run: Record<string, () => unknown> = {
+        "wrap-up": () => this.openWrapUp(),
+        "add-todo": () => this.openAddTodo(),
+        prepare: () => this.prepareDay(true, addDays(localDate(this.now()), 1)),
+        "my-day": () => this.openMyDay(),
+      };
+      void run[params.do]?.();
     });
 
     this.addCommand({
@@ -994,11 +1012,10 @@ export default class GoogleCalendarPlugin extends Plugin {
    * meetings, briefs of notes made earlier, the Meeting Tracker, My Day and
    * the Daily Briefing. Runs each night at the prep time, and on demand.
    */
-  async prepareDay(manual: boolean): Promise<void> {
+  async prepareDay(manual: boolean, date = this.planDate()): Promise<void> {
     if (this.preparing) return;
     this.preparing = true;
     try {
-      const date = this.planDate();
       const events = (await this.loadDayEvents(new Date(`${date}T00:00:00`))) ?? [];
       const options = await this.getNoteOptions(false);
       const notesById = findNotesByEventId(this.app);
@@ -1046,6 +1063,13 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
   }
 
+  /** The end-of-day wrap-up: what slipped and what has no date, then Prepare tomorrow. */
+  async openWrapUp(): Promise<void> {
+    const today = localDate(this.now());
+    new WrapUpModal(this.app, wrapUpRows(await collectOpenItems(this.app), this.myNames(), today), today,
+      () => this.prepareDay(true, addDays(today, 1))).open();
+  }
+
   /** A desktop notification; clicking it brings Obsidian forward and runs `onClick`. */
   notify(title: string, body: string, onClick: () => unknown): void {
     const notification = new Notification(title, { body });
@@ -1089,12 +1113,27 @@ export default class GoogleCalendarPlugin extends Plugin {
       }
     }
 
-    const at = this.settings.morningReminderTime;
     const today = localDate(now);
-    if (!at || this.settings.lastMorningReminder === today) return;
-    const [hours, minutes] = at.split(":").map(Number);
-    const due = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes);
-    if (now < due || now.getTime() - due.getTime() > 3 * 60 * 60_000) return;
+    // A daily reminder at `at` ("HH:MM"), shown once within three hours of it.
+    const dailyDue = (at: string, last: string) => {
+      if (!at || last === today) return false;
+      const [hours, minutes] = at.split(":").map(Number);
+      const due = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes);
+      return now >= due && now.getTime() - due.getTime() <= 3 * 60 * 60_000;
+    };
+
+    if (dailyDue(this.settings.wrapUpReminderTime, this.settings.lastWrapUpReminder)) {
+      this.settings.lastWrapUpReminder = today;
+      await this.saveSettings();
+      const { slipped } = wrapUpRows(await collectOpenItems(this.app), this.myNames(), today);
+      this.notify(
+        "Wrap up your day",
+        `${slipped.length > 0 ? `${slipped.length} item${slipped.length !== 1 ? "s" : ""} slipped today.` : "Nothing slipped today."} Click to wrap up and prepare tomorrow.`,
+        () => this.openWrapUp()
+      );
+    }
+
+    if (!dailyDue(this.settings.morningReminderTime, this.settings.lastMorningReminder)) return;
     this.settings.lastMorningReminder = today;
     await this.saveSettings();
     const names = this.myNames();
@@ -1461,6 +1500,10 @@ export default class GoogleCalendarPlugin extends Plugin {
       merged.morningReminderTime = DEFAULT_SETTINGS.morningReminderTime;
     }
     if (typeof merged.lastMorningReminder !== "string") merged.lastMorningReminder = DEFAULT_SETTINGS.lastMorningReminder;
+    if (typeof merged.wrapUpReminderTime !== "string" || (merged.wrapUpReminderTime && !/^\d{1,2}:\d{2}$/.test(merged.wrapUpReminderTime))) {
+      merged.wrapUpReminderTime = DEFAULT_SETTINGS.wrapUpReminderTime;
+    }
+    if (typeof merged.lastWrapUpReminder !== "string") merged.lastWrapUpReminder = DEFAULT_SETTINGS.lastWrapUpReminder;
     if (typeof merged.openTodayOnStartup !== "boolean") {
       merged.openTodayOnStartup = DEFAULT_SETTINGS.openTodayOnStartup;
     }

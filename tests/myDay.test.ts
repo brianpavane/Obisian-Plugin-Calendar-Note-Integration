@@ -60,7 +60,7 @@ test("My Day says so when the calendar can't be read or the day is empty", () =>
 test("the Daily Briefing is My Day as plain text: no properties, link names only, bullets instead of checkboxes", () => {
   const text = briefingText(dayNote(input()));
   assert.ok(text.startsWith("# Monday, October 12, 2026"));
-  assert.doesNotMatch(text, /\[\[|---\ntype|- \[ \]/);
+  assert.doesNotMatch(text, /\[\[|---\ntype|- \[ \]|obsidian:\/\//);
   assert.match(text, /- 9:00 AM–9:30 AM · Acme pilot · Acme/);
   assert.match(text, /- Send runbook @Ann Lee · 📅 2026-10-08 · Acme pilot 2 · \*overdue\*/);
   assert.match(text, /\*Prepared 2026-10-12 12:30 AM by Obsidian/);

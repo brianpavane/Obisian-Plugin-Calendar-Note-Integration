@@ -57,6 +57,15 @@ From 6 PM, My Day shows tomorrow, so you can see what's coming before you finish
 
 **The Daily Briefing for Gemini.** Set **Copy the Daily Briefing to** to a folder that Google Drive for desktop syncs (for example `~/Library/CloudStorage/GoogleDrive-you@company.com/My Drive/Obsidian Briefing`). Each time My Day is rebuilt, the plugin writes it there as `Daily Briefing.md` in plain text — no properties, links reduced to names — for Gemini Enterprise's 2 AM and 7 AM runs to read. The plugin only writes a file on your Mac; Google Drive does the syncing.
 
+## Wrap up your day
+
+Run **Wrap up my day** (or click **Wrap up my day** at the top of My Day, or the 5:30 PM notification). A window lists:
+
+- **Slipped**: your items due today or overdue, oldest first
+- **Added today, no due date**: so nothing new drifts
+
+Each has **Done**, **Tomorrow**, **Next week** (Monday), **Park** and **Won't do**; a choice updates the item in its meeting note straight away. Finish with **Prepare tomorrow**, which gets tomorrow's notes, briefs, Tracker, My Day and Daily Briefing ready.
+
 ## Notifications
 
 While Obsidian is open, the plugin shows Mac notifications (set them under the plugin's settings):
@@ -64,6 +73,7 @@ While Obsidian is open, the plugin shows Mac notifications (set them under the p
 - **Before a meeting** (5 minutes before, by default): the meeting and time, and whether its brief is ready. Click to open its note.
 - **After a meeting**, 10 minutes after it ends if its note has no AI reply yet: a reminder to import the Krisp transcript and add the reply. Click to open the note.
 - **Morning summary** (8:30 AM by default): the day's meetings and how many of your items are due today or overdue. Click to open My Day.
+- **Wrap-up reminder** (5:30 PM by default): how many of your items slipped today. Click to wrap up.
 
 Each is shown once. If Obsidian's notifications are turned off in **System Settings → Notifications**, turn them on there.
 

@@ -1543,4 +1543,8 @@ test("notifications: before a meeting, after one that has no AI reply yet, and t
   await plugin.checkNotifications();
   assert.match(shown[2], /^Pilot has ended \| Import the Krisp transcript and add the AI reply/);
   assert.equal(shown.length, 3);
+  at(17, 35);
+  await plugin.checkNotifications();
+  await plugin.checkNotifications();
+  assert.deepEqual(shown.slice(3), ["Wrap up your day | 2 items slipped today. Click to wrap up and prepare tomorrow."]);
 });

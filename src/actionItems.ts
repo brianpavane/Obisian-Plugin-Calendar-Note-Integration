@@ -431,3 +431,26 @@ export function isMine(meta: TaskMeta, myNames: string[]): boolean {
 export function singleWordNames(value: string): string[] {
   return value.split(",").map((n) => n.trim()).filter((n) => n && !/\s/.test(n));
 }
+
+/** A task line with its due date set to `date` (replacing a 📅 or [due:: ] date it had). */
+export function withDueDate(line: string, date: string): string {
+  if (/📅\s*\d{4}-\d{2}-\d{2}/u.test(line)) return line.replace(/📅\s*\d{4}-\d{2}-\d{2}/u, `📅 ${date}`);
+  if (/\[due::\s*\d{4}-\d{2}-\d{2}\s*\]/.test(line)) return line.replace(/\[due::\s*\d{4}-\d{2}-\d{2}\s*\]/, `[due:: ${date}]`);
+  const tag = line.match(/\s+#parked(?![\w/-])\s*$/i);
+  return tag ? `${line.slice(0, tag.index)} 📅 ${date}${tag[0]}` : `${line.replace(/\s+$/, "")} 📅 ${date}`;
+}
+
+/** Set an open task's due date. Returns false if it is no longer open. */
+export async function rescheduleTask(app: App, file: TFile, task: OpenTask, date: string): Promise<boolean> {
+  let changed = false;
+  await app.vault.process(file, (content) => {
+    const lines = content.split("\n");
+    const isTask = (i: number) => openTasks(lines[i] ?? "").some((t) => t.text === task.text);
+    const index = isTask(task.line) ? task.line : lines.findIndex((_, i) => isTask(i));
+    if (index === -1) return content;
+    lines[index] = withDueDate(lines[index], date);
+    changed = true;
+    return lines.join("\n");
+  });
+  return changed;
+}
