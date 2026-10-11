@@ -1307,3 +1307,55 @@ test("notes that share a calendar id, such as older recurring-meeting notes, all
   const { collectOpenItems } = await import("../src/actionItems");
   assert.equal((await collectOpenItems(app as never)).length, 2);
 });
+
+test("an upcoming meeting's note gets a Meeting Brief with an icon to refresh it, and the AI reply removes it", async () => {
+  const app = createMemoryApp([
+    { path: "Meeting Notes/Pilot 1.md", content: "---\ntitle: \"Pilot\"\nstart: 2026-03-27T10:00\naccount: \"Acme\"\ncalendar_event_id: \"pilot::2026-03-27\"\n---\n\n## Next Steps\n\n- [ ] Send runbook @[[Ann Lee]]\n" },
+    { path: "Meeting Notes/Pilot 2.md", content: "---\ntitle: \"Pilot\"\nstart: 2026-04-03T10:30\nend: 2026-04-03T11:00\ncalendar_event_id: \"pilot::2026-04-03\"\nattendees:\n  - \"Ann Lee <ann@example.com>\"\n---\n\n# Pilot\n\n## Agenda\n\n- \n\n## Notes\n\n- \n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+  const note = app.files.get("Meeting Notes/Pilot 2.md") as TFile;
+
+  const view = new MarkdownView(new WorkspaceLeaf());
+  view.file = note;
+  (app.workspace as unknown as { getLeavesOfType: () => unknown[] }).getLeavesOfType = () => [{ view }];
+  plugin.updateNoteActions();
+  const refresh = view.actions.find((a) => a.title === "Refresh meeting brief");
+  assert.ok(refresh, "the meeting hasn't happened yet, so it has a brief icon");
+
+  refresh!.callback();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(note.content ?? "", /## Meeting Brief[\s\S]*\*\*Account:\*\* \*\*Acme\*\*[\s\S]*### They owe you\n\n- Send runbook @\[\[Ann Lee\]\][\s\S]*meeting-brief:end -->\n\n## Agenda/);
+
+  await plugin.applyAssistantReply(note as never, "## Executive Summary\nShort.\n\n## Next Steps\n- [ ] **[[Ann Lee]]**: Send the deck\n");
+  assert.doesNotMatch(note.content ?? "", /Meeting Brief|meeting-brief/);
+  assert.match(note.content ?? "", /Send the deck/);
+});
+
+test("Add a to-do files it in My To-Dos in the Meeting Hub, and to-dos rank in the Tracker and lead the action items panel", async () => {
+  const app = createMemoryApp([
+    { path: "Meeting Notes/Sync.md", content: "---\ntitle: \"Sync\"\nstart: 2026-04-01T10:00\ncalendar_event_id: \"s\"\n---\n\n## Next Steps\n\n- [ ] Meeting item\n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ hubFolder: "Meeting Hub" });
+  await plugin.addTodo({ text: "Renew passport", due: "2026-04-02", priority: "High" });
+  await plugin.addTodo({ text: "Clean desk" });
+  const todos = app.files.get("Meeting Hub/My To-Dos.md") as TFile;
+  assert.match(todos.content ?? "", /type: meeting-todos[\s\S]*## To-dos\n\n- \[ \] Renew passport ⏫ ➕ 2026-04-03 📅 2026-04-02\n- \[ \] Clean desk ➕ 2026-04-03\n/);
+  assert.match(getNotices().at(-1)?.message ?? "", /Added to My To-Dos/);
+
+  await plugin.openTracker();
+  const tracker = (app.files.get("Meeting Hub/Meeting Tracker.md") as TFile).content ?? "";
+  assert.match(tracker.split("## Focus")[1], /^[\s\S]*?- \[ \] Renew passport · ⏫ 📅 2026-04-02 · \[\[Meeting Hub\/My To-Dos\|My To-Dos\]\] · \*overdue\*/);
+  assert.doesNotMatch(tracker.split("## Meetings this week")[1], /My To-Dos/, "not counted as a meeting");
+
+  const { collectOpenItems } = await import("../src/actionItems");
+  const lists = await collectOpenItems(app as never);
+  assert.deepEqual(lists.map((l) => l.title), ["My To-Dos", "Sync"]);
+
+  const trackerFile = app.files.get("Meeting Hub/Meeting Tracker.md") as TFile;
+  trackerFile.content = (trackerFile.content ?? "").replace("- [ ] Clean desk", "- [x] Clean desk");
+  await plugin.completeTickedHubItems(trackerFile as never);
+  assert.match(todos.content ?? "", /- \[x\] Clean desk ➕ 2026-04-03 ✅ 2026-04-03/);
+});

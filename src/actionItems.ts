@@ -13,6 +13,7 @@
 
 import { App, debounce, ItemView, setIcon, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { findMeetingNotes, openTasks, OpenTask } from "./noteCreator";
+import { TODOS_TITLE, TODOS_TYPE } from "./todos";
 
 export const ACTION_ITEMS_VIEW = "calendar-notes-action-items";
 
@@ -139,8 +140,14 @@ export function groupItems(meetings: MeetingTasks[], groupBy: GroupBy, today: st
   }));
 }
 
-/** Meeting notes anywhere in the vault that have open tasks, newest first. */
+/** My To-Dos first, then meeting notes anywhere in the vault that have open tasks, newest first. */
 export async function collectOpenItems(app: App): Promise<MeetingTasks[]> {
+  const todos: MeetingTasks[] = [];
+  for (const file of app.vault.getMarkdownFiles()) {
+    if (app.metadataCache.getFileCache(file)?.frontmatter?.type !== TODOS_TYPE) continue;
+    const tasks = openTasks(await app.vault.cachedRead(file));
+    if (tasks.length > 0) todos.push({ file, title: TODOS_TITLE, start: "", tasks });
+  }
   const meetings: MeetingTasks[] = [];
   for (const { file } of findMeetingNotes(app)) {
     const tasks = openTasks(await app.vault.cachedRead(file));
@@ -153,7 +160,7 @@ export async function collectOpenItems(app: App): Promise<MeetingTasks[]> {
       tasks,
     });
   }
-  return meetings.sort((a, b) => b.start.localeCompare(a.start));
+  return [...todos, ...meetings.sort((a, b) => b.start.localeCompare(a.start))];
 }
 
 /**
@@ -205,8 +212,15 @@ export class ActionItemsView extends ItemView {
   private groupBy: GroupBy = "meeting";
   private owner: OwnerFilter = "mine";
 
-  /** `myNames`: the names the user is written as in action items; none means every item is shown. */
-  constructor(leaf: WorkspaceLeaf, private readonly myNames: () => string[] = () => []) {
+  /**
+   * `myNames`: the names the user is written as in action items; none means
+   * every item is shown. `addTodo` opens the Add a to-do box.
+   */
+  constructor(
+    leaf: WorkspaceLeaf,
+    private readonly myNames: () => string[] = () => [],
+    private readonly addTodo?: () => void
+  ) {
     super(leaf);
   }
 
@@ -250,6 +264,10 @@ export class ActionItemsView extends ItemView {
 
     const header = el.createDiv({ cls: "cal-notes-header" });
     header.createEl("h4", { text: "Open action items" });
+    if (this.addTodo) {
+      const add = header.createEl("button", { text: "+ To-do", attr: { "aria-label": "Add a to-do that isn't from a meeting" } });
+      add.addEventListener("click", () => this.addTodo?.());
+    }
     const select = header.createEl("select", { cls: "dropdown" });
     for (const [value, label] of [["meeting", "By meeting"], ["person", "By person"], ["due", "By due date"]] as const) {
       select.createEl("option", { value, text: label });

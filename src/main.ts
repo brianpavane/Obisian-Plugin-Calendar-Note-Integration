@@ -47,6 +47,8 @@ import { buildInsights, INSIGHTS_FILENAME } from "./insights";
 import { accountBody, ACCOUNTS_FOLDER, newAccountNote, refreshAccount } from "./accounts";
 import { newSeriesNote, refreshSeries, SERIES_FOLDER, seriesBody } from "./series";
 import { canonicalEventId } from "./appleCalendarApi";
+import { briefBlock, hasBrief, removeBrief, upsertBrief } from "./brief";
+import { AddTodoModal, addTodo as appendTodo, newTodosNote, TODOS_FILENAME, TODOS_TITLE, TODOS_TYPE, type NewTodo } from "./todos";
 import { TodayView, TODAY_VIEW, type NoteAction } from "./todayView";
 import { currentOrNextMeeting, meetingToJoin, statusText } from "./meetingStatus";
 import {
@@ -113,6 +115,18 @@ const IN_PROGRESS_LOOKBACK_MS = 12 * 60 * 60 * 1_000;
 const JOIN_WINDOW_MS = 30 * 60 * 1_000;
 /** A duplicate-notes warning from a background sync closes after this long; one from Refresh stays until clicked. */
 const DUPLICATE_NOTICE_MS = 20_000;
+const RIBBON_ICONS: Array<[string, string, (plugin: GoogleCalendarPlugin) => unknown]> = [
+  ["calendar-days", "Create a note from a calendar event", (p) => p.pickEventAndCreateNote()],
+  ["calendar-clock", "Today's meetings: join links, notes and follow-ups", (p) => p.openSidebarView(TODAY_VIEW)],
+  ["list-checks", "Meeting action items: tick off, filter by mine or others", (p) => p.openSidebarView(ACTION_ITEMS_VIEW)],
+  ["list-plus", "Add a to-do that isn't from a meeting", (p) => p.openAddTodo()],
+  ["gauge", "Meeting tracker: your Focus list, overdue and waiting-on items", (p) => p.openTracker()],
+  ["layout-dashboard", "Meetings dashboard: tables of every meeting", (p) => p.openDashboard()],
+  ["calendar-check", "This week's review", (p) => p.openWeeklyReview(0)],
+  ["trending-up", "Meeting insights: accounts, time spent and trends", (p) => p.openInsights()],
+];
+/** The Meeting Brief refreshes itself when its note is opened this long before the meeting starts. */
+const BRIEF_REFRESH_BEFORE_MS = 60 * 60 * 1_000;
 /** A Meeting Hub note rebuilt this recently isn't rebuilt again when it opens. */
 const HUB_REBUILT_RECENTLY_MS = 5_000;
 /** Automatic Krisp import looks at meetings that ended within this long. */
@@ -170,17 +184,8 @@ export default class GoogleCalendarPlugin extends Plugin {
   async onload(): Promise<void> {
     await this.loadSettings();
 
-    this.addRibbonIcon(
-      "calendar-days",
-      "Create note from calendar event",
-      () => this.pickEventAndCreateNote()
-    );
-    this.addRibbonIcon("calendar-clock", "Open today's meetings", () => this.openSidebarView(TODAY_VIEW));
-    this.addRibbonIcon("list-checks", "Open meeting action items", () => this.openSidebarView(ACTION_ITEMS_VIEW));
-    this.addRibbonIcon("layout-dashboard", "Open meetings dashboard", () => this.openDashboard());
-    this.addRibbonIcon("gauge", "Open meeting tracker", () => this.openTracker());
-    this.addRibbonIcon("calendar-check", "Open this week's review", () => this.openWeeklyReview(0));
-    this.addRibbonIcon("trending-up", "Open meeting insights", () => this.openInsights());
+    // The title is the icon's tooltip.
+    for (const [icon, title, run] of RIBBON_ICONS) this.addRibbonIcon(icon, title, () => run(this));
 
     this.addCommand({
       id: "create-note-from-event",
@@ -198,6 +203,29 @@ export default class GoogleCalendarPlugin extends Plugin {
       id: "auto-create-upcoming-notes",
       name: "Auto-create notes for events in the next N hours",
       callback: () => this.autoCreateUpcomingNotes(true),
+    });
+
+    this.addCommand({
+      id: "add-todo",
+      name: "Add a to-do",
+      callback: () => this.openAddTodo(),
+    });
+
+    this.addCommand({
+      id: "open-todos",
+      name: "Open my to-dos",
+      callback: () => this.openTodos(),
+    });
+
+    this.addCommand({
+      id: "refresh-meeting-brief",
+      name: "Refresh meeting brief",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!this.canHaveBrief(file)) return false;
+        if (!checking) void this.refreshBriefNow(file as TFile);
+        return true;
+      },
     });
 
     this.addCommand({
@@ -223,7 +251,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       callback: () => this.openDashboard(),
     });
 
-    this.registerView(ACTION_ITEMS_VIEW, (leaf) => new ActionItemsView(leaf, () => this.myNames()));
+    this.registerView(ACTION_ITEMS_VIEW, (leaf) => new ActionItemsView(leaf, () => this.myNames(), () => this.openAddTodo()));
     this.registerView(TODAY_VIEW, (leaf) => new TodayView(leaf, {
       loadDay: (day) => this.loadDayEvents(day),
       notedEventIds: () => new Set(findNotesByEventId(this.app).keys()),
@@ -301,6 +329,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     const refreshActions = () => this.updateNoteActions();
     this.registerEvent(this.app.workspace.on("file-open", refreshActions));
     this.registerEvent(this.app.workspace.on("file-open", (file) => void this.refreshHubNoteOnOpen(file)));
+    this.registerEvent(this.app.workspace.on("file-open", (file) => void this.refreshBriefOnOpen(file)));
     this.registerEvent(this.app.vault.on("modify", (file) => {
       if (file instanceof TFile) void this.completeTickedHubItems(file);
     }));
@@ -528,7 +557,8 @@ export default class GoogleCalendarPlugin extends Plugin {
       await this.trackerMeetings(),
       week,
       today,
-      `${today} ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+      `${today} ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`,
+      await this.todoMeetings()
     );
     const base = this.hubFolderPath();
     const folder = normalizePath(base ? `${base}/${REVIEW_FOLDER}` : REVIEW_FOLDER);
@@ -554,7 +584,8 @@ export default class GoogleCalendarPlugin extends Plugin {
       await this.trackerMeetings(),
       localDate(now),
       `${localDate(now)} ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`,
-      this.myNames()
+      this.myNames(),
+      await this.todoMeetings()
     );
     const folder = this.hubFolderPath();
     const path = normalizePath(folder ? `${folder}/${TRACKER_FILENAME}` : TRACKER_FILENAME);
@@ -805,6 +836,127 @@ export default class GoogleCalendarPlugin extends Plugin {
     await this.app.workspace.getLeaf(false).openFile(file);
   }
 
+  /** The My To-Dos note: wherever it was moved, or in the Meeting Hub folder. */
+  private findTodosNote(): TFile | undefined {
+    return this.app.vault.getMarkdownFiles().find((f) => this.app.metadataCache.getFileCache(f)?.frontmatter?.type === TODOS_TYPE)
+      ?? this.todosPathFile();
+  }
+
+  private todosPathFile(): TFile | undefined {
+    const folder = this.hubFolderPath();
+    const file = this.app.vault.getAbstractFileByPath(normalizePath(folder ? `${folder}/${TODOS_FILENAME}` : TODOS_FILENAME));
+    return file instanceof TFile ? file : undefined;
+  }
+
+  private async todosNote(): Promise<TFile> {
+    const existing = this.findTodosNote();
+    if (existing) return existing;
+    const folder = this.hubFolderPath();
+    if (folder) await this.ensureFolder(folder);
+    return this.app.vault.create(normalizePath(folder ? `${folder}/${TODOS_FILENAME}` : TODOS_FILENAME), newTodosNote());
+  }
+
+  openAddTodo(): void {
+    new AddTodoModal(this.app, (todo) => void this.addTodo(todo)).open();
+  }
+
+  async addTodo(todo: NewTodo): Promise<void> {
+    const file = await this.todosNote();
+    await this.app.vault.process(file, (content) => appendTodo(content, todo, localDate(this.now())));
+    new Notice(`Calendar Notes: Added to ${TODOS_TITLE}.`);
+  }
+
+  async openTodos(): Promise<void> {
+    await this.openHubNote(await this.todosNote());
+  }
+
+  /** My To-Dos, shaped like a meeting so the tracker and weekly review can list its items. */
+  async todoMeetings(): Promise<TrackerMeeting[]> {
+    const file = this.findTodosNote();
+    if (!file) return [];
+    const content = await this.app.vault.cachedRead(file);
+    return [{
+      path: file.path.replace(/\.md$/, ""),
+      title: TODOS_TITLE,
+      date: "",
+      openItems: openTasks(content).map((t) => parseTaskMeta(t.text)),
+      doneItems: doneTasks(content).map((t) => parseTaskMeta(t.text)),
+      decisions: [],
+    }];
+  }
+
+  /** The note of a meeting that hasn't ended or had its AI reply added, which can have a Meeting Brief. */
+  canHaveBrief(file: TFile | null): file is TFile {
+    if (!this.isMeetingNote(file)) return false;
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    const meeting = this.noteMeeting(file);
+    return !fm?.ai_summarized && !!meeting && meeting.end >= this.now();
+  }
+
+  /** Rebuild the Meeting Brief of `file` from its properties. */
+  async refreshBrief(file: TFile): Promise<void> {
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    const start = frontmatterDate(fm.start);
+    if (!start) return;
+    await this.writeBrief(file, {
+      id: typeof fm.calendar_event_id === "string" ? canonicalEventId(fm.calendar_event_id) : "",
+      start,
+      attendees: frontmatterList(fm.attendees).map((a) => personName(a).name),
+      account: typeof fm.account === "string" ? fm.account : undefined,
+    });
+  }
+
+  /**
+   * Write the Meeting Brief into `file`. `meetings` (every meeting note) can
+   * be passed in when writing several briefs at once.
+   */
+  private async writeBrief(
+    file: TFile,
+    meeting: { id: string; start: Date; attendees: string[]; account?: string },
+    meetings?: TrackerMeeting[]
+  ): Promise<void> {
+    const path = file.path.replace(/\.md$/, "");
+    const others = (meetings ?? (await this.trackerMeetings())).filter((m) => m.path !== path);
+    const content = await this.app.vault.read(file);
+    const block = briefBlock({
+      meetings: others,
+      id: meeting.id,
+      date: localDate(meeting.start),
+      attendees: meeting.attendees,
+      account: meeting.account,
+      myNames: this.myNames(),
+      today: localDate(this.now()),
+      updated: this.updatedStamp(),
+      skipLeftOff: /Where we left off in /.test(removeBrief(content)),
+    });
+    await this.app.vault.process(file, (c) => upsertBrief(c, block));
+    this.hubRebuiltAt.set(file.path, Date.now());
+  }
+
+  /** The brief for a note just created for `event`, whose properties Obsidian may not have read yet. */
+  private async writeNewNoteBrief(file: TFile, event: CalendarEvent, meetings?: TrackerMeeting[]): Promise<void> {
+    if (!event.start.dateTime) return;
+    const start = new Date(event.start.dateTime);
+    if (new Date(event.end.dateTime ?? event.start.dateTime) < this.now()) return;
+    const attendees = (event.attendees ?? []).map((a) => a.displayName?.trim() || a.email);
+    await this.writeBrief(file, { id: event.id, start, attendees }, meetings);
+  }
+
+  private async refreshBriefNow(file: TFile): Promise<void> {
+    await this.refreshBrief(file);
+    new Notice("Calendar Notes: Meeting brief refreshed.");
+  }
+
+  /** Refresh the brief when its note is opened in the hour before the meeting, or during it. */
+  private async refreshBriefOnOpen(file: TFile | null): Promise<void> {
+    if (!this.metadataReady || !this.canHaveBrief(file)) return;
+    if (Date.now() - (this.hubRebuiltAt.get(file.path) ?? 0) < HUB_REBUILT_RECENTLY_MS) return;
+    const meeting = this.noteMeeting(file);
+    const now = this.now().getTime();
+    if (!meeting || meeting.start.getTime() - now > BRIEF_REFRESH_BEFORE_MS || meeting.end.getTime() < now) return;
+    await this.refreshBrief(file);
+  }
+
   /**
    * Open the meetings dashboard (a Bases file), creating it on first use.
    * Built-in views added since the user's copy was made are added to it,
@@ -909,7 +1061,9 @@ export default class GoogleCalendarPlugin extends Plugin {
       if (leaf.view instanceof MarkdownView) views.add(leaf.view);
     }
     const kindOf = (file: TFile | null) =>
-      this.isMeetingNote(file) ? (this.isRecurringMeetingNote(file) ? "recurring" : "meeting") : this.hubNoteKind(file) ? "hub" : "";
+      this.isMeetingNote(file)
+        ? `${this.isRecurringMeetingNote(file) ? "recurring" : "meeting"}${this.canHaveBrief(file) ? "+brief" : ""}`
+        : this.hubNoteKind(file) ? "hub" : "";
     for (const [view, { kind, icons }] of this.noteActions) {
       if (views.has(view) && kindOf(view.file) === kind) continue;
       icons.forEach((icon) => icon.remove());
@@ -928,7 +1082,8 @@ export default class GoogleCalendarPlugin extends Plugin {
             view.addAction("clipboard-paste", "Add AI reply to this meeting", run(this.addAssistantReply)),
             view.addAction("clipboard-copy", "Copy meeting for AI assistant", run(this.copyForAssistant)),
             view.addAction("file-audio", "Import Krisp transcript into this note", run(this.importKrispTranscript)),
-            ...(kind === "recurring" ? [view.addAction("repeat", "Open series note", run(this.openSeriesNoteForFile))] : []),
+            ...(kind.startsWith("recurring") ? [view.addAction("repeat", "Open series note", run(this.openSeriesNoteForFile))] : []),
+            ...(kind.endsWith("+brief") ? [view.addAction("clipboard-list", "Refresh meeting brief", run(this.refreshBriefNow))] : []),
           ];
       this.noteActions.set(view, { kind, icons });
     }
@@ -1357,6 +1512,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       if (result.blockedBy) blocked.push([file, result.blockedBy]);
     };
 
+    let briefMeetings: TrackerMeeting[] | undefined;
     for (const event of events) {
       try {
         const existing = notesById.get(event.id);
@@ -1374,7 +1530,11 @@ export default class GoogleCalendarPlugin extends Plugin {
         const series = await seriesOptions(this.app, notesById, event, true, seriesNotes);
         const result = await createNoteFile(this.app, event, { ...options, ...series });
         notesById.set(event.id, result.file);
-        if (result.wasCreated) created++;
+        if (result.wasCreated) {
+          created++;
+          briefMeetings ??= await this.trackerMeetings();
+          await this.writeNewNoteBrief(result.file as TFile, event, briefMeetings);
+        }
         markProcessed(event.id);
       } catch (err) {
         console.warn("[CalendarNoteIntegration] Failed to sync note for event:", err);
@@ -1568,7 +1728,8 @@ export default class GoogleCalendarPlugin extends Plugin {
     try {
       const options = await this.getNoteOptions(true);
       const series = await seriesOptions(this.app, findNotesByEventId(this.app), event, true);
-      const { file } = await createNoteFile(this.app, event, { ...options, ...series });
+      const { file, wasCreated } = await createNoteFile(this.app, event, { ...options, ...series });
+      if (wasCreated) await this.writeNewNoteBrief(file as TFile, event);
       await this.app.workspace.getLeaf(false).openFile(file as TFile);
       new Notice(`Note ready: ${file.name}`);
     } catch (err) {
@@ -1790,7 +1951,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     }
     let result: ApplyResult | undefined;
     await this.app.vault.process(file, (content) => {
-      result = applyReply(content, reply, this.settings.aiSaveProperties, localDate(this.now()));
+      result = applyReply(removeBrief(content), reply, this.settings.aiSaveProperties, localDate(this.now()));
       return result.content;
     });
     if (this.settings.aiSaveProperties && reply.account) {

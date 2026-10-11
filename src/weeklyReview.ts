@@ -41,16 +41,19 @@ const longDate = (date: string, withYear = false) =>
     weekday: "long", month: "long", day: "numeric", ...(withYear ? { year: "numeric" } : {}),
   });
 
-/** The plugin's part of the review: from the start marker to the end marker. */
-export function reviewBody(meetings: TrackerMeeting[], week: Week, today: string, updated: string): string {
+/**
+ * The plugin's part of the review: from the start marker to the end marker.
+ * `todos` (My To-Dos) count in Done this week and Overdue, not as meetings.
+ */
+export function reviewBody(meetings: TrackerMeeting[], week: Week, today: string, updated: string, todos: TrackerMeeting[] = []): string {
   const inWeek = (date: string | undefined) => !!date && date >= week.start && date <= week.end;
   const thisWeek = meetings.filter((m) => inWeek(m.date)).sort((a, b) => a.date.localeCompare(b.date));
   const held = thisWeek.filter((m) => !m.skipped);
   const decided = held.filter((m) => m.decisions.length > 0);
-  const done: Item[] = meetings.flatMap((meeting) =>
+  const done: Item[] = [...todos, ...meetings].flatMap((meeting) =>
     meeting.doneItems.filter((meta) => inWeek(meta.doneOn)).map((meta) => ({ meta, meeting })));
   const open: Item[] = thisWeek.flatMap((meeting) => meeting.openItems.map((meta) => ({ meta, meeting })));
-  const overdue: Item[] = meetings.flatMap((meeting) =>
+  const overdue: Item[] = [...todos, ...meetings].flatMap((meeting) =>
     meeting.openItems.filter((meta) => meta.due && meta.due < today).map((meta) => ({ meta, meeting })));
 
   const days = [...new Set(held.map((m) => m.date))];

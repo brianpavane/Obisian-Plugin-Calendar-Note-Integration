@@ -27,6 +27,15 @@ When a reply saves an account, that account's overview note is brought up to dat
 
 ### Added
 
+**Meeting Brief in each upcoming meeting's note**
+New notes for upcoming meetings start with a Meeting Brief: the account's state (last met, sentiment, outcome, at risk), where you left off, what the attendees owe you and what you owe from this series or account. It refreshes when you open the note in the hour before the meeting, or with the new brief icon at the top right, and is removed once you add the AI reply.
+
+**My To-Dos for tasks that aren't from a meeting**
+**Add a to-do** (a ribbon icon, a command and a **+ To-do** button in the action items panel) adds a task, with an optional due date and priority, to a My To-Dos note in the Meeting Hub. To-dos are ranked into the Tracker's Focus with your meeting items, lead the action items panel, and count in the weekly review.
+
+**Clearer ribbon tooltips**
+Each of the plugin's ribbon icons now has a tooltip saying what it opens, not just its name.
+
 **The AI ranks each next step: High, Medium, Low or Someday**
 The built-in AI instructions and the Meeting Scribe agent instructions now ask for a priority at the end of each next step's brackets, e.g. `(2026-10-09, High)`, with at most 5 High per meeting (ideally 3) and at most 2 of them yours. **Add AI reply** turns it into the Tasks priority mark (⏫ 🔼 🔽 ⏬). Someday items never appear in Focus and go straight to **Gone stale?**. **Copy meeting for AI assistant** now adds a `Me:` line with your name so the AI knows which items are yours. Update your saved agent's instructions from `docs/AGENT_INSTRUCTIONS.md` to use it.
 

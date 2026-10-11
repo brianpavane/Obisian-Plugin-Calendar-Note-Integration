@@ -24,6 +24,7 @@ The **ribbon** is the thin strip of icons down the far-left edge of the Obsidian
 |---|---|
 | **Calendar-with-clock** icon | **Today's meetings** |
 | **Checklist** icon (☑ with lines) | **Meeting action items** |
+| **List with a plus** icon | **Add a to-do**: a quick box for a task that isn't from a meeting |
 | **Dashboard** icon (four squares) | **Meetings dashboard** |
 | **Gauge** icon (a dial) | **Meeting tracker** |
 | **Calendar with a check mark** | **This week's review** |
@@ -31,7 +32,7 @@ The **ribbon** is the thin strip of icons down the far-left edge of the Obsidian
 
 (The plain **calendar** icon next to them is the older "create a note from an event" button.)
 
-Hover over a button and its name appears. Click it to open the dashboard.
+Hover over a button and a tooltip says what it opens. Click it to open the dashboard.
 
 **Don't see the buttons?** Make sure the plugin is updated (6.15.0 or later for the gauge). If the ribbon itself is hidden, turn it back on under **Settings → Appearance → Show ribbon**. If a button is missing, right-click the ribbon and tick it in the list.
 
@@ -113,6 +114,17 @@ Click **New note**, type a title (for example `Hallway chat with Bob`), and pres
 ### Keeping it current
 
 The list re-reads your calendar every 5 minutes, and the Now / faded markers update every minute. Click **Refresh** to re-read it straight away, for example after adding a meeting in Calendar.app.
+
+### Meeting Brief
+
+Each new note for an upcoming meeting starts with a **Meeting Brief** above the Agenda, so you walk in knowing where things stand:
+
+- **Account**: the meeting's account (or its series' latest one), when you last met, the sentiment and outcome, and **⚠ at risk** if that meeting was Negative or Blocked
+- **Where we left off**: the latest continuity points from this series or account (left out when the Agenda already shows them, as it does for recurring meetings)
+- **They owe you**: open items owned by this meeting's attendees, from any meeting, overdue first
+- **You owe**: your open items from this series or account
+
+The items are plain bullets linking to the meeting each came from; tick them off there, in the action items panel or in the Tracker. The brief refreshes itself when you open the note in the hour before the meeting (and during it), or click the **clipboard** icon at the top right of the note (or run **Refresh meeting brief**). Once you **Add AI reply**, the brief is removed: the AI write-up is the record from then on.
 
 ---
 
@@ -224,6 +236,12 @@ When grouped by person or due date, each item shows which meeting it came from. 
 ### Mine, or waiting on others
 
 Once the plugin knows your name, a second menu shows **Mine** (items owned by you, or by no one), **Waiting on others** (items someone else owns: your follow-ups) or **Everyone**. It finds your name from **Your name** in the plugin's settings, and from your entry in calendar invites when **Your email address** is set. Until then the panel shows everyone's items.
+
+### Your own to-dos
+
+Tasks that aren't from a meeting go in **My To-Dos**, a note in your Meeting Hub folder. Click the **list with a plus** icon in the ribbon, the **+ To-do** button at the top of this panel, or run **Add a to-do** (give it a hotkey under **Settings → Hotkeys**). Type the task, optionally pick a due date and a priority, and press **Enter**; it's added without opening the note. You can also type `- [ ] …` lines straight into the note (**Open my to-dos**).
+
+To-dos are always yours. They lead this panel, are ranked into the Tracker's **Focus** with your meeting items, go to **Gone stale?** when old and undated (or marked Someday), and count in the weekly review's Done and Overdue lists.
 
 ### Won't do
 

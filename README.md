@@ -426,7 +426,10 @@ Both steps are optional. The note's sections are there for you to write in by ha
 | **Open series note** | For a recurring meeting's note: creates (or refreshes) the series note in `Series` inside your Meeting Hub folder — see [Recurring meetings](#recurring-meetings) |
 | **Open meeting insights** | Rebuilds and opens `Meeting Insights.md` in your Meeting Hub folder, and refreshes every account overview — see [Meeting insights](docs/DASHBOARDS.md#6-meeting-insights) |
 | **Open account overview** | In a meeting note with an `account`, rebuilds and opens that account's note in `Accounts` inside your Meeting Hub folder — see [Account overviews](docs/DASHBOARDS.md#7-account-overviews) |
-| **Open meeting tracker** | Rebuilds and opens `Meeting Tracker.md` in your Meeting Hub folder: overdue, due soon, high priority, by account, by person, recent decisions, this week's meetings |
+| **Open meeting tracker** | Rebuilds and opens `Meeting Tracker.md` in your Meeting Hub folder: your Focus list, overdue, due soon, high priority, waiting on others, gone stale, by account, recent decisions, this week's meetings |
+| **Add a to-do** | Opens a quick box to add a task that isn't from a meeting to `My To-Dos.md` in your Meeting Hub folder (also a ribbon icon and a **+ To-do** button in the action items panel) |
+| **Open my to-dos** | Opens `My To-Dos.md`, creating it if needed |
+| **Refresh meeting brief** | In an upcoming meeting's note, rebuilds its **Meeting Brief**: the account's state, where you left off, what attendees owe you and what you owe — see [Meeting Brief](docs/DASHBOARDS.md#meeting-brief) |
 
 The tracker, insights, weekly reviews, series notes and account overviews also rebuild themselves whenever you open them, however you get there, and have a **↻** icon at the top right to rebuild them while open. Their open items are checkboxes: ticking one checks it off in its meeting note. **Add AI reply** updates the overview of the account it saves — see [Keeping the Meeting Hub notes current](docs/DASHBOARDS.md#keeping-the-meeting-hub-notes-current).
 | **Import Krisp transcript into this note** | Suggests the open note's Krisp recording and, once you confirm, fills its empty Transcript section — see [Krisp transcripts](#krisp-transcripts) |

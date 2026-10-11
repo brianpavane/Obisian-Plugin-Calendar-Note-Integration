@@ -152,7 +152,7 @@ export function focusItems(items: Item[], today: string, atRisk: Set<string>, si
     ["due soon", (i) => !!i.meta.due && i.meta.due <= weekAhead, (a, b) => a.meta.due!.localeCompare(b.meta.due!) || byPriorityThenDue(a, b)],
     ["high priority", isHigh, (a, b) => byPriorityThenDue(a, b) || b.meeting.date.localeCompare(a.meeting.date)],
     ["at-risk account", (i) => atRisk.has(i.meeting.account?.trim().toLowerCase() ?? ""), (a, b) => byPriorityThenDue(a, b) || b.meeting.date.localeCompare(a.meeting.date)],
-    ["from this week", (i) => i.meeting.date >= weekAgo, (a, b) => b.meeting.date.localeCompare(a.meeting.date)],
+    ["from this week", (i) => (i.meta.created ?? i.meeting.date) >= weekAgo, (a, b) => (b.meta.created ?? b.meeting.date).localeCompare(a.meta.created ?? a.meeting.date)],
   ];
   const picked: Array<Item & { reason: string }> = [];
   const left = new Set(items.filter((i) => !isSomeday(i)));
@@ -179,10 +179,11 @@ export function staleItems(items: Item[], today: string): Item[] {
  * The tracker note's content. `today` is YYYY-MM-DD; `updated` is shown as
  * the time it was built. `myNames` are the names the user is written as in
  * action items: items owned by someone else go under Waiting on others.
- * Without names, every item counts as the user's.
+ * Without names, every item counts as the user's. `todos` (My To-Dos) add
+ * their items to the lists but aren't counted as meetings.
  */
-export function buildTracker(meetings: TrackerMeeting[], today: string, updated: string, myNames: string[] = []): string {
-  const items: Item[] = meetings.flatMap((meeting) => meeting.openItems.map((meta) => ({ meta, meeting })));
+export function buildTracker(meetings: TrackerMeeting[], today: string, updated: string, myNames: string[] = [], todos: TrackerMeeting[] = []): string {
+  const items: Item[] = [...todos, ...meetings].flatMap((meeting) => meeting.openItems.map((meta) => ({ meta, meeting })));
   const mine = myNames.length > 0 ? items.filter((i) => isMine(i.meta, myNames)) : items;
   const others = myNames.length > 0 ? items.filter((i) => !isMine(i.meta, myNames)) : [];
   const weekAhead = addDays(today, 7);
