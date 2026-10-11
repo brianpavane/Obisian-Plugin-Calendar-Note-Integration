@@ -48,7 +48,7 @@ import { isoWeek, newReview, type Week, refreshReview, REVIEW_FOLDER, reviewBody
 import { addMissingViews, DASHBOARD_CONTENT, DASHBOARD_FILENAME, DASHBOARD_VIEW_NAMES } from "./dashboard";
 import { buildInsights, INSIGHTS_FILENAME } from "./insights";
 import { accountBody, ACCOUNTS_FOLDER, newAccountNote, refreshAccount } from "./accounts";
-import { newSeriesNote, refreshSeries, SERIES_FOLDER, seriesBody } from "./series";
+import { newSeriesNote, oneOnOnePerson, refreshSeries, SERIES_FOLDER, seriesBody } from "./series";
 import { canonicalEventId } from "./appleCalendarApi";
 import { briefBlock, hasBrief, removeBrief, upsertBrief } from "./brief";
 import { BRIEFING_FILENAME, briefingText, DAY_FILENAME, DAY_TYPE, dayNote, longDay, type DayMeeting } from "./myDay";
@@ -679,8 +679,15 @@ export default class GoogleCalendarPlugin extends Plugin {
   /** Rebuild the plugin's part of a series note, creating it if needed, and link each occurrence to it. */
   private async rebuildSeriesNote(id: string, title: string): Promise<TFile> {
     const now = this.now();
-    const occurrences = (await this.trackerMeetings()).filter((m) => m.id && seriesId(m.id) === id);
-    const body = seriesBody(occurrences, `${localDate(now)} ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`, localDate(now));
+    const meetings = await this.trackerMeetings();
+    const occurrences = meetings.filter((m) => m.id && seriesId(m.id) === id);
+    const person = oneOnOnePerson(occurrences);
+    const body = seriesBody(
+      occurrences,
+      `${localDate(now)} ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`,
+      localDate(now),
+      person ? { person, meetings, myNames: this.myNames() } : undefined
+    );
 
     let file: TFile | undefined = findSeriesNotes(this.app).get(id);
     if (file) {

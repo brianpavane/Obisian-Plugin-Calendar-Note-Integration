@@ -11,6 +11,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+**1:1 series notes show what each of you owes**
+The series note of a recurring 1:1 (every meeting just you and one other person) now also lists what that person owes you from any meeting, not only the 1:1, and what you owe them from any meeting with them.
+
 **Wrap up my day**
 A new end-of-day window lists your items due today or overdue, and items added today without a date, each with Done, Tomorrow, Next week, Park and Won't do, then **Prepare tomorrow**. Open it from My Day, the command, or a 5:30 PM reminder.
 
