@@ -15,11 +15,19 @@ export const TODOS_TYPE = "meeting-todos";
 export const TODOS_TITLE = "My To-Dos";
 const TODOS_SECTION = "To-dos";
 
+export type TodoSource = "email" | "chat";
+
+/** The tag a to-do's source is saved as. */
+export const SOURCE_TAG: Record<TodoSource, string> = { email: "#from-email", chat: "#from-chat" };
+
 export interface NewTodo {
   text: string;
   /** YYYY-MM-DD */
   due?: string;
   priority?: ActionItem["priority"];
+  from?: TodoSource;
+  /** A link back to the message, e.g. a Slack permalink. */
+  link?: string;
 }
 
 export function newTodosNote(): string {
@@ -39,11 +47,31 @@ export function newTodosNote(): string {
   ].join("\n");
 }
 
+/** A to-do as a task line: its text (and link), priority, created date, due date, then its source tag. */
+export function todoLine(todo: NewTodo, today: string, people?: string[], role?: string): string {
+  const link = todo.link?.trim() ? ` [↗](${todo.link.trim()})` : "";
+  const line = actionLine({ task: `${todo.text.trim()}${link}`, due: todo.due, priority: todo.priority, people, role }, today);
+  return todo.from ? `${line} ${SOURCE_TAG[todo.from]}` : line;
+}
+
 /** The note with the to-do added at the end of its To-dos section, stamped with `today` as its created date. */
 export function addTodo(content: string, todo: NewTodo, today: string): string {
-  const line = actionLine({ task: todo.text.trim(), due: todo.due, priority: todo.priority }, today);
-  return appendToSection(content, [TODOS_SECTION], [line]);
+  return appendToSection(content, [TODOS_SECTION], [todoLine(todo, today)]);
 }
+
+/** The note with the assistant's action items from a message added as to-dos, each tagged with where it came from. */
+export function addCapturedTodos(content: string, items: ActionItem[], from: TodoSource, today: string): string {
+  const lines = items.map((i) => (i.raw !== undefined
+    ? `- [ ] ${i.raw} ➕ ${today} ${SOURCE_TAG[from]}`
+    : todoLine({ text: i.task, due: i.due, priority: i.priority, from }, today, i.people, i.role)));
+  return appendToSection(content, [TODOS_SECTION], lines);
+}
+
+const SOURCES: Array<[string, string]> = [
+  ["", "—"],
+  ["email", "Email"],
+  ["chat", "Slack or Teams"],
+];
 
 const PRIORITIES: Array<[string, string]> = [
   ["", "No priority"],
@@ -80,6 +108,13 @@ export class AddTodoModal extends Modal {
     new Setting(this.contentEl).setName("Priority").addDropdown((dropdown) => {
       for (const [value, label] of PRIORITIES) dropdown.addOption(value, label);
       dropdown.onChange((value) => (todo.priority = (value || undefined) as NewTodo["priority"]));
+    });
+    new Setting(this.contentEl).setName("From").setDesc("Optional").addDropdown((dropdown) => {
+      for (const [value, label] of SOURCES) dropdown.addOption(value, label);
+      dropdown.onChange((value) => (todo.from = (value || undefined) as TodoSource | undefined));
+    });
+    new Setting(this.contentEl).setName("Link").setDesc("Optional: a link back to the message, e.g. a Slack permalink").addText((text) => {
+      text.setPlaceholder("https://…").onChange((value) => (todo.link = value.trim() || undefined));
     });
     new Setting(this.contentEl).addButton((button) => button.setButtonText("Add").setCta().onClick(submit));
   }

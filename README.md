@@ -125,6 +125,12 @@ Full API access. Required for shared/workspace calendars or precise filtering.
 |---------|---------|-------------|
 | Note folder | Meeting Notes | Vault-relative folder for created notes. You can move notes anywhere in the vault afterwards — the plugin finds them by their `calendar_event_id` property |
 | Meeting Hub folder | *(empty — same as note folder)* | Folder for the Meeting Tracker, Meeting Insights, the `Meetings.base` dashboard, and the `Weekly Reviews`, `Series` and `Accounts` notes, e.g. `Meeting Hub`. After changing it, click **Move existing files** to move the ones you already have (links to them keep working; a file already in the new folder is left in place) |
+| Prepare my day each night | On, 12:30 AM | Builds My Day, creates the day's meeting notes with their brief and rebuilds the Tracker each night (Obsidian open, Mac on power); a missed night is caught up when Obsidian is next open. **Prepare now** runs it straight away |
+| Copy the Daily Briefing to | *(empty)* | A folder outside the vault — e.g. a Google Drive for desktop folder — where My Day is written as plain-text `Daily Briefing.md` each time it's rebuilt, for Gemini or another assistant to read |
+| Notify before a meeting | 5 minutes | A Mac notification before each meeting that opens its note and brief; 0 = off |
+| Notify after a meeting | On | 10 minutes after a meeting with no AI reply yet: import the Krisp transcript and add the reply |
+| Morning summary | 8:30 AM | A notification with the day's meetings and what's due or overdue, opening My Day; clear to turn off |
+| Wrap-up reminder | 5:30 PM | A notification with how many of your items slipped, opening Wrap up my day; clear to turn off |
 | Hours in advance | 12 | Create notes for events starting within this many hours (1–48) |
 | Poll interval | 30 min | How often to check for new upcoming events (5–120) |
 | Include past events | Off | Also create notes for events that have already started |
@@ -429,6 +435,7 @@ Both steps are optional. The note's sections are there for you to write in by ha
 | **Open meeting tracker** | Rebuilds and opens `Meeting Tracker.md` in your Meeting Hub folder: your Focus list, overdue, due soon, high priority, waiting on others, gone stale, by account, recent decisions, this week's meetings |
 | **Open My Day** | Rebuilds and opens `My Day.md` in your Meeting Hub folder: the day's meetings, your focus, what attendees owe you, loose ends — tomorrow's from 6 PM. See [My Day](docs/DASHBOARDS.md#my-day-and-the-daily-briefing) |
 | **Prepare my day** | Gets the day ready now (it also runs each night at 12:30 AM): the day's meeting notes with their briefs, the Meeting Tracker, My Day and the Daily Briefing |
+| **Add tasks from an email or chat message** | Paste an email or Slack/Teams thread, copy it for your AI assistant, then paste its reply to add the action items to My To-Dos, tagged with where they came from |
 | **Wrap up my day** | Goes through your items that slipped today and new ones without a date — Done, Tomorrow, Next week, Park or Won't do — then prepares tomorrow |
 | **Add a to-do** | Opens a quick box to add a task that isn't from a meeting to `My To-Dos.md` in your Meeting Hub folder (also a ribbon icon and a **+ To-do** button in the action items panel) |
 | **Open my to-dos** | Opens `My To-Dos.md`, creating it if needed |

@@ -234,3 +234,9 @@
 .cal-notes-icon-button {
   padding: 4px 6px;
 }
+
+.cal-notes-capture {
+  width: 100%;
+  font-family: var(--font-monospace);
+  font-size: 0.85em;
+}

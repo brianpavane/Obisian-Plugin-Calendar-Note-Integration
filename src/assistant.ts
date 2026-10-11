@@ -291,6 +291,26 @@ function replyLines(text: string): string[] {
   return trimBlank(first > 0 ? lines.slice(first) : lines);
 }
 
+/** Every `- [ ] **[[Owner]]**: Task (date, Priority)` line in `text`, as action items. */
+export function nextStepsIn(text: string): ActionItem[] {
+  return text.replace(/\r\n/g, "\n").split("\n")
+    .map((l) => l.match(/^\s*[-*+]\s+\[ \]\s+(\S.*)$/)?.[1])
+    .filter((t): t is string => !!t)
+    .map(nextStep);
+}
+
+/** Instructions for turning an email or chat message into next steps, in the format {@link nextStepsIn} reads. */
+export function captureInstructions(me: string | undefined, today: string): string {
+  return [
+    `Find the action items in the message below${me ? ` for me (${me}) or that others promised me` : ""}. Today is ${today}.`,
+    "Reply with only a list, one line per action item, in exactly this form:",
+    "- [ ] **[[Full Name]]**: What needs doing (YYYY-MM-DD, Priority)",
+    `The owner is the person who has to do it${me ? `; write me as [[${me}]]` : ""}. Give a date only if one was asked for, turning "by Friday" into a date. ` +
+      "Priority is High (urgent, blocking, or someone is waiting on it), Medium, Low, or Someday (mentioned, but nobody committed). " +
+      "Don't invent action items; if there are none, reply \"None\".",
+  ].join("\n");
+}
+
 /**
  * A Next Steps line: `**[[Owner]]**: Task (2026-10-10, High)`. Brackets at the
  * end holding a date or a priority are read and dropped from the task; other

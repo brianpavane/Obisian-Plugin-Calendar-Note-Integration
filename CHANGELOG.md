@@ -11,6 +11,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+**Tasks from email and Slack/Teams**
+**Add a to-do** now records where a task came from (Email, or Slack or Teams) and an optional link back to the message. A new **Add tasks from an email or chat message** command takes a pasted message through your AI assistant (copy/paste, as with meeting replies) and adds its action items to My To-Dos with owners, dates and priorities.
+
 **1:1 series notes show what each of you owes**
 The series note of a recurring 1:1 (every meeting just you and one other person) now also lists what that person owes you from any meeting, not only the 1:1, and what you owe them from any meeting with them.
 

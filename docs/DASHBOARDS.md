@@ -282,6 +282,8 @@ Once the plugin knows your name, a second menu shows **Mine** (items owned by yo
 
 Tasks that aren't from a meeting go in **My To-Dos**, a note in your Meeting Hub folder. Click the **list with a plus** icon in the ribbon, the **+ To-do** button at the top of this panel, or run **Add a to-do** (give it a hotkey under **Settings → Hotkeys**). Type the task, optionally pick a due date and a priority, and press **Enter**; it's added without opening the note. You can also type `- [ ] …` lines straight into the note (**Open my to-dos**).
 
+**From email or chat.** In the **Add a to-do** box, pick **From** (Email, or Slack or Teams) and paste a link back to the message if it has one, such as a Slack permalink; the to-do is tagged `#from-email` or `#from-chat`. For a long email or thread, run **Add tasks from an email or chat message** (or click **Tasks from a message** in My Day): paste the message, click **Copy for AI** and paste that into your assistant, then paste its reply and click **Add tasks**. Your action items go on your list; what others promised goes to Waiting on others. As with meeting replies, the plugin never contacts the AI itself.
+
 To-dos are always yours. They lead this panel, are ranked into the Tracker's **Focus** with your meeting items, go to **Gone stale?** when old and undated (or marked Someday), and count in the weekly review's Done and Overdue lists.
 
 ### Park: keep it for the account, off your list

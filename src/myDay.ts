@@ -115,7 +115,7 @@ export function dayNote(input: DayInput): string {
     "",
     `*Updated ${input.updated}. Prepared each night at 12:30 AM, and refreshed when you open it or click ↻. Edits here are overwritten.*`,
     "",
-    "[Wrap up my day](obsidian://meeting-notes?do=wrap-up) · [Add a to-do](obsidian://meeting-notes?do=add-todo) · [Prepare tomorrow](obsidian://meeting-notes?do=prepare)",
+    "[Wrap up my day](obsidian://meeting-notes?do=wrap-up) · [Add a to-do](obsidian://meeting-notes?do=add-todo) · [Tasks from a message](obsidian://meeting-notes?do=capture) · [Prepare tomorrow](obsidian://meeting-notes?do=prepare)",
     "",
     "## At a glance",
     "",

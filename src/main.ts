@@ -53,7 +53,8 @@ import { canonicalEventId } from "./appleCalendarApi";
 import { briefBlock, hasBrief, removeBrief, upsertBrief } from "./brief";
 import { BRIEFING_FILENAME, briefingText, DAY_FILENAME, DAY_TYPE, dayNote, longDay, type DayMeeting } from "./myDay";
 import { WrapUpModal, wrapUpRows } from "./wrapUp";
-import { AddTodoModal, addTodo as appendTodo, newTodosNote, TODOS_FILENAME, TODOS_TITLE, TODOS_TYPE, type NewTodo } from "./todos";
+import { CaptureModal } from "./capture";
+import { addCapturedTodos, AddTodoModal, addTodo as appendTodo, newTodosNote, TODOS_FILENAME, TODOS_TITLE, TODOS_TYPE, type NewTodo } from "./todos";
 import { TodayView, TODAY_VIEW, type NoteAction } from "./todayView";
 import { currentOrNextMeeting, meetingToJoin, statusText } from "./meetingStatus";
 import {
@@ -240,6 +241,12 @@ export default class GoogleCalendarPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "add-tasks-from-message",
+      name: "Add tasks from an email or chat message",
+      callback: () => this.openCapture(),
+    });
+
+    this.addCommand({
       id: "wrap-up-my-day",
       name: "Wrap up my day",
       callback: () => this.openWrapUp(),
@@ -250,6 +257,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       const run: Record<string, () => unknown> = {
         "wrap-up": () => this.openWrapUp(),
         "add-todo": () => this.openAddTodo(),
+        capture: () => this.openCapture(),
         prepare: () => this.prepareDay(true, addDays(localDate(this.now()), 1)),
         "my-day": () => this.openMyDay(),
       };
@@ -1196,6 +1204,16 @@ export default class GoogleCalendarPlugin extends Plugin {
     const file = await this.todosNote();
     await this.app.vault.process(file, (content) => appendTodo(content, todo, localDate(this.now())));
     new Notice(`Calendar Notes: Added to ${TODOS_TITLE}.`);
+  }
+
+  /** Add tasks from an email or chat message, by way of the user's AI assistant. */
+  openCapture(): void {
+    const today = localDate(this.now());
+    new CaptureModal(this.app, this.myNames()[0], today, async (items, from) => {
+      const file = await this.todosNote();
+      await this.app.vault.process(file, (content) => addCapturedTodos(content, items, from, today));
+      new Notice(`Calendar Notes: Added ${items.length} task${items.length !== 1 ? "s" : ""} to ${TODOS_TITLE}.`);
+    }).open();
   }
 
   async openTodos(): Promise<void> {
