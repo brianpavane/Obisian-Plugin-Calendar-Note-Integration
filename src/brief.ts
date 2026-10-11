@@ -107,7 +107,8 @@ export function upsertBrief(content: string, block: string): string {
   const firstSection = lines.findIndex((l, i) => i >= body && /^## /.test(l));
   const at = agenda !== -1 ? agenda : firstSection;
   if (at === -1) return `${content.replace(/\s*$/, "")}\n\n${block}\n`;
-  return [...lines.slice(0, at), block, "", ...lines.slice(at)].join("\n");
+  const gap = at > 0 && lines[at - 1].trim() ? [""] : [];
+  return [...lines.slice(0, at), ...gap, block, "", ...lines.slice(at)].join("\n");
 }
 
 /** The note without its brief. */

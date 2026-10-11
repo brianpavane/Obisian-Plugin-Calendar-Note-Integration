@@ -1122,6 +1122,11 @@ export function doneTasks(content: string): OpenTask[] {
   return tasksMatching(content, DONE_TASK_RE);
 }
 
+/** Cancelled ("won't do"), non-empty tasks (`- [-] …`) in a note's content. */
+export function cancelledTasks(content: string): OpenTask[] {
+  return tasksMatching(content, /^\s*[-*+] \[-\] (.*\S)\s*$/);
+}
+
 /**
  * Note options for one event: its series note, if one exists, the link to
  * the previous meeting in its series that took place (cancelled, removed and

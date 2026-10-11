@@ -7,6 +7,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+**Items assigned to "me" count as yours**
+Next steps an AI reply assigned to "You" or "Me" (saved as `(owner: me)`) were listed under Waiting on others; they're now yours in Focus, the action items panel and the Meeting Brief.
+
+**Old weekly reviews stay as they were**
+Opening a weekly review older than last week no longer rewrites it with today's open and overdue items, so it stays a record of its week. This week's and last week's still refresh when opened, and any review's ↻ icon still rebuilds it.
+
+**A hub tick that can't be matched says so**
+Ticking an item in a Meeting Hub note after its wording changed in the meeting note used to do nothing silently. The plugin now says it couldn't find the item and rebuilds the list from the notes as they are. Ticked lines you write yourself, outside the part the plugin rebuilds, are left alone.
+
+**Meeting Brief kept apart from the Meeting details box**
+The brief is always separated from the details box above it by a blank line, so a template without one can't pull the brief into the box.
+
+---
+
 ## [6.22.0] – 2026-10-10
 
 ### Fixed

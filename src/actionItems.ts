@@ -363,11 +363,11 @@ export function tasksQueryExcludes(globalQuery: string, folder: string): boolean
 
 /**
  * Whether a task is the user's: it names one of `myNames` as an owner, or
- * names no owner at all (a task in your own notes is yours). Names match
- * whatever their capitalization.
+ * `(owner: me)` as AI replies write "You"/"Me", or names no owner at all (a
+ * task in your own notes is yours). Names match whatever their capitalization.
  */
 export function isMine(meta: TaskMeta, myNames: string[]): boolean {
   if (meta.owners.length === 0) return true;
-  const mine = new Set(myNames.map((n) => n.trim().toLowerCase()).filter(Boolean));
+  const mine = new Set(["me", ...myNames.map((n) => n.trim().toLowerCase()).filter(Boolean)]);
   return meta.owners.some((o) => mine.has(o.toLowerCase()));
 }

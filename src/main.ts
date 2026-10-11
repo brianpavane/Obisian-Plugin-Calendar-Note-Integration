@@ -72,6 +72,7 @@ import {
   seriesId,
   setSeriesLink,
   joinUrl,
+  cancelledTasks,
   doneTasks,
   markNoteRemoved,
   openTasks,
@@ -127,6 +128,13 @@ const RIBBON_ICONS: Array<[string, string, (plugin: GoogleCalendarPlugin) => unk
 ];
 /** The Meeting Brief refreshes itself when its note is opened this long before the meeting starts. */
 const BRIEF_REFRESH_BEFORE_MS = 60 * 60 * 1_000;
+/** The part of a Meeting Hub note between its plugin markers, or all of it if it has none. */
+function managedPart(content: string): string {
+  const start = content.search(/<!-- [a-z-]+:start/);
+  const end = content.search(/<!-- [a-z-]+:end -->/);
+  return start !== -1 && end > start ? content.slice(start, end) : content;
+}
+
 /** A Meeting Hub note rebuilt this recently isn't rebuilt again when it opens. */
 const HUB_REBUILT_RECENTLY_MS = 5_000;
 /** Automatic Krisp import looks at meetings that ended within this long. */
@@ -774,25 +782,37 @@ export default class GoogleCalendarPlugin extends Plugin {
   async completeTickedHubItems(file: TFile): Promise<void> {
     if (!this.hubNoteKind(file)) return;
     let heading = "";
-    const ticked: Array<{ text: string; path: string; drop: boolean }> = [];
-    for (const line of (await this.app.vault.read(file)).split("\n")) {
+    const ticked: Array<{ text: string; path: string; drop: boolean; line: string }> = [];
+    // Only the part the plugin writes: a ticked line of the user's own in an
+    // overview's or review's free-writing part is left alone.
+    for (const line of managedPart(await this.app.vault.read(file)).split("\n")) {
       if (/^#{1,6}\s/.test(line)) heading = line.trim();
       const item = tickedItem(line);
-      if (item) ticked.push({ text: item.text, path: item.path, drop: item.cancelled || heading === STALE_HEADING });
+      if (item) ticked.push({ text: item.text, path: item.path, drop: item.cancelled || heading === STALE_HEADING, line });
     }
     let done = 0;
     let dropped = 0;
+    const missing: string[] = [];
     const today = localDate(this.now());
     for (const { text, path, drop } of ticked) {
       const note = this.app.vault.getAbstractFileByPath(`${path}.md`);
-      if (!(note instanceof TFile)) continue;
-      const task = openTasks(await this.app.vault.read(note)).find((t) => itemText(parseTaskMeta(t.text)) === text);
-      if (!task) continue;
+      const content = note instanceof TFile ? await this.app.vault.read(note) : "";
+      const task = openTasks(content).find((t) => itemText(parseTaskMeta(t.text)) === text);
+      if (!(note instanceof TFile) || !task) {
+        // Already closed (another copy of it in this note was ticked first) is fine; anything else changed since the rebuild.
+        const closed = [...doneTasks(content), ...cancelledTasks(content)].some((t) => itemText(parseTaskMeta(t.text)) === text);
+        if (!closed) missing.push(text);
+        continue;
+      }
       if (drop && (await cancelTask(this.app, note, task, today))) dropped++;
       if (!drop && (await completeTask(this.app, note, task, today))) done++;
     }
-    if (done + dropped === 0) return;
+    if (missing.length > 0) {
+      new Notice(`Calendar Notes: Couldn't find "${missing[0]}"${missing.length > 1 ? ` and ${missing.length - 1} more` : ""} in its meeting note — it was changed or removed since this note was rebuilt. Refreshing the list.`);
+    }
+    if (done + dropped + missing.length === 0) return;
     await this.refreshHubNote(file);
+    if (done + dropped === 0) return;
     const count = (n: number) => `${n} item${n !== 1 ? "s" : ""}`;
     new Notice(`Calendar Notes: ${[done && `Checked off ${count(done)}`, dropped && `Marked ${count(dropped)} won't do`].filter(Boolean).join("; ")} in ${done + dropped !== 1 ? "their meeting notes" : "its meeting note"}.`);
   }
@@ -821,9 +841,17 @@ export default class GoogleCalendarPlugin extends Plugin {
     return `The Tasks plugin's queries will also list the open items shown in the Meeting Hub notes. In Settings → Tasks → Global query, add this line: path does not include ${hub}`;
   }
 
-  /** Rebuild a Meeting Hub note when it's opened, unless the plugin has just rebuilt it. */
+  /**
+   * Rebuild a Meeting Hub note when it's opened, unless the plugin has just
+   * rebuilt it. A weekly review older than last week is left as the record
+   * of its week (its ↻ icon still rebuilds it).
+   */
   private async refreshHubNoteOnOpen(file: TFile | null): Promise<void> {
     if (!file || !this.metadataReady || Date.now() - (this.hubRebuiltAt.get(file.path) ?? 0) < HUB_REBUILT_RECENTLY_MS) return;
+    if (this.hubNoteKind(file) === "review") {
+      const weekEnd = String(this.app.metadataCache.getFileCache(file)?.frontmatter?.week_end ?? "").slice(0, 10);
+      if (weekEnd && weekEnd < addDays(localDate(this.now()), -7)) return;
+    }
     await this.refreshHubNote(file);
   }
 

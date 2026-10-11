@@ -56,3 +56,8 @@ test("upsertBrief adds the brief above the Agenda, replaces it in place, and rem
   assert.equal(removeBrief(twice), note);
   assert.equal(removeBrief(note), note);
 });
+
+test("upsertBrief keeps a blank line between a details box and the brief", () => {
+  const out = upsertBrief("# Sync\n> [!info] Meeting details\n> When: now\n## Agenda\n", `${BRIEF_START}\nx\n${BRIEF_END}`);
+  assert.match(out, /> When: now\n\n<!-- meeting-brief:start/);
+});

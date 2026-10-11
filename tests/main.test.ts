@@ -1359,3 +1359,44 @@ test("Add a to-do files it in My To-Dos in the Meeting Hub, and to-dos rank in t
   await plugin.completeTickedHubItems(trackerFile as never);
   assert.match(todos.content ?? "", /- \[x\] Clean desk ➕ 2026-04-03 ✅ 2026-04-03/);
 });
+
+test("a ticked hub item that changed since the rebuild is reported, and the user's own ticked lines are left alone", async () => {
+  const app = createMemoryApp([
+    { path: "Meeting Notes/Sync.md", content: "---\ntitle: \"Sync\"\nstart: 2026-04-01T10:00\naccount: \"Acme\"\ncalendar_event_id: \"s\"\n---\n\n## Next Steps\n\n- [ ] Send deck\n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings({ hubFolder: "Meeting Hub" });
+  await plugin.openAccountOverview("Acme");
+  const account = app.files.get("Meeting Hub/Accounts/Acme.md") as TFile;
+
+  account.content = (account.content ?? "").replace("## Overview\n\n- ", "## Overview\n\n- [x] My own note · [[Meeting Notes/Sync|Sync]]");
+  const before = account.content;
+  const notices = getNotices().length;
+  await plugin.completeTickedHubItems(account as never);
+  assert.equal(account.content, before, "a line above the markers isn't the plugin's");
+  assert.equal(getNotices().length, notices);
+
+  (app.files.get("Meeting Notes/Sync.md") as TFile).content = "---\ntitle: \"Sync\"\nstart: 2026-04-01T10:00\naccount: \"Acme\"\ncalendar_event_id: \"s\"\n---\n\n## Next Steps\n\n- [ ] Send the deck to Bob\n";
+  account.content = (account.content ?? "").replace("- [ ] Send deck", "- [x] Send deck");
+  await plugin.completeTickedHubItems(account as never);
+  assert.match(getNotices().at(-1)?.message ?? "", /Couldn't find "Send deck" in its meeting note/);
+  assert.match(account.content ?? "", /- \[ \] Send the deck to Bob/, "the list is rebuilt from the note as it is now");
+  assert.match(account.content ?? "", /- \[x\] My own note/);
+});
+
+test("an old weekly review isn't rewritten when opened; this week's and last week's are", async () => {
+  const review = (week: string, start: string, end: string) => ({
+    path: `Weekly Reviews/${week} Weekly Review.md`,
+    content: `---\ntype: weekly-review\nweek_start: ${start}\nweek_end: ${end}\n---\n\n<!-- weekly-review:start — the plugin rebuilds everything down to the end marker each time you open this review. Write below it. -->\nold\n<!-- weekly-review:end -->\n`,
+  });
+  const app = createMemoryApp([review("2026-W10", "2026-03-02", "2026-03-08"), review("2026-W13", "2026-03-23", "2026-03-29")]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+  plugin.metadataReady = true;
+  const onOpen = (path: string) =>
+    (plugin as unknown as { refreshHubNoteOnOpen: (f: TFile) => Promise<void> }).refreshHubNoteOnOpen(app.files.get(path) as TFile);
+  await onOpen("Weekly Reviews/2026-W10 Weekly Review.md");
+  await onOpen("Weekly Reviews/2026-W13 Weekly Review.md");
+  assert.match((app.files.get("Weekly Reviews/2026-W10 Weekly Review.md") as TFile).content ?? "", /\nold\n/);
+  assert.doesNotMatch((app.files.get("Weekly Reviews/2026-W13 Weekly Review.md") as TFile).content ?? "", /\nold\n/);
+});

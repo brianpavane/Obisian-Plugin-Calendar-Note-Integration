@@ -150,3 +150,8 @@ test("cancelTask marks an item won't do with the Tasks plugin's cancelled status
   assert.equal(await cancelTask(app as never, file as never, { line: 2, text: "Old idea" }, "2026-10-10"), true);
   assert.equal(file.content, "## Next Steps\n\n- [-] Old idea ❌ 2026-10-10\n- [ ] Keep\n");
 });
+
+test("isMine counts (owner: me), as AI replies write You or Me, as the user's", () => {
+  assert.equal(isMine(parseTaskMeta("Send notes (owner: me)"), ["Brian Pavane"]), true);
+  assert.equal(isMine(parseTaskMeta("Send notes (owner: me)"), []), true);
+});
