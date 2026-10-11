@@ -27,6 +27,12 @@ export const SPEAKERS_SECTIONS = ["Speakers"];
 export const NOTES_SECTIONS = ["Notes"];
 export const TRANSCRIPT_SECTIONS = ["Transcript"];
 
+/** How the assistant should rank Next Steps; shared by the built-in instructions and docs/AGENT_INSTRUCTIONS.md. */
+export const PRIORITY_RULES = [
+  "Give every next step a priority in its brackets, after any date: High, Medium, Low or Someday. High: someone called it urgent or blocking, a customer is waiting on it, or it's due within 5 working days. Medium: a real commitment without that urgency. Low: nice to have, or \"when you get a chance\". Someday: mentioned, but nobody committed to it and it will probably never get done.",
+  "Use High sparingly: at most 5 High next steps per meeting across everyone, ideally 3 or fewer, and at most 2 of them owned by me (Me in MEETING DETAILS).",
+];
+
 export const DEFAULT_INSTRUCTIONS = [
   "Write up the meeting below from my notes and the transcript. MEETING DETAILS comes from my calendar and is correct; MY NOTES are my own notes and take priority over the transcript.",
   "Work out who each transcript speaker (Speaker 0, Speaker 1…) is from the dialogue, and write each person as an Obsidian link, [[Full Name]], throughout.",
@@ -51,7 +57,7 @@ export const DEFAULT_INSTRUCTIONS = [
   "- 3 to 5 bullets: what the next meeting must pick up from this one.",
   "",
   "## Next Steps",
-  "- [ ] **[[Full Name]]**: One checkbox per follow-up task, with its owner (YYYY-MM-DD)",
+  "- [ ] **[[Full Name]]**: One checkbox per follow-up task, with its owner (YYYY-MM-DD, Priority)",
   "",
   "## Summary (by topic)",
   "### Topic name",
@@ -67,6 +73,7 @@ export const DEFAULT_INSTRUCTIONS = [
   "| Transcript Reference | Identified Name | Organization / Role | Identification Context |",
   "",
   "In Next Steps, give a due date in brackets as YYYY-MM-DD only when one was mentioned; turn relative dates such as \"by Friday\" into dates using the meeting date.",
+  ...PRIORITY_RULES,
   "Use only what's in the notes and transcript; don't invent tasks, owners or dates. Write [TBD] or [Unclear from audio] for anything ambiguous.",
 ].join("\n");
 
@@ -77,6 +84,8 @@ export interface MeetingInfo {
   /** e.g. "10:00 AM – 10:30 AM" */
   time: string;
   attendees: string[];
+  /** The user's name, so the assistant knows which next steps are theirs. */
+  me?: string;
 }
 
 /**
@@ -94,6 +103,7 @@ export function copyText(content: string, meeting: MeetingInfo, instructions?: s
     ...(meeting.date ? [`Date: ${meeting.date}`] : []),
     ...(meeting.time ? [`Time: ${meeting.time}`] : []),
     ...(meeting.attendees.length > 0 ? [`Attendees: ${meeting.attendees.join(", ")}`] : []),
+    ...(meeting.me ? [`Me: ${meeting.me}`] : []),
     "",
     "MY NOTES",
     notes || "(none)",
@@ -110,7 +120,7 @@ export interface ActionItem {
   people?: string[];
   /** A role or team that owns the task, written as `(owner: …)`. */
   role?: string;
-  priority?: "High" | "Medium" | "Low";
+  priority?: "High" | "Medium" | "Low" | "Someday";
   /** YYYY-MM-DD */
   due?: string;
   /** Text already in the assistant's own task format (short replies). */
@@ -210,6 +220,7 @@ function owner(cell: string): Pick<ActionItem, "people" | "role"> {
 
 function priority(cell: string): ActionItem["priority"] {
   if (/^h/i.test(cell)) return "High";
+  if (/^s/i.test(cell)) return "Someday";
   if (/^m/i.test(cell)) return "Medium";
   if (/^l/i.test(cell)) return "Low";
   return undefined;
@@ -280,14 +291,23 @@ function replyLines(text: string): string[] {
   return trimBlank(first > 0 ? lines.slice(first) : lines);
 }
 
-/** A Next Steps line: `**[[Owner]]**: Task (2026-10-10)`; other wording is kept as written. */
+/**
+ * A Next Steps line: `**[[Owner]]**: Task (2026-10-10, High)`. Brackets at the
+ * end holding a date or a priority are read and dropped from the task; other
+ * wording, such as `(before the kickoff)`, is kept as written.
+ */
 function nextStep(text: string): ActionItem {
   const m = text.match(/^\*\*(.+?)\*\*\s*:?\s*(.+)$/);
   if (!m) return { task: text, raw: text };
   let task = m[2].trim();
-  const due = task.match(/\s*\(([^()]*?(\d{4}-\d{2}-\d{2})[^()]*)\)\s*$/);
-  if (due) task = task.slice(0, due.index).trim();
-  return { task, ...owner(m[1].replace(/:\s*$/, "").trim()), due: due?.[2] };
+  const tail = task.match(/\s*\(([^()]*)\)\s*$/);
+  const parts = tail ? tail[1].split(/\s*[,;]\s*/) : [];
+  const due = parts.map((p) => p.match(/\d{4}-\d{2}-\d{2}/)?.[0]).find(Boolean);
+  const level = parts
+    .map((p) => p.replace(/^\[|\]$/g, "").replace(/^priority:\s*/i, "").trim())
+    .find((p) => /^(high|medium|low|someday)$/i.test(p));
+  if (tail && (due || level)) task = task.slice(0, tail.index).trim();
+  return { task, ...owner(m[1].replace(/:\s*$/, "").trim()), due, priority: level ? priority(level) : undefined };
 }
 
 /** `[[Target|Alias]]` and `[[Target]]` links reduced to their target. */
@@ -468,7 +488,7 @@ export function parseReply(text: string): AssistantReply | undefined {
 }
 
 /** The Tasks plugin's priority markers. */
-const PRIORITY_MARK = { High: "⏫", Medium: "🔼", Low: "🔽" } as const;
+const PRIORITY_MARK = { High: "⏫", Medium: "🔼", Low: "🔽", Someday: "⏬" } as const;
 
 /**
  * An action item as a task line, in the Tasks plugin's format: owner in the

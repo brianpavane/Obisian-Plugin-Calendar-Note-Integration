@@ -82,3 +82,13 @@ test("buildTracker puts the user's items first: Focus, then their own lists, Wai
   assert.doesNotMatch(section("Gone stale?"), /Tidy wiki/);
   assert.match(content, /\| 6 \| 1 \| 1 \| 1 \| 2 \| 2 \| 2 \|/);
 });
+
+test("Someday items never reach Focus and go straight to Gone stale?", () => {
+  const content = buildTracker([
+    meeting("Team/Sync", "2026-10-07", { openItems: [parseTaskMeta("Explore partner idea ⏬"), parseTaskMeta("Book room")] }),
+  ], "2026-10-08", "now");
+  const focus = content.split("## Focus")[1].split("\n## ")[0];
+  assert.doesNotMatch(focus, /Explore partner idea/);
+  assert.match(focus, /Book room/);
+  assert.match(content.split("## Gone stale?")[1].split("\n## ")[0], /Marked Someday[\s\S]*- \[ \] Explore partner idea · ⏬ ·/);
+});

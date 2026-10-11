@@ -22,6 +22,9 @@ When a reply saves an account, that account's overview note is brought up to dat
 
 ### Added
 
+**The AI ranks each next step: High, Medium, Low or Someday**
+The built-in AI instructions and the Meeting Scribe agent instructions now ask for a priority at the end of each next step's brackets, e.g. `(2026-10-09, High)`, with at most 5 High per meeting (ideally 3) and at most 2 of them yours. **Add AI reply** turns it into the Tasks priority mark (⏫ 🔼 🔽 ⏬). Someday items never appear in Focus and go straight to **Gone stale?**. **Copy meeting for AI assistant** now adds a `Me:` line with your name so the AI knows which items are yours. Update your saved agent's instructions from `docs/AGENT_INSTRUCTIONS.md` to use it.
+
 **Focus: your most pressing items at the top of the Tracker**
 The Meeting Tracker opens with a short Focus list of your 7 most pressing items, each tagged with why: overdue, due soon, high priority, for an at-risk account (latest meeting Negative or Blocked), or from this week. Overdue, Due soon and High priority now list only your items.
 

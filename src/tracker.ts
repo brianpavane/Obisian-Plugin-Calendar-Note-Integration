@@ -125,6 +125,8 @@ function grouped(items: Item[], key: (item: Item) => string | undefined, none: s
 }
 
 const isHigh = (i: Item) => i.meta.priority === "high" || i.meta.priority === "highest";
+/** Someday (⏬): an item nobody committed to, which will probably never get done. */
+const isSomeday = (i: Item) => i.meta.priority === "lowest";
 
 /** Accounts whose latest meeting held went badly: sentiment Negative or outcome Blocked. */
 export function atRiskAccounts(meetings: TrackerMeeting[], today: string): Set<string> {
@@ -153,7 +155,7 @@ export function focusItems(items: Item[], today: string, atRisk: Set<string>, si
     ["from this week", (i) => i.meeting.date >= weekAgo, (a, b) => b.meeting.date.localeCompare(a.meeting.date)],
   ];
   const picked: Array<Item & { reason: string }> = [];
-  const left = new Set(items);
+  const left = new Set(items.filter((i) => !isSomeday(i)));
   for (const [reason, test, sort] of tiers) {
     for (const item of [...left].filter(test).sort(sort)) {
       if (picked.length >= size) return picked;
@@ -164,11 +166,12 @@ export function focusItems(items: Item[], today: string, atRisk: Set<string>, si
   return picked;
 }
 
-/** Undated, not high-priority items from meetings at least {@link STALE_DAYS} days ago, oldest first. */
+/** Someday items, and undated, not high-priority items from meetings at least {@link STALE_DAYS} days ago, oldest first. */
 export function staleItems(items: Item[], today: string): Item[] {
   const cutoff = addDays(today, -STALE_DAYS);
+  const old = (i: Item) => !i.meta.due && !isHigh(i) && !!(i.meta.created ?? i.meeting.date) && (i.meta.created ?? i.meeting.date) <= cutoff;
   return items
-    .filter((i) => !i.meta.due && !isHigh(i) && (i.meta.created ?? i.meeting.date) && (i.meta.created ?? i.meeting.date) <= cutoff)
+    .filter((i) => isSomeday(i) || old(i))
     .sort((a, b) => (a.meta.created ?? a.meeting.date).localeCompare(b.meta.created ?? b.meeting.date));
 }
 
@@ -245,7 +248,7 @@ export function buildTracker(meetings: TrackerMeeting[], today: string, updated:
     STALE_HEADING,
     "",
     ...(stale.length > 0
-      ? [`*No due date and from a meeting over ${STALE_DAYS} days ago. Tick one here to drop it (marked won't do); tick it anywhere else to mark it done.*`, "", ...list(stale, () => 0)]
+      ? [`*Marked Someday (⏬), or with no due date and from a meeting over ${STALE_DAYS} days ago. Tick one here to drop it (marked won't do); tick it anywhere else to mark it done.*`, "", ...list(stale, () => 0)]
       : ["Nothing here."]),
     "",
     "## Open items by account",

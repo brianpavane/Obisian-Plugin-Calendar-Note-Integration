@@ -8,7 +8,7 @@ The agent replies with a **Meeting Metadata** block and six sections. **Add AI r
 |---|---|---|
 | **Meeting Metadata** | Note properties | `meeting_category`, `account` (not when it's `General`), `organizations`, `key_topics`, `sentiment`, `outcome`, and `tags` — see [Properties for the dashboards](#properties-for-the-dashboards). Not added to the note's text |
 | **1. Executive Summary** | Executive Summary | Replaced: the narrative paragraph, a horizontal rule, and the **Core Elements for Next Meeting Continuity** bullets |
-| **2. Next Steps** | Next Steps | Added, one checkbox per step. `- [ ] **[[Danny Ward]]**: Send the runbook (by Friday, 2026-10-09)` becomes `- [ ] Send the runbook @[[Danny Ward]] ➕ 2026-10-06 📅 2026-10-09`: the owner as `@[[Full Name]]` (several owners each get one; a team is written `(owner: [[CVS]] Network Team)`), the date added, and a due date when the brackets hold a `YYYY-MM-DD` date. Steps already in the note aren't added again |
+| **2. Next Steps** | Next Steps | Added, one checkbox per step. `- [ ] **[[Danny Ward]]**: Send the runbook (by Friday, 2026-10-09, High)` becomes `- [ ] Send the runbook @[[Danny Ward]] ⏫ ➕ 2026-10-06 📅 2026-10-09`: the owner as `@[[Full Name]]` (several owners each get one; a team is written `(owner: [[CVS]] Network Team)`), the priority as a Tasks mark (High ⏫, Medium 🔼, Low 🔽, Someday ⏬), the date added, and a due date when the brackets hold a `YYYY-MM-DD` date. Steps already in the note aren't added again |
 | **3. Summary (by topic)** | Summary by Topic | Replaced; the `### Topic` headings sit under it |
 | **4. Key Decisions/Agreements** | Key Decisions | Added as written; decisions already in the note aren't added again |
 | **5. Additional Items** | Additional Items | Replaced (left alone when the reply says "No additional items noted") |
@@ -157,9 +157,15 @@ You must produce your output as a `Meeting Metadata` block followed by the follo
 
 ## 2. Next Steps
 - **Format**: Checkbox-style markdown bulleted list (`- [ ]`).
-- **Syntax**: `- [ ] **[[Owner's Real Name]]**: Specific, actionable deliverable (Target Deadline / Milestone if mentioned)`
+- **Syntax**: `- [ ] **[[Owner's Real Name]]**: Specific, actionable deliverable (Target Deadline / Milestone if mentioned, Priority)`
 - **Rules**: Every single action item must be explicitly assigned to a mapped stakeholder who speaks in the transcript, or to a named team (e.g., `**[[CVS]] Network Team**`). Never leave an item unassigned. Use Obsidian-style `[[Wiki Links]]` for the owner.
-- **Deadlines**: When a deadline is mentioned, convert it to a date in `YYYY-MM-DD` format inside the brackets, resolving relative dates ("by Friday", "next Tuesday", "end of month") from the meeting date in `MEETING DETAILS` — e.g., `(by Friday, 2026-10-09)`. Keep milestones without a date as written (e.g., `(before the POV kickoff)`). If no deadline was mentioned, omit the brackets.
+- **Deadlines**: When a deadline is mentioned, convert it to a date in `YYYY-MM-DD` format inside the brackets, resolving relative dates ("by Friday", "next Tuesday", "end of month") from the meeting date in `MEETING DETAILS` — e.g., `(by Friday, 2026-10-09)`. Keep milestones without a date as written (e.g., `(before the POV kickoff)`). If no deadline was mentioned, the brackets hold only the priority.
+- **Priority**: End the brackets with exactly one of `High`, `Medium`, `Low` or `Someday`, after any deadline — e.g., `(by Friday, 2026-10-09, High)` or `(Medium)`. Judge it only from what the transcript shows:
+  - `High`: someone called it urgent or blocking, a customer is waiting on it, or it's due within 5 working days.
+  - `Medium`: a real commitment without that urgency.
+  - `Low`: nice to have, or "when you get a chance".
+  - `Someday`: mentioned, but nobody committed to it and it will probably never get done.
+- **Priority limits**: Use `High` sparingly — at most 5 `High` next steps per meeting across all owners, ideally 3 or fewer, and at most 2 of them owned by Brian Pavane (`Me` in `MEETING DETAILS`). Rank everyone's next steps, not only Brian's.
 
 ## 3. Summary (by topic)
 - **Format**: Use topical subheadings (`### Topic Name`) with a 1-paragraph synthesis or tight bullet points.
@@ -191,7 +197,7 @@ You must produce your output as a `Meeting Metadata` block followed by the follo
 4. **Semantic Optimization**: Avoid vague pronouns (e.g., *"He will check..."*). Instead, use explicit names (e.g., *"[[Jason Gervickas]] will check..."*) to allow Gemini Enterprise and other RAG engines to map connections perfectly.
 ````
 
-To have Next Steps deadlines land as Tasks due dates, the date in the brackets must be `YYYY-MM-DD`; the instructions ask for that. A deadline without a date, such as `(before the POV kickoff)`, stays in the task's text.
+To have Next Steps deadlines land as Tasks due dates, the date in the brackets must be `YYYY-MM-DD`; the instructions ask for that. A deadline without a date, such as `(before the POV kickoff)`, stays in the task's text. The priority at the end of the brackets becomes the Tasks priority mark; **Someday** items never appear in the Meeting Tracker's Focus list and go straight to its **Gone stale?** section, where one tick drops them.
 
 ## What the plugin sends with Copy meeting for AI assistant
 
@@ -201,6 +207,7 @@ Title: Weekly 1-1
 Date: 2026-10-06
 Time: 10:00 AM – 10:30 AM
 Attendees: Alice Smith, Bob Jones
+Me: Brian Pavane
 
 MY NOTES
 - Budget for Q4 approved
@@ -211,4 +218,4 @@ You
 …
 ```
 
-With **Include instructions when copying** switched on (for an assistant without saved instructions), the plugin's own short instructions — editable in settings — are put in front of this block.
+`Me` is your name, from **Your name** in the plugin's settings or your entry in calendar invites, so the agent knows which next steps are yours. With **Include instructions when copying** switched on (for an assistant without saved instructions), the plugin's own short instructions — editable in settings — are put in front of this block.

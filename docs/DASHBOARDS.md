@@ -205,7 +205,7 @@ In the panel, a due date shows under the item, in **red** once the date has pass
 
 ### Priority
 
-Mark an item's priority with the Tasks plugin's symbols: `⏫` high, `🔼` medium, `🔽` low (`🔺` highest, `⏬` lowest). Action items added from an AI reply get these from the reply's Priority column. The panel shows **High** in red, and when grouped by person or due date, puts higher-priority items first.
+Mark an item's priority with the Tasks plugin's symbols: `⏫` high, `🔼` medium, `🔽` low (`🔺` highest, `⏬` lowest, which the plugin treats as **Someday**: never in the Tracker's Focus, always under **Gone stale?**). Action items added from an AI reply get these from the priority the AI writes at the end of each next step, e.g. `(2026-10-09, High)` — see [AI agent instructions](AGENT_INSTRUCTIONS.md). The panel shows **High** in red, and when grouped by person or due date, puts higher-priority items first.
 
 Ticking an item in the panel also adds the date it was done (`✅ 2026-10-08`), in the same format the Tasks plugin uses. More in **[Tasks and meeting action items](TASKS.md)**.
 

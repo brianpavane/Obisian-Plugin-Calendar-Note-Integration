@@ -479,3 +479,32 @@ test("a full Meeting Scribe reply with its Meeting Metadata block files sections
   assert.equal(reply.actionItems.length, 3);
   assert.match(reply.summary[0], /^\[\[CVS\]\] and Zscaler/);
 });
+
+test("Next Steps priorities in the brackets become Tasks priority marks, with or without a date", () => {
+  const reply = parseReply([
+    "## Executive Summary", "Short.", "",
+    "## Next Steps",
+    "- [ ] **[[Ann Lee]]**: Send the runbook (by Friday, 2026-10-09, High)",
+    "- [ ] **[[Bob Jones]]**: Book the review (Medium)",
+    "- [ ] **[[Ann Lee]]**: Share slides ([TBD], Low)",
+    "- [ ] **[[Bob Jones]]**: Explore a partner integration (Someday)",
+    "- [ ] **[[Ann Lee]]**: Confirm scope (before the POV kickoff)",
+    "- [ ] **[[Ann Lee]]**: Review pricing (high level)",
+  ].join("\n"))!;
+  assert.deepEqual(reply.actionItems.map((i) => actionLine(i)), [
+    "- [ ] Send the runbook @[[Ann Lee]] ⏫ 📅 2026-10-09",
+    "- [ ] Book the review @[[Bob Jones]] 🔼",
+    "- [ ] Share slides @[[Ann Lee]] 🔽",
+    "- [ ] Explore a partner integration @[[Bob Jones]] ⏬",
+    "- [ ] Confirm scope (before the POV kickoff) @[[Ann Lee]]",
+    "- [ ] Review pricing (high level) @[[Ann Lee]]",
+  ]);
+});
+
+test("the copied meeting names the user, and the built-in instructions ask for capped priorities", () => {
+  const text = copyText("## Notes\n\n- Mine\n", { ...meeting, me: "Brian Pavane" }, DEFAULT_INSTRUCTIONS)!;
+  assert.match(text, /Attendees: Alice Smith, Bob Jones\nMe: Brian Pavane\n/);
+  assert.match(DEFAULT_INSTRUCTIONS, /\(YYYY-MM-DD, Priority\)/);
+  assert.match(DEFAULT_INSTRUCTIONS, /High, Medium, Low or Someday/);
+  assert.match(DEFAULT_INSTRUCTIONS, /at most 5 High next steps per meeting across everyone, ideally 3 or fewer, and at most 2 of them owned by me/);
+});

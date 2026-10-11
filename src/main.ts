@@ -1748,6 +1748,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       .filter((a): a is string => typeof a === "string")
       .map((a) => a.replace(/\[\[|\]\]/g, "").replace(/\s*<[^>]*>$/, "").trim());
     return {
+      me: this.myNames()[0],
       title: meeting?.title ?? file.basename,
       date,
       time: meeting ? `${time(meeting.start)} – ${time(meeting.end)}` : "",
