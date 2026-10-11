@@ -1416,3 +1416,43 @@ test("two quick ticks handled at the same time check each item off once", async 
   assert.match(meeting, /- \[x\] Send deck 📅 2026-04-02 ✅ 2026-04-03\n- \[x\] Book room 📅 2026-04-02 ✅ 2026-04-03/);
   assert.doesNotMatch(getNotices().map((n) => n.message).join("\n"), /Couldn't find/, "the second handler finding them already done isn't an error");
 });
+
+test("the brief refreshes itself on open in the hour before the meeting, but not further ahead or once it has started", async () => {
+  const note = (start: string, end: string) =>
+    `---\ntitle: "Sync"\nstart: ${start}\nend: ${end}\ncalendar_event_id: "s"\n---\n\n## Agenda\n\n- \n`;
+  const app = createMemoryApp([
+    { path: "Soon.md", content: note("2026-04-03T06:45", "2026-04-03T07:15") },
+    { path: "Later.md", content: note("2026-04-03T09:00", "2026-04-03T09:30") },
+    { path: "Now.md", content: note("2026-04-03T05:45", "2026-04-03T06:30") },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+  plugin.metadataReady = true;
+  for (const path of ["Soon.md", "Later.md", "Now.md"]) await plugin.refreshBriefOnOpen(app.files.get(path) as never);
+  const hasBrief = (path: string) => /Meeting Brief/.test((app.files.get(path) as TFile).content ?? "");
+  assert.deepEqual([hasBrief("Soon.md"), hasBrief("Later.md"), hasBrief("Now.md")], [true, false, false]);
+});
+
+test("a note created for an upcoming event gets its brief from the event; a past event's note gets none", async () => {
+  const app = createMemoryApp([
+    { path: "Meeting Notes/Pilot 1.md", content: "---\ntitle: \"Pilot\"\nstart: 2026-03-27T10:00\naccount: \"Acme\"\ncalendar_event_id: \"pilot::2026-03-27\"\n---\n\n## Next Steps\n\n- [ ] Send runbook @[[Ann Lee]]\n" },
+    { path: "Meeting Notes/Pilot 2.md", content: "# Pilot\n\n## Agenda\n\n- \n" },
+    { path: "Meeting Notes/Old.md", content: "# Old\n\n## Agenda\n\n- \n" },
+  ]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+  const write = (path: string, event: unknown) =>
+    (plugin as unknown as { writeNewNoteBrief: (f: TFile, e: unknown) => Promise<void> }).writeNewNoteBrief(app.files.get(path) as TFile, event);
+  await write("Meeting Notes/Pilot 2.md", {
+    id: "pilot::2026-04-03", summary: "Pilot",
+    start: { dateTime: "2026-04-03T10:00:00-04:00" }, end: { dateTime: "2026-04-03T10:30:00-04:00" },
+    attendees: [{ email: "ann@example.com", displayName: "Ann Lee" }],
+  });
+  const content = (app.files.get("Meeting Notes/Pilot 2.md") as TFile).content ?? "";
+  assert.match(content, /\*\*Account:\*\* \*\*Acme\*\*[\s\S]*### They owe you\n\n- Send runbook @\[\[Ann Lee\]\]/);
+
+  await write("Meeting Notes/Old.md", {
+    id: "old", summary: "Old", start: { dateTime: "2026-04-01T10:00:00-04:00" }, end: { dateTime: "2026-04-01T11:00:00-04:00" },
+  });
+  assert.doesNotMatch((app.files.get("Meeting Notes/Old.md") as TFile).content ?? "", /Meeting Brief/);
+});

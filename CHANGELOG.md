@@ -29,6 +29,12 @@ A next step's priority is now read when the assistant writes it as `(2026-10-09 
 **Hub notes refresh on open right after an update**
 After the plugin was updated or re-enabled mid-session, hub notes and Meeting Briefs didn't refresh when opened until some note changed. They now do straight away.
 
+**Meeting Brief never changes while you take notes**
+The brief used to refresh whenever its note was opened during the meeting, rewriting the note you were typing in. It now refreshes on its own only in the hour before the meeting starts; its icon still refreshes it any time.
+
+**A damaged Meeting Brief is replaced cleanly**
+If one of the brief's hidden markers was deleted, the next refresh left the old brief behind as a second copy. The brief is now replaced in one piece and a leftover marker is removed, without touching your writing.
+
 **Meeting Brief kept apart from the Meeting details box**
 The brief is always separated from the details box above it by a blank line, so a template without one can't pull the brief into the box.
 

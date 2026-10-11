@@ -124,7 +124,7 @@ Each new note for an upcoming meeting starts with a **Meeting Brief** above the 
 - **They owe you**: open items owned by this meeting's attendees, overdue first — from this series or account, so another customer's items never show up (a meeting with neither, like an ad-hoc 1:1, shows everything they owe you)
 - **You owe**: your open items from this series or account
 
-The items are plain bullets linking to the meeting each came from; tick them off there, in the action items panel or in the Tracker. The brief refreshes itself when you open the note in the hour before the meeting (and during it), or click the **clipboard** icon at the top right of the note (or run **Refresh meeting brief**). Once you **Add AI reply**, the brief is removed: the AI write-up is the record from then on.
+The items are plain bullets linking to the meeting each came from; tick them off there, in the action items panel or in the Tracker. The brief refreshes itself when you open the note in the hour before the meeting (not once it has started, so it never changes under the notes you're taking), or click the **clipboard** icon at the top right of the note (or run **Refresh meeting brief**). Once you **Add AI reply**, the brief is removed: the AI write-up is the record from then on.
 
 ---
 

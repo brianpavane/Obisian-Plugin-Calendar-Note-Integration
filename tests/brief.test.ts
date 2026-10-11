@@ -65,3 +65,17 @@ test("upsertBrief keeps a blank line between a details box and the brief", () =>
   const out = upsertBrief("# Sync\n> [!info] Meeting details\n> When: now\n## Agenda\n", `${BRIEF_START}\nx\n${BRIEF_END}`);
   assert.match(out, /> When: now\n\n<!-- meeting-brief:start/);
 });
+
+test("a brief with a deleted marker is replaced cleanly, without touching the user's writing", () => {
+  const note = "# Sync\n\n## Agenda\n\n- Mine\n\n## Notes\n\n- My notes\n";
+  const block = (x: string) => `${BRIEF_START}\n## Meeting Brief\n${x}\n${BRIEF_END}`;
+  for (const lost of [BRIEF_START, BRIEF_END]) {
+    let c = upsertBrief(note, block("v1")).replace(`${lost}\n`, "").replace(lost, "");
+    c = upsertBrief(upsertBrief(c, block("v2")), block("v3"));
+    assert.equal(c.split(BRIEF_START).length, 2, lost);
+    assert.equal(c.split(BRIEF_END).length, 2, lost);
+    assert.match(c, /v3/);
+    assert.doesNotMatch(c, /v2/);
+    assert.match(removeBrief(c), /- Mine\n\n## Notes\n\n- My notes/);
+  }
+});

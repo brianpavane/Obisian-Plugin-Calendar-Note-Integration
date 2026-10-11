@@ -977,13 +977,16 @@ export default class GoogleCalendarPlugin extends Plugin {
     new Notice("Calendar Notes: Meeting brief refreshed.");
   }
 
-  /** Refresh the brief when its note is opened in the hour before the meeting, or during it. */
-  private async refreshBriefOnOpen(file: TFile | null): Promise<void> {
+  /**
+   * Refresh the brief when its note is opened in the hour before the meeting.
+   * Not once it has started: the user is taking notes in it then.
+   */
+  async refreshBriefOnOpen(file: TFile | null): Promise<void> {
     if (!this.metadataReady || !this.canHaveBrief(file)) return;
     if (Date.now() - (this.hubRebuiltAt.get(file.path) ?? 0) < HUB_REBUILT_RECENTLY_MS) return;
     const meeting = this.noteMeeting(file);
     const now = this.now().getTime();
-    if (!meeting || meeting.start.getTime() - now > BRIEF_REFRESH_BEFORE_MS || meeting.end.getTime() < now) return;
+    if (!meeting || meeting.start.getTime() - now > BRIEF_REFRESH_BEFORE_MS || meeting.start.getTime() <= now) return;
     await this.refreshBrief(file);
   }
 

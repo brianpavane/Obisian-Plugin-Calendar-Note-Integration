@@ -100,11 +100,22 @@ export function briefBlock(input: BriefInput): string {
   ].join("\n");
 }
 
-/** The note with its brief replaced, or added above the Agenda (or the first section). */
-export function upsertBrief(content: string, block: string): string {
-  const start = content.indexOf(BRIEF_START);
+/** Where the note's brief is: its start marker and the end marker after it, or undefined. */
+function briefSpan(content: string): [number, number] | undefined {
   const end = content.indexOf(BRIEF_END);
-  if (start !== -1 && end > start) return content.slice(0, start) + block + content.slice(end + BRIEF_END.length);
+  const start = end === -1 ? -1 : content.lastIndexOf(BRIEF_START, end);
+  return start === -1 ? undefined : [start, end + BRIEF_END.length];
+}
+
+/**
+ * The note with its brief replaced, or added above the Agenda (or the first
+ * section). A lone marker left by an edit is dropped, so it can't later pair
+ * up with the new brief's and take the writing between them.
+ */
+export function upsertBrief(content: string, block: string): string {
+  const span = briefSpan(content);
+  if (span) return content.slice(0, span[0]) + block + content.slice(span[1]);
+  content = content.split("\n").filter((l) => l !== BRIEF_START && l !== BRIEF_END).join("\n");
   const lines = content.split("\n");
   const body = lines[0] === "---" ? lines.indexOf("---", 1) + 1 : 0;
   const agenda = lines.findIndex((l, i) => i >= body && /^## Agenda\s*$/.test(l));
@@ -117,10 +128,9 @@ export function upsertBrief(content: string, block: string): string {
 
 /** The note without its brief. */
 export function removeBrief(content: string): string {
-  const start = content.indexOf(BRIEF_START);
-  const end = content.indexOf(BRIEF_END);
-  if (start === -1 || end < start) return content;
-  return content.slice(0, start) + content.slice(end + BRIEF_END.length).replace(/^\n+/, "");
+  const span = briefSpan(content);
+  if (!span) return content;
+  return content.slice(0, span[0]) + content.slice(span[1]).replace(/^\n+/, "");
 }
 
 export const hasBrief = (content: string) => content.includes(BRIEF_START);
