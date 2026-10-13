@@ -71,6 +71,8 @@ import {
   createNoteFile,
   findDuplicateNotes,
   findMeetingNotes,
+  eventDate,
+  findMovedNotes,
   findNotesByEventId,
   findSeriesNotes,
   isSkippedStatus,
@@ -80,7 +82,10 @@ import {
   joinUrl,
   cancelledTasks,
   doneTasks,
+  keepMovedNote,
   markNoteRemoved,
+  movedAfterItStarted,
+  previousNoteOptions,
   openTasks,
   resolveNoteFilePath,
   seriesOptions,
@@ -1048,7 +1053,7 @@ export default class GoogleCalendarPlugin extends Plugin {
         }
         if (isSkipped(event, skipRules)) continue;
         if (this.app.vault.getAbstractFileByPath(resolveNoteFilePath(event, options)) instanceof TFile) continue;
-        const series = await seriesOptions(this.app, notesById, event, true, seriesNotes);
+        const series = await this.newNoteSeries(notesById, event, seriesNotes);
         const result = await createNoteFile(this.app, event, { ...options, ...series });
         notesById.set(event.id, result.file as TFile);
         if (!this.settings.processedEventIds.includes(event.id)) this.settings.processedEventIds.push(event.id);
@@ -1826,6 +1831,21 @@ export default class GoogleCalendarPlugin extends Plugin {
     return removed;
   }
 
+  /**
+   * Series options for a new note of `event`. If the meeting was moved after
+   * it took place, the note kept for that day is its Previous meeting.
+   */
+  private async newNoteSeries(
+    notesById: Map<string, TFile>,
+    event: CalendarEvent,
+    seriesNotes = findSeriesNotes(this.app),
+    movedNotes = findMovedNotes(this.app)
+  ): Promise<Awaited<ReturnType<typeof seriesOptions>>> {
+    const series = await seriesOptions(this.app, notesById, event, true, seriesNotes);
+    const moved = movedNotes.get(event.id);
+    return moved ? { ...series, ...(await previousNoteOptions(this.app, moved, true)) } : series;
+  }
+
   /** Trim processedEventIds if it exceeds the cap, then persist. */
   private async trimAndSaveProcessedIds(): Promise<void> {
     if (this.settings.processedEventIds.length > GoogleCalendarPlugin.MAX_PROCESSED_IDS) {
@@ -1844,6 +1864,9 @@ export default class GoogleCalendarPlugin extends Plugin {
    *    notes of meetings fetched outside the window, so a meeting moved to
    *    later in the week is renamed straight away, and notes of meetings you
    *    declined, which are marked declined.
+   *  - If the meeting had already started when it moved to another day, its
+   *    note is kept as the record of that day (`moved_to`) and the meeting
+   *    gets a new note, linked back to it, once it is in the window.
    *  - Otherwise a note is created, unless the event was already processed
    *    (its note was deliberately deleted) and `recreateDeleted` is false, or
    *    the event is cancelled.
@@ -1865,11 +1888,24 @@ export default class GoogleCalendarPlugin extends Plugin {
     };
     const options = await this.getNoteOptions(verbose);
     const notesById = findNotesByEventId(this.app);
+    const movedNotes = findMovedNotes(this.app);
     const seriesNotes = findSeriesNotes(this.app);
     const skipRules = { titles: this.settings.skipTitles, solo: this.settings.skipSolo };
     let created = 0;
     let updated = 0;
     const blocked: Array<[TFile, string]> = [];
+    const kept: TFile[] = [];
+    const keepIfMovedAfterStart = async (file: TFile, event: CalendarEvent): Promise<boolean> => {
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      if (!fm || !movedAfterItStarted(fm, event, this.now())) return false;
+      await keepMovedNote(this.app, file, eventDate(event));
+      notesById.delete(event.id);
+      movedNotes.set(event.id, file);
+      processedSet.delete(event.id);
+      this.settings.processedEventIds = this.settings.processedEventIds.filter((id) => id !== event.id);
+      kept.push(file);
+      return true;
+    };
     const syncExisting = async (file: TFile, event: CalendarEvent, declined: boolean) => {
       const series = await seriesOptions(this.app, notesById, event, false, seriesNotes);
       const result = await syncNoteFile(this.app, file, event, {
@@ -1886,7 +1922,7 @@ export default class GoogleCalendarPlugin extends Plugin {
     for (const event of events) {
       try {
         const existing = notesById.get(event.id);
-        if (existing) {
+        if (existing && !(await keepIfMovedAfterStart(existing, event))) {
           await syncExisting(existing, event, false);
           markProcessed(event.id);
           continue;
@@ -1897,7 +1933,7 @@ export default class GoogleCalendarPlugin extends Plugin {
           markProcessed(event.id);
           continue;
         }
-        const series = await seriesOptions(this.app, notesById, event, true, seriesNotes);
+        const series = await this.newNoteSeries(notesById, event, seriesNotes, movedNotes);
         const result = await createNoteFile(this.app, event, { ...options, ...series });
         notesById.set(event.id, result.file);
         if (result.wasCreated) {
@@ -1919,6 +1955,7 @@ export default class GoogleCalendarPlugin extends Plugin {
       const existing = notesById.get(event.id);
       if (!existing) continue;
       try {
+        if (await keepIfMovedAfterStart(existing, event)) continue;
         await syncExisting(existing, event, declined);
       } catch (err) {
         console.warn("[CalendarNoteIntegration] Failed to sync note for event:", err);
@@ -1934,6 +1971,8 @@ export default class GoogleCalendarPlugin extends Plugin {
       ...(created > 0 ? [`created ${plural(created, "note")}`] : []),
       ...(updated > 0 ? [`updated ${plural(updated, "note")}`] : []),
       ...(removed > 0 ? [`marked ${plural(removed, "note")} removed from calendar`] : []),
+      ...(kept.length === 1 ? [`kept "${kept[0].basename}" as it was — its meeting was moved to another day after it started`] : []),
+      ...(kept.length > 1 ? [`kept ${kept.length} notes as they were — their meetings were moved to another day after they started`] : []),
     ];
     if (parts.length > 0) {
       const message = parts.join(", ");
@@ -2097,7 +2136,7 @@ export default class GoogleCalendarPlugin extends Plugin {
   private async createAndOpenNote(event: CalendarEvent): Promise<void> {
     try {
       const options = await this.getNoteOptions(true);
-      const series = await seriesOptions(this.app, findNotesByEventId(this.app), event, true);
+      const series = await this.newNoteSeries(findNotesByEventId(this.app), event);
       const { file, wasCreated } = await createNoteFile(this.app, event, { ...options, ...series });
       if (wasCreated) await this.writeNewNoteBrief(file as TFile, event);
       await this.app.workspace.getLeaf(false).openFile(file as TFile);

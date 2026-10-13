@@ -7,6 +7,7 @@ import {
   createNoteFile,
   findDuplicateNotes,
   findNotesByEventId,
+  movedAfterItStarted,
   setSeriesLink,
   syncNoteFile,
   generateNoteFilename,
@@ -544,4 +545,14 @@ test("findDuplicateNotes never groups different occurrences, even with one saved
     note("Copy of 2026-10-13 - Weekly.md", "WEEKLY", "2026-10-13"),
   ]);
   assert.deepEqual(findDuplicateNotes(app as never).map((files) => files.map((f) => f.path)), [["2026-10-13 - Weekly.md", "Copy of 2026-10-13 - Weekly.md"]]);
+});
+
+test("movedAfterItStarted is true only when a meeting that had started is now on another day", () => {
+  const now = new Date("2026-04-06T08:00:00-04:00");
+  const monday = buildEvent({ start: { dateTime: "2026-04-06T09:00:00-04:00" }, end: { dateTime: "2026-04-06T09:30:00-04:00" } });
+  assert.equal(movedAfterItStarted({ date: "2026-04-03", start: "2026-04-03T10:00" }, monday, now), true);
+  assert.equal(movedAfterItStarted({ date: "2026-04-07", start: "2026-04-07T10:00" }, monday, now), false, "not started yet");
+  assert.equal(movedAfterItStarted({ date: "2026-04-06", start: "2026-04-06T07:00" }, monday, now), false, "same day");
+  assert.equal(movedAfterItStarted({ date: "2026-04-03" }, monday, now), true, "all-day note");
+  assert.equal(movedAfterItStarted({}, monday, now), false);
 });

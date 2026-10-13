@@ -446,6 +446,70 @@ test("refreshNotes renames the note of a meeting moved outside the window, witho
   assert.equal(app.createdPaths.length, 1);
 });
 
+test("refreshNotes keeps the note of a meeting moved to another day after it started, and creates a new one", async () => {
+  const app = createMemoryApp([{ path: "Meeting Notes", content: "" }]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+  plugin.getCalendarService = appleService([buildEvent({ id: "m", summary: "Planning", calendarName: "Work" })], ["Work"]);
+  await plugin.refreshNotes(false);
+
+  const friday = app.files.get("Meeting Notes/2026-04-03 - Planning.md") as TFile;
+  friday.content = (friday.content ?? "").replace("## Notes\n\n- ", "## Notes\n\n- Agreed the budget\n- [ ] Send the deck");
+  const before = friday.content;
+
+  plugin.now = () => new Date("2026-04-06T08:00:00-04:00");
+  const monday = buildEvent({
+    id: "m", summary: "Planning", calendarName: "Work",
+    start: { dateTime: "2026-04-06T09:00:00-04:00" }, end: { dateTime: "2026-04-06T09:30:00-04:00" },
+  });
+  plugin.getCalendarService = appleService([monday], ["Work"]);
+  await plugin.refreshNotes(false);
+
+  assert.deepEqual(app.renamed, []);
+  assert.equal(friday.path, "Meeting Notes/2026-04-03 - Planning.md");
+  assert.equal(friday.content, before.replace(/^(tags:)/m, "moved_to: 2026-04-06\n$1"));
+  const newNote = (app.files.get("Meeting Notes/2026-04-06 - Planning.md") as TFile).content ?? "";
+  assert.match(newNote, /^start: 2026-04-06T09:00$/m);
+  assert.match(newNote, /^previous_meeting: ".*2026-04-03 - Planning.*"$/m);
+  assert.match(newNote, /Send the deck/);
+  assert.doesNotMatch(newNote, /Agreed the budget/);
+  assert.match(getNotices().at(-1)?.message ?? "", /Created 1 note, kept "2026-04-03 - Planning" as it was/);
+
+  await plugin.refreshNotes(false);
+  assert.equal(app.createdPaths.length, 2);
+  assert.deepEqual(app.renamed, []);
+  assert.equal(friday.content, before.replace(/^(tags:)/m, "moved_to: 2026-04-06\n$1"));
+});
+
+test("a meeting moved after it started to a day outside the window gets its new note once that day is in the window", async () => {
+  const app = createMemoryApp([{ path: "Meeting Notes", content: "" }]);
+  const plugin = createPlugin(app);
+  plugin.settings = appleSettings();
+  plugin.getCalendarService = appleService([buildEvent({ id: "m", summary: "Planning", calendarName: "Work" })], ["Work"]);
+  await plugin.refreshNotes(false);
+
+  plugin.now = () => new Date("2026-04-03T12:00:00-04:00");
+  const later = buildEvent({
+    id: "m", summary: "Planning", calendarName: "Work",
+    start: { dateTime: "2026-04-09T10:00:00-04:00" }, end: { dateTime: "2026-04-09T11:00:00-04:00" },
+  });
+  plugin.getCalendarService = appleService([], ["Work"], [later]);
+  await plugin.refreshNotes(false);
+
+  const friday = (app.files.get("Meeting Notes/2026-04-03 - Planning.md") as TFile).content ?? "";
+  assert.match(friday, /^moved_to: 2026-04-09$/m);
+  assert.match(friday, /^start: 2026-04-03T10:00$/m);
+  assert.doesNotMatch(friday, /^status:/m);
+  assert.equal(app.createdPaths.length, 1);
+
+  plugin.now = () => new Date("2026-04-09T06:00:00-04:00");
+  plugin.getCalendarService = appleService([later], ["Work"]);
+  await plugin.refreshNotes(false);
+  const thursday = (app.files.get("Meeting Notes/2026-04-09 - Planning.md") as TFile).content ?? "";
+  assert.match(thursday, /^previous_meeting: ".*2026-04-03 - Planning.*"$/m);
+  assert.deepEqual(app.renamed, []);
+});
+
 test("refreshNotes does not create notes for meetings outside the window", async () => {
   const app = createMemoryApp([{ path: "Meeting Notes", content: "" }]);
   const plugin = createPlugin(app);
@@ -635,7 +699,6 @@ test("notes filed outside the note folder are still found, updated and opened", 
   assert.match((app.files.get("Clients/Acme/2026/Q2/Projects/Launch/2026-04-03 - Sync.md") as TFile).content ?? "", /^location: "Room 4"$/m);
 
   plugin.getCalendarService = serviceFor([{ ...event, start: { dateTime: "2026-04-04T10:00:00-04:00" }, end: { dateTime: "2026-04-04T11:00:00-04:00" } }]);
-  plugin.now = () => new Date("2026-04-04T06:00:00-04:00");
   await plugin.refreshNotes(false);
   assert.deepEqual(app.renamed, [[
     "Clients/Acme/2026/Q2/Projects/Launch/2026-04-03 - Sync.md",

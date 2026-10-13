@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+**A meeting moved after it took place gets a new note**
+When an organizer reuses an invite for a follow-up call by moving it to another day, the note of the meeting that already happened is no longer renamed and re-dated with its transcript and summary still in it. That note now stays as the record of its day, with a `moved_to` property giving the new date, and the meeting gets a new note for the new day, linked to the earlier one as its Previous meeting with its open action items carried over. Meetings moved before they start are still just renamed.
+
+---
+
 ## [6.24.0] – 2026-10-10
 
 ### Added

@@ -15,7 +15,7 @@ Reads events from **Apple Calendar on your Mac** — any account synced to Calen
 - **Structured meeting notes** — searchable properties, a Meeting details box, and Agenda, Notes, Executive Summary, Next Steps, Summary by Topic, Key Decisions, Additional Items, Speakers, and Transcript sections
 - **One-click join** — Zoom, Google Meet, Microsoft Teams, and Webex links are found in the event's URL, location, or description and shown as a **Join** link
 - **Attendees with RSVP status** — 🟢 accepted, 🔴 declined, 🟡 tentative, ⚪ awaiting; optionally as `[[Name]]` links to your people notes
-- **Notes stay in sync** — time, attendee, and location changes are applied to existing notes; moved meetings are renamed to their new date; cancelled, deleted and declined meetings are marked as such
+- **Notes stay in sync** — time, attendee, and location changes are applied to existing notes; moved meetings are renamed to their new date (or, if they had already started, get a new note and the old one is kept); cancelled, deleted and declined meetings are marked as such
 - **Recurring meetings** — every occurrence gets its own note, linked to the previous one, with where you left off (the AI write-up's continuity points) and last meeting's open action items in the Agenda
 - **Your own template** — point the plugin at a template note with placeholders, or use the built-in format
 - **Daily-note links** — each meeting links to that day's daily note, so the day's meetings appear in its backlinks
@@ -349,7 +349,7 @@ Only meetings that repeat in Apple Calendar are linked; separate events that hap
 
 **Series notes.** Click the **repeat** icon at the top of a recurring meeting's note (or on its row in **Today's meetings**), or run **Open series note**, to open one note for the whole series in the `Series` folder of your Meeting Hub folder. It has **Purpose** and **Standing agenda** sections for you, and a part the plugin rebuilds each time you open it: **Where we left off** (the latest meeting's continuity points), every occurrence (newest first, with ones that didn't happen struck through), open items across the series, and recent decisions. Each occurrence's note gets a **Series:** link back to it and a `series` property. For a **1:1** — a series where every meeting is just you and one other person — the series note also lists what they owe you from *any* meeting and what you owe them from any meeting with them, so it doubles as that person's page. If you edit "this and all following events" of a Google meeting, Calendar.app may start a new series, so the occurrences from then on can get their own series note.
 
-The **Previous** link skips occurrences that didn't happen (cancelled, deleted from the calendar, or declined), so it always points to the last meeting that took place. Moving a single occurrence to another day renames its note; it stays in the series.
+The **Previous** link skips occurrences that didn't happen (cancelled, deleted from the calendar, or declined), so it always points to the last meeting that took place. Moving a single occurrence to another day renames its note (or, if it had already started, keeps the note and creates a new one); it stays in the series.
 
 ### Daily notes
 
@@ -368,6 +368,8 @@ The plugin never edits daily notes, and the link moves with the meeting if it is
 Every poll, Refresh, and Rebuild updates the notes of meetings in the time window. The plugin only rewrites the calendar properties listed above (title, date, daily note, previous meeting, series, start, end, calendar, organizer, attendees, location, meeting link, status, and event ID) and the **Meeting details** box. Everything else in the note — your writing, extra properties, and tags you add — is never changed.
 
 If a meeting moves to another day, its note is renamed to the new date on the next sync (a title you edited in the filename is kept). This works for any new date within **Keep notes in sync for meetings up to this many days ahead** (30 days by default), even though new notes are only created **Hours in advance**. The plugin compares the date in the filename with the meeting's, so a note whose rename was blocked once is renamed as soon as it can be.
+
+If the meeting had already started when it was moved — an organizer reusing the invite for a follow-up call, say — its note is not renamed. It stays the record of the day it took place, with its transcript, summary and notes untouched, and gets a `moved_to` property with the new date. The plugin stops syncing it and creates a new note for the new day (when that day comes within **Hours in advance**), linked back to the earlier note as its **Previous** meeting, with its open action items carried over. If you deleted the new note, it isn't recreated.
 
 If a meeting is retitled, its note is renamed to the new title and its `# heading` updated (turn off **Rename notes when the meeting title changes** to keep the old name). A note you renamed yourself keeps your name; only its date changes.
 

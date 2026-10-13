@@ -939,20 +939,67 @@ export function findMeetingNotes(app: App): Array<{ id: string; file: TFile }> {
  * Index every note in the vault by its `calendar_event_id` property, so notes
  * filed away from the note folder are still found. Ids saved with a moved
  * occurrence's "/RID=…" are indexed without it; if two notes end up with the
- * same id, the one whose saved id already matches wins.
+ * same id, the one whose saved id already matches wins. Notes kept by
+ * {@link keepMovedNote} are left out: the meeting has moved on from them.
  */
 export function findNotesByEventId(app: App): Map<string, TFile> {
   const byId = new Map<string, TFile>();
   const exact = new Set<string>();
   for (const file of app.vault.getMarkdownFiles()) {
-    const stored = app.metadataCache.getFileCache(file)?.frontmatter?.calendar_event_id;
-    if (typeof stored !== "string" || !stored) continue;
+    const fm = app.metadataCache.getFileCache(file)?.frontmatter;
+    const stored = fm?.calendar_event_id;
+    if (typeof stored !== "string" || !stored || fm?.moved_to) continue;
     const id = canonicalEventId(stored);
     if (exact.has(id) || (byId.has(id) && stored !== id)) continue;
     byId.set(id, file);
     if (stored === id) exact.add(id);
   }
   return byId;
+}
+
+/** Notes kept by {@link keepMovedNote}, by event id; the latest-dated one when there are several. */
+export function findMovedNotes(app: App): Map<string, TFile> {
+  const byId = new Map<string, { file: TFile; date: string }>();
+  for (const file of app.vault.getMarkdownFiles()) {
+    const fm = app.metadataCache.getFileCache(file)?.frontmatter;
+    const stored = fm?.calendar_event_id;
+    if (typeof stored !== "string" || !stored || !fm?.moved_to) continue;
+    const id = canonicalEventId(stored);
+    const date = frontmatterDay(fm.date) || frontmatterDay(fm.start);
+    const known = byId.get(id);
+    if (!known || date > known.date) byId.set(id, { file, date });
+  }
+  return new Map([...byId].map(([id, { file }]) => [id, file]));
+}
+
+function frontmatterDay(value: unknown): string {
+  return value instanceof Date ? value.toISOString().slice(0, 10) : typeof value === "string" ? value.slice(0, 10) : "";
+}
+
+/**
+ * True if the note's meeting had already started by `now` and the calendar
+ * now has it on another day: the organizer moved an invite that took place,
+ * so the note is a record of that day rather than of the new one.
+ */
+export function movedAfterItStarted(frontmatter: Record<string, unknown>, event: CalendarEvent, now: Date): boolean {
+  const day = frontmatterDay(frontmatter.date) || frontmatterDay(frontmatter.start);
+  if (!day || day === eventDate(event)) return false;
+  const value = frontmatter.start ?? frontmatter.date;
+  const start = value instanceof Date ? value : typeof value === "string" ? new Date(value.length === 10 ? `${value}T00:00` : value) : undefined;
+  return !!start && !isNaN(start.getTime()) && start <= now;
+}
+
+/**
+ * Stop syncing a note whose meeting was moved after it took place: set
+ * `moved_to` to the meeting's new day and leave everything else as it is.
+ */
+export async function keepMovedNote(app: App, file: TFile, movedTo: string): Promise<void> {
+  await app.vault.process(file, (content) => {
+    const parsed = parseFrontmatter(content);
+    if (!parsed) return content;
+    applyManagedFrontmatter(parsed.blocks, [["moved_to", [`moved_to: ${movedTo}`]]]);
+    return `---\n${parsed.blocks.flatMap((b) => b.lines).join("\n")}\n---${parsed.end}${parsed.rest}`;
+  });
 }
 
 /**
@@ -967,9 +1014,7 @@ export function findDuplicateNotes(app: App): TFile[][] {
     const fm = app.metadataCache.getFileCache(file)?.frontmatter;
     const stored = fm?.calendar_event_id;
     if (typeof stored !== "string" || !stored) continue;
-    const day = (value: unknown) =>
-      value instanceof Date ? value.toISOString().slice(0, 10) : typeof value === "string" ? value.slice(0, 10) : "";
-    const key = `${canonicalEventId(stored)}|${day(fm?.date) || day(fm?.start)}`;
+    const key = `${canonicalEventId(stored)}|${frontmatterDay(fm?.date) || frontmatterDay(fm?.start)}`;
     byId.set(key, [...(byId.get(key) ?? []), file]);
   }
   return [...byId.values()].filter((files) => files.length > 1);
@@ -1147,10 +1192,18 @@ export async function seriesOptions(
   );
   const previous = previousNoteInSeries(held, event.id);
   if (!previous) return { seriesNote };
+  return { ...(await previousNoteOptions(app, previous, withItems)), seriesNote };
+}
+
+/** `previous` as a new note's Previous meeting, with its open items and continuity carried over when `withItems`. */
+export async function previousNoteOptions(
+  app: App,
+  previous: TFile,
+  withItems: boolean
+): Promise<Pick<NoteOptions, "previousNote" | "carriedItems" | "carriedContinuity">> {
   const content = withItems ? await app.vault.read(previous) : undefined;
   return {
     previousNote: previous.path.replace(/\.md$/, ""),
-    seriesNote,
     carriedItems: content !== undefined ? openTasks(content).map((t) => t.text) : undefined,
     carriedContinuity: content !== undefined ? continuityItems(content) : undefined,
   };
