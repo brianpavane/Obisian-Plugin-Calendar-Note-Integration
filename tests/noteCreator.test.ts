@@ -529,10 +529,10 @@ test("createNoteContent puts the last meeting's continuity points first in the A
     includeEventNotes: false,
     linkAttendees: false,
     previousNote: "Meetings/Weekly Sync",
-    carriedContinuity: ["Confirm the [[CVS]] POV scope", "TLS decryption pilot status"],
+    carriedContinuity: ["Confirm the [[XYZ]] POV scope", "TLS decryption pilot status"],
     carriedItems: ["Send deck"],
   });
-  assert.match(content, /## Agenda\n\n- Where we left off in \[\[Meetings\/Weekly Sync\|last meeting\]\]:\n  - Confirm the \[\[CVS\]\] POV scope\n  - TLS decryption pilot status\n- Open items from \[\[Meetings\/Weekly Sync\|last meeting\]\]:\n  - Send deck\n- \n/);
+  assert.match(content, /## Agenda\n\n- Where we left off in \[\[Meetings\/Weekly Sync\|last meeting\]\]:\n  - Confirm the \[\[XYZ\]\] POV scope\n  - TLS decryption pilot status\n- Open items from \[\[Meetings\/Weekly Sync\|last meeting\]\]:\n  - Send deck\n- \n/);
 });
 
 test("findDuplicateNotes never groups different occurrences, even with one saved id", () => {

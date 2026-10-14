@@ -14,7 +14,7 @@ const meetings = [
     continuity: ["Agree the TLS scope"],
     openItems: [
       parseTaskMeta("Send runbook @[[Ann Lee]] 📅 2026-10-05"),
-      parseTaskMeta("Fix certs @[[Brian Pavane]]"),
+      parseTaskMeta("Fix certs @[[John Smith]]"),
       parseTaskMeta("Share pricing @[[Bob Jones]]"),
     ],
   }),
@@ -23,8 +23,8 @@ const meetings = [
 
 test("the brief shows the account's state, where things were left, and what each side owes", () => {
   const block = briefBlock({
-    meetings, id: "pilot::2026-10-08", date: "2026-10-08", attendees: ["Ann Lee", "Brian Pavane"],
-    myNames: ["Brian Pavane"], today: "2026-10-08", updated: "now",
+    meetings, id: "pilot::2026-10-08", date: "2026-10-08", attendees: ["Ann Lee", "John Smith"],
+    myNames: ["John Smith"], today: "2026-10-08", updated: "now",
   });
   assert.ok(block.startsWith(`${BRIEF_START}\n## Meeting Brief\n`));
   assert.ok(block.endsWith(BRIEF_END));
@@ -35,10 +35,10 @@ test("the brief shows the account's state, where things were left, and what each
   assert.doesNotMatch(theyOwe, /Bob Jones|Fix certs/, "only attendees other than the user");
   assert.doesNotMatch(theyOwe, /Review plan/, "not from another account's meetings");
 
-  const adHoc = briefBlock({ meetings, id: "chat", date: "2026-10-08", attendees: ["Ann Lee"], myNames: ["Brian Pavane"], today: "2026-10-08", updated: "now" });
+  const adHoc = briefBlock({ meetings, id: "chat", date: "2026-10-08", attendees: ["Ann Lee"], myNames: ["John Smith"], today: "2026-10-08", updated: "now" });
   assert.match(adHoc.split("### They owe you")[1], /Send runbook[\s\S]*Review plan/, "a meeting with no series or account shows all they owe");
   const youOwe = block.split("### You owe")[1];
-  assert.match(youOwe, /- Fix certs @\[\[Brian Pavane\]\]/);
+  assert.match(youOwe, /- Fix certs @\[\[John Smith\]\]/);
   assert.doesNotMatch(youOwe, /Unrelated mine/, "only from this series or account");
   assert.doesNotMatch(block, /- \[ \]/, "plain bullets, never counted as this meeting's tasks");
 });
@@ -82,8 +82,8 @@ test("a brief with a deleted marker is replaced cleanly, without touching the us
 
 test("the brief still lists parked items for the series, marked parked", () => {
   const block = briefBlock({
-    meetings: [meeting("M/Pilot 1", "2026-10-01", { id: "pilot::2026-10-01", openItems: [parseTaskMeta("Draft SOW @[[Brian Pavane]] #parked")] })],
-    id: "pilot::2026-10-08", date: "2026-10-08", attendees: [], myNames: ["Brian Pavane"], today: "2026-10-08", updated: "now",
+    meetings: [meeting("M/Pilot 1", "2026-10-01", { id: "pilot::2026-10-01", openItems: [parseTaskMeta("Draft SOW @[[John Smith]] #parked")] })],
+    id: "pilot::2026-10-08", date: "2026-10-08", attendees: [], myNames: ["John Smith"], today: "2026-10-08", updated: "now",
   });
-  assert.match(block.split("### You owe")[1], /- Draft SOW @\[\[Brian Pavane\]\] · \[\[M\/Pilot 1\|Pilot 1\]\] · \*parked\*/);
+  assert.match(block.split("### You owe")[1], /- Draft SOW @\[\[John Smith\]\] · \[\[M\/Pilot 1\|Pilot 1\]\] · \*parked\*/);
 });

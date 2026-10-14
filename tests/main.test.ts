@@ -1345,11 +1345,11 @@ test("ticking an item under Gone stale? marks it won't do; [-] anywhere does too
 
 test("myNames combines the Your name setting with the user's own name in calendar invites", () => {
   const app = createMemoryApp([
-    { path: "Meeting Notes/Sync.md", content: "---\ncalendar_event_id: \"s\"\nattendees:\n  - \"Brian Pavane <me@example.com>\"\n  - \"Ann Lee <ann@example.com>\"\n---\n" },
+    { path: "Meeting Notes/Sync.md", content: "---\ncalendar_event_id: \"s\"\nattendees:\n  - \"John Smith <me@example.com>\"\n  - \"Ann Lee <ann@example.com>\"\n---\n" },
   ]);
   const plugin = createPlugin(app);
-  plugin.settings = appleSettings({ selfEmail: "me@example.com", myNames: "Brian, brian pavane" });
-  assert.deepEqual(plugin.myNames(), ["Brian", "Brian Pavane"]);
+  plugin.settings = appleSettings({ selfEmail: "me@example.com", myNames: "John, john smith" });
+  assert.deepEqual(plugin.myNames(), ["John", "John Smith"]);
 });
 
 test("notes that share a calendar id, such as older recurring-meeting notes, all count in the hub and the action items panel", async () => {

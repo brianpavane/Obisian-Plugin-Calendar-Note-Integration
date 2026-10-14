@@ -205,7 +205,7 @@ const isPerson = (name: string) => PERSON_RE.test(name) && !ROLE_WORDS.test(name
 /**
  * Who owns a task, from an Owner cell: `@[[Bob Jones]]` links (one or more),
  * plain names ("Bob Jones", "Bob Jones / Alice Smith"), or a role or team
- * (which may contain a link, as in "[[CVS]] Network Team").
+ * (which may contain a link, as in "[[XYZ]] Network Team").
  */
 function owner(cell: string): Pick<ActionItem, "people" | "role"> {
   const links = [...cell.matchAll(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)].map((m) => m[1].trim()).filter(Boolean);

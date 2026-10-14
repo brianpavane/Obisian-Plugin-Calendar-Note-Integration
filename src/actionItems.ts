@@ -425,7 +425,7 @@ export function isMine(meta: TaskMeta, myNames: string[]): boolean {
 }
 
 /**
- * Entries of the Your name setting that are a single word, like "Brian":
+ * Entries of the Your name setting that are a single word, like "John":
  * they would also claim items owned by anyone else written by that first name.
  */
 export function singleWordNames(value: string): string[] {

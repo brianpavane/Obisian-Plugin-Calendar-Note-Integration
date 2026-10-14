@@ -54,8 +54,8 @@ test("buildTracker puts the user's items first: Focus, then their own lists, Wai
     meeting("Clients/Acme/Pilot", "2026-10-06", {
       account: "Acme", sentiment: "Negative",
       openItems: [
-        parseTaskMeta("Fix certs @[[Brian Pavane]]"),
-        parseTaskMeta("Send runbook @[[Danny Ward]] 📅 2026-10-01"),
+        parseTaskMeta("Fix certs @[[John Smith]]"),
+        parseTaskMeta("Send runbook @[[Jane Doe]] 📅 2026-10-01"),
       ],
     }),
     meeting("Team/Sync", "2026-10-05", {
@@ -67,17 +67,17 @@ test("buildTracker puts the user's items first: Focus, then their own lists, Wai
       ],
     }),
     meeting("Old/Kickoff", "2026-08-01", { openItems: [parseTaskMeta("Old idea"), parseTaskMeta("Ask Bob @Bob")] }),
-  ], "2026-10-08", "now", ["Brian Pavane"]);
+  ], "2026-10-08", "now", ["John Smith"]);
 
   const section = (name: string) => content.split(`## ${name}`)[1]?.split("\n## ")[0] ?? "";
   const focus = section("Focus");
   const order = ["Late report", "Plan offsite", "Hire contractor", "Fix certs", "Tidy wiki"];
   assert.deepEqual(order.map((t) => focus.indexOf(t)).every((i, n, all) => i > 0 && (n === 0 || all[n - 1] < i)), true, focus);
   assert.match(focus, /- \[ \] Late report · 📅 2026-10-02 · \[\[Team\/Sync\|Sync\]\] · \*overdue\*/);
-  assert.match(focus, /Fix certs @\[\[Brian Pavane\]\] · \[\[Clients\/Acme\/Pilot\|Pilot\]\] · \*at-risk account\*/);
-  assert.doesNotMatch(focus, /Danny|Old idea/, "others' items and stale ones aren't in Focus");
+  assert.match(focus, /Fix certs @\[\[John Smith\]\] · \[\[Clients\/Acme\/Pilot\|Pilot\]\] · \*at-risk account\*/);
+  assert.doesNotMatch(focus, /Jane|Old idea/, "others' items and stale ones aren't in Focus");
   assert.doesNotMatch(section("Overdue"), /Send runbook/, "Overdue lists only the user's items");
-  assert.match(section("Waiting on others"), /### Bob \(1\)[\s\S]*### Danny Ward \(1\)\n\n- \[ \] Send runbook [^\n]+ · \*overdue\*/);
+  assert.match(section("Waiting on others"), /### Bob \(1\)[\s\S]*### Jane Doe \(1\)\n\n- \[ \] Send runbook [^\n]+ · \*overdue\*/);
   assert.match(section("Gone stale?"), /Tick one here to drop it[\s\S]*- \[ \] Old idea ·[\s\S]*- \[ \] Ask Bob/);
   assert.doesNotMatch(section("Gone stale?"), /Tidy wiki/);
   assert.match(content, /\| 6 \| 1 \| 1 \| 1 \| 2 \| 2 \| 0 \| 2 \|/);

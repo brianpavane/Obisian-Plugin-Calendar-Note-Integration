@@ -11,8 +11,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-**Agent instructions use example names**
-The ready-made AI agent instructions in `docs/AGENT_INSTRUCTIONS.md` no longer name a real person, employer, customer or colleague. The agent now takes your name from the `Me:` line the plugin already sends, and the examples use placeholder names such as John Smith and ABC Corp. The docs now point out where to add your own product terms, customers and projects.
+**Docs and examples use generic names**
+The ready-made AI agent instructions in `docs/AGENT_INSTRUCTIONS.md`, the **Your name** setting's hint, the README and the changelog no longer name a real person, employer, customer or colleague. The agent now takes your name from the `Me:` line the plugin already sends, and the examples use placeholder names such as John Smith and ABC Corp. The docs now point out where to add your own product terms, customers and projects.
 
 ---
 
@@ -45,7 +45,7 @@ Mac notifications before each meeting (with whether its brief is ready), 10 minu
 A new **My Day** page (sun icon) shows the day's meetings with their brief status and Join links, your focus, what the people you're meeting owe you, others' overdue items, loose ends (meetings without their AI reply, Krisp recordings to import) and what you've done — tomorrow's from 6 PM. Each night at 12:30 AM (or with **Prepare my day**) the plugin creates the day's meeting notes with their briefs, rebuilds the Tracker and My Day, and can copy My Day as plain text to a Google Drive folder as `Daily Briefing.md` for Gemini Enterprise to read. A missed night is caught up as soon as Obsidian is open.
 
 **Warning for a first name alone in Your name**
-The **Your name** setting now warns when an entry is a single name like "Brian": items owned by anyone else written as just "Brian" would count as yours. Matching is always on the whole name, so with your full name only, another Brian's items stay theirs.
+The **Your name** setting now warns when an entry is a single name like "John": items owned by anyone else written as just "John" would count as yours. Matching is always on the whole name, so with your full name only, another John's items stay theirs.
 
 ---
 
@@ -190,7 +190,7 @@ A reply with Executive Summary, Next Steps, Summary (by topic), Key Decisions/Ag
 `docs/AGENT_INSTRUCTIONS.md` now holds the Meeting Scribe & Action Intelligence Agent instructions. They resolve transcript speakers to `[[wiki-linked]]` names and end the Executive Summary with 3–5 **Core Elements for Next Meeting Continuity**. The Meeting Metadata block is an optional add-on there. The built-in instructions ask for the same format, metadata included.
 
 **Next Steps owners written as wiki-links**
-`- [ ] **[[Danny Ward]]**: …` and `**[[Jeff Duke]], [[Brian Pavane]]**: …` become tasks owned by `@[[Danny Ward]]` and so on; a team such as `[[CVS]] Network Team` becomes `(owner: [[CVS]] Network Team)`. Wiki-linked names in the Speakers table and metadata are saved as plain names.
+`- [ ] **[[Jane Doe]]**: …` and `**[[Tom Clark]], [[John Smith]]**: …` become tasks owned by `@[[Jane Doe]]` and so on; a team such as `[[XYZ]] Network Team` becomes `(owner: [[XYZ]] Network Team)`. Wiki-linked names in the Speakers table and metadata are saved as plain names.
 
 **The summary's horizontal rule no longer turns it into a heading**
 The `---` the agent puts after the Executive Summary paragraph is filed with blank lines around it, so Obsidian doesn't read the paragraph as a heading.

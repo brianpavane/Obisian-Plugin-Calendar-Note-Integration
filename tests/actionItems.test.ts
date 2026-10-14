@@ -123,13 +123,13 @@ test("tasksQueryExcludes spots a global query line that leaves out a folder", ()
 });
 
 test("isMine: items naming the user, or no one, are theirs; several owners count if any is the user", () => {
-  const me = ["Brian Pavane", "Brian"];
+  const me = ["John Smith", "John"];
   assert.equal(isMine(parseTaskMeta("Book room"), me), true);
-  assert.equal(isMine(parseTaskMeta("Send deck @[[brian pavane]]"), me), true);
-  assert.equal(isMine(parseTaskMeta("Review @[[Jeff Duke]] @[[Brian Pavane]]"), me), true);
-  assert.equal(isMine(parseTaskMeta("Send runbook @[[Danny Ward]]"), me), false);
-  assert.equal(isMine(parseTaskMeta("Open the firewall (owner: CVS Network Team)"), me), false);
-  assert.deepEqual(parseTaskMeta("Review @[[Jeff Duke]] @Ann (owner: IT)").owners, ["Jeff Duke", "Ann", "IT"]);
+  assert.equal(isMine(parseTaskMeta("Send deck @[[john smith]]"), me), true);
+  assert.equal(isMine(parseTaskMeta("Review @[[Tom Clark]] @[[John Smith]]"), me), true);
+  assert.equal(isMine(parseTaskMeta("Send runbook @[[Jane Doe]]"), me), false);
+  assert.equal(isMine(parseTaskMeta("Open the firewall (owner: XYZ Network Team)"), me), false);
+  assert.deepEqual(parseTaskMeta("Review @[[Tom Clark]] @Ann (owner: IT)").owners, ["Tom Clark", "Ann", "IT"]);
 });
 
 test("filterByOwner splits the panel into mine and waiting on others, and shows everything without names", () => {
@@ -152,7 +152,7 @@ test("cancelTask marks an item won't do with the Tasks plugin's cancelled status
 });
 
 test("isMine counts (owner: me), as AI replies write You or Me, as the user's", () => {
-  assert.equal(isMine(parseTaskMeta("Send notes (owner: me)"), ["Brian Pavane"]), true);
+  assert.equal(isMine(parseTaskMeta("Send notes (owner: me)"), ["John Smith"]), true);
   assert.equal(isMine(parseTaskMeta("Send notes (owner: me)"), []), true);
 });
 
@@ -180,6 +180,6 @@ test("parkTask tags an item #parked and unparks it; a parked item stays open but
 });
 
 test("singleWordNames flags first names alone in the Your name setting", () => {
-  assert.deepEqual(singleWordNames("Brian Pavane, Brian,  , Brian P. Pavane"), ["Brian"]);
+  assert.deepEqual(singleWordNames("John Smith, John,  , John Q. Smith"), ["John"]);
   assert.deepEqual(singleWordNames(""), []);
 });

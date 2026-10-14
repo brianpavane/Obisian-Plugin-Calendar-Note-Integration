@@ -647,7 +647,7 @@ export class GoogleCalendarSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Your name")
       .setDesc(
-        "How you're written as an owner in action items: your full name, e.g. Brian Pavane. Separate other spellings with commas. " +
+        "How you're written as an owner in action items: your full name, e.g. John Smith. Separate other spellings with commas. " +
           "Items owned by you, or by no one, are yours; the rest are listed as Waiting on others. " +
           "Your name in calendar invites (found with Your email address above) is used too."
       )

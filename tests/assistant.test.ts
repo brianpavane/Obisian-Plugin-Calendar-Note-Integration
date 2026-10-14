@@ -252,24 +252,24 @@ test("a Mode 2 report filed twice changes nothing, including its already-done it
 const SIX_SECTION_REPLY = `Here is the meeting write-up.
 
 ### 1. Executive Summary
-Zscaler and Blackbaud met to review the **NSS feed** rollout. The team agreed on a TLS fix.
+ABC Corp and Initech met to review the **log feed** rollout. The team agreed on a TLS fix.
 
 ### 2. Next Steps
-- [ ] **Brian Pavane**: Send the TLS certificate runbook (by Friday, 2026-10-09)
-- [ ] **[Matt Magyer / Danny Ward]**: Confirm the firewall window ([TBD])
+- [ ] **John Smith**: Send the TLS certificate runbook (by Friday, 2026-10-09)
+- [ ] **[Mike Brown / Jane Doe]**: Confirm the firewall window ([TBD])
   - Depends on the change board
-- [ ] **Blackbaud IT team**: Upgrade the connectors
+- [ ] **Initech IT team**: Upgrade the connectors
 - [ ] Review the pilot @[[Alice Smith]]
 
 ### 3. Summary (by topic)
-### NSS feed alerts
-Matt Magyer raised alert volume.
+### log feed alerts
+Mike Brown raised alert volume.
 - TLS error threshold at 5%
 ### Pricing decisions
 - Deferred to next call
 
 ### 4. Key Decisions/Agreements
-- **Brian Pavane, Matt Magyer**: Raise the TLS threshold to 5%.
+- **John Smith, Mike Brown**: Raise the TLS threshold to 5%.
 
 ### 5. Additional Items
 - No additional items noted.
@@ -279,30 +279,30 @@ Matt Magyer raised alert volume.
 ### 6. Speakers
 | Transcript Reference | Identified Name | Organization / Role | Identification Context |
 |---|---|---|---|
-| \`Speaker 0\` | Brian Pavane | Zscaler / Specialist SA | Addressed as Brian |`;
+| \`Speaker 0\` | John Smith | ABC Corp / Specialist SA | Addressed as John |`;
 
 test("parseReply reads the six-section report", () => {
   const reply = parseReply(SIX_SECTION_REPLY)!;
-  assert.deepEqual(reply.summary, ["Zscaler and Blackbaud met to review the **NSS feed** rollout. The team agreed on a TLS fix."]);
+  assert.deepEqual(reply.summary, ["ABC Corp and Initech met to review the **log feed** rollout. The team agreed on a TLS fix."]);
   assert.deepEqual(reply.actionItems.map((i) => actionLine(i, "2026-10-07")), [
-    "- [ ] Send the TLS certificate runbook @[[Brian Pavane]] ➕ 2026-10-07 📅 2026-10-09",
-    "- [ ] Confirm the firewall window ([TBD]) @[[Matt Magyer]] @[[Danny Ward]] ➕ 2026-10-07",
-    "- [ ] Upgrade the connectors (owner: Blackbaud IT team) ➕ 2026-10-07",
+    "- [ ] Send the TLS certificate runbook @[[John Smith]] ➕ 2026-10-07 📅 2026-10-09",
+    "- [ ] Confirm the firewall window ([TBD]) @[[Mike Brown]] @[[Jane Doe]] ➕ 2026-10-07",
+    "- [ ] Upgrade the connectors (owner: Initech IT team) ➕ 2026-10-07",
     "- [ ] Review the pilot @[[Alice Smith]] ➕ 2026-10-07",
   ]);
-  assert.deepEqual(reply.topics, ["### NSS feed alerts", "Matt Magyer raised alert volume.", "- TLS error threshold at 5%", "### Pricing decisions", "- Deferred to next call"]);
-  assert.deepEqual(reply.decisions, ["**Brian Pavane, Matt Magyer**: Raise the TLS threshold to 5%."]);
+  assert.deepEqual(reply.topics, ["### log feed alerts", "Mike Brown raised alert volume.", "- TLS error threshold at 5%", "### Pricing decisions", "- Deferred to next call"]);
+  assert.deepEqual(reply.decisions, ["**John Smith, Mike Brown**: Raise the TLS threshold to 5%."]);
   assert.deepEqual(reply.additional, [], "\"No additional items noted\" files nothing");
   assert.equal(reply.speakers.length, 3);
-  assert.match(reply.speakers[2], /Brian Pavane \| Zscaler/);
+  assert.match(reply.speakers[2], /John Smith \| ABC Corp/);
 });
 
 test("a six-section report fills each section of a new note, and filing it twice changes nothing", () => {
   const once = applyReply(blankNote, parseReply(SIX_SECTION_REPLY)!, true, "2026-10-07");
   assert.equal(once.actionItems, 4);
   assert.equal(once.decisions, 1);
-  assert.match(once.content, /## Executive Summary\n\nZscaler and Blackbaud[^\n]*\n\n## Next Steps\n\n- \[ \] Send the TLS/);
-  assert.match(once.content, /## Summary by Topic\n\n### NSS feed alerts\n[\s\S]*- Deferred to next call\n\n## Key Decisions\n\n- \*\*Brian Pavane, Matt Magyer\*\*: Raise/);
+  assert.match(once.content, /## Executive Summary\n\nABC Corp and Initech[^\n]*\n\n## Next Steps\n\n- \[ \] Send the TLS/);
+  assert.match(once.content, /## Summary by Topic\n\n### log feed alerts\n[\s\S]*- Deferred to next call\n\n## Key Decisions\n\n- \*\*John Smith, Mike Brown\*\*: Raise/);
   assert.match(once.content, /## Additional Items\n\n- \n\n## Speakers\n\n\| Transcript Reference [^\n]*\n\|---[^\n]*\n\| `Speaker 0` [^\n]*\n\n## Transcript/);
   assert.equal(applyReply(once.content, parseReply(SIX_SECTION_REPLY)!, true, "2026-10-08").content, once.content);
 });
@@ -310,9 +310,9 @@ test("a six-section report fills each section of a new note, and filing it twice
 test("a six-section report filed into an older note adds the new sections before the Transcript", () => {
   const old = "# Sync\n\n## Notes\n\n- Mine\n\n## Decisions\n\n- \n\n## Action items\n\n- [ ] \n\n## Meeting Summary\n\n\n\n## Transcript\n\nYou\n";
   const out = applyReply(old, parseReply(SIX_SECTION_REPLY)!, false).content;
-  assert.match(out, /## Decisions\n\n- \*\*Brian Pavane/);
+  assert.match(out, /## Decisions\n\n- \*\*John Smith/);
   assert.match(out, /## Action items\n\n- \[ \] Send the TLS/);
-  assert.match(out, /## Meeting Summary\n\nZscaler and Blackbaud[^\n]*\n\n## Summary by Topic\n\n### NSS feed alerts\n[\s\S]*\n## Speakers\n\n\|[\s\S]*\n\n## Transcript\n\nYou\n$/);
+  assert.match(out, /## Meeting Summary\n\nABC Corp and Initech[^\n]*\n\n## Summary by Topic\n\n### log feed alerts\n[\s\S]*\n## Speakers\n\n\|[\s\S]*\n\n## Transcript\n\nYou\n$/);
   assert.doesNotMatch(out, /## Executive Summary|## Next Steps|## Additional Items/);
 });
 
@@ -320,37 +320,37 @@ test("the Meeting Metadata block and Speakers table become properties, and ai_su
   const reply = parseReply([
     "### Meeting Metadata",
     "- **Category:** Customer",
-    "- **Account / Project:** Blackbaud",
-    "- **Organizations:** Zscaler, Blackbaud; GuidePoint Security",
-    "- **Key Topics:** NSS feeds, TLS inspection",
+    "- **Account / Project:** Initech",
+    "- **Organizations:** ABC Corp, Initech; Umbrella Security",
+    "- **Key Topics:** log feeds, TLS inspection",
     "- **Sentiment:** Mixed",
     "- **Outcome:** Decision Made",
-    "- **Search Tags:** #Customer #Blackbaud #ZeroTrust",
+    "- **Search Tags:** #Customer #Initech #ZeroTrust",
     "",
     SIX_SECTION_REPLY.slice(SIX_SECTION_REPLY.indexOf("### 1.")).replace(
-      "| `Speaker 0` | Brian Pavane |",
-      "| `Speaker 0` | Brian Pavane |  |  |\n| `Speaker 1` | Matt Magyer (High confidence) | Blackbaud | Named |\n| `Speaker 2` | Unidentified |"
+      "| `Speaker 0` | John Smith |",
+      "| `Speaker 0` | John Smith |  |  |\n| `Speaker 1` | Mike Brown (High confidence) | Initech | Named |\n| `Speaker 2` | Unidentified |"
     ),
   ].join("\n"))!;
   assert.equal(reply.category, "Customer");
-  assert.equal(reply.account, "Blackbaud");
-  assert.deepEqual(reply.organizations, ["Zscaler", "Blackbaud", "GuidePoint Security"]);
-  assert.deepEqual(reply.keyTopics, ["NSS feeds", "TLS inspection"]);
+  assert.equal(reply.account, "Initech");
+  assert.deepEqual(reply.organizations, ["ABC Corp", "Initech", "Umbrella Security"]);
+  assert.deepEqual(reply.keyTopics, ["log feeds", "TLS inspection"]);
   assert.equal(reply.sentiment, "Mixed");
   assert.equal(reply.outcome, "Decision Made");
-  assert.deepEqual(reply.tags, ["Customer", "Blackbaud", "ZeroTrust"]);
-  assert.deepEqual(reply.speakerNames, ["Brian Pavane", "Matt Magyer"]);
-  assert.equal(reply.summary[0].slice(0, 7), "Zscaler", "the metadata block isn't filed as text");
-  assert.deepEqual(reply.decisions, ["**Brian Pavane, Matt Magyer**: Raise the TLS threshold to 5%."], "decision owners aren't read as metadata");
+  assert.deepEqual(reply.tags, ["Customer", "Initech", "ZeroTrust"]);
+  assert.deepEqual(reply.speakerNames, ["John Smith", "Mike Brown"]);
+  assert.equal(reply.summary[0].slice(0, 8), "ABC Corp", "the metadata block isn't filed as text");
+  assert.deepEqual(reply.decisions, ["**John Smith, Mike Brown**: Raise the TLS threshold to 5%."], "decision owners aren't read as metadata");
 
   const once = applyReply(blankNote, reply, true, "2026-10-07").content;
   assert.match(once, /^meeting_category: "Customer"$/m);
-  assert.match(once, /^account: "Blackbaud"$/m);
+  assert.match(once, /^account: "Initech"$/m);
   assert.match(once, /^sentiment: "Mixed"$/m);
   assert.match(once, /^outcome: "Decision Made"$/m);
-  assert.match(once, /^organizations:\n {2}- "Zscaler"\n {2}- "Blackbaud"\n {2}- "GuidePoint Security"$/m);
-  assert.match(once, /^key_topics:\n {2}- "NSS feeds"\n {2}- "TLS inspection"$/m);
-  assert.match(once, /^speakers:\n {2}- "Brian Pavane"\n {2}- "Matt Magyer"$/m);
+  assert.match(once, /^organizations:\n {2}- "ABC Corp"\n {2}- "Initech"\n {2}- "Umbrella Security"$/m);
+  assert.match(once, /^key_topics:\n {2}- "log feeds"\n {2}- "TLS inspection"$/m);
+  assert.match(once, /^speakers:\n {2}- "John Smith"\n {2}- "Mike Brown"$/m);
   assert.match(once, /^ai_summarized: "2026-10-07"$/m);
   assert.equal(applyReply(once, reply, true, "2026-10-09").content, once);
   assert.doesNotMatch(applyReply(blankNote, reply, false, "2026-10-07").content, /ai_summarized|sentiment|speakers:/);
@@ -367,12 +367,12 @@ test("metadata placeholders such as General, TBD and None aren't saved", () => {
 test("the account is read however the assistant writes the metadata block", () => {
   const sections = "\n## Executive Summary\nShort.\n\n## Next Steps\n- [ ] **[[Ann Lee]]**: Send the deck\n";
   for (const meta of [
-    "## Meeting Metadata\n- **Category:** Customer\n- **Account/Project:** CVS",
-    "## Meeting Metadata\n- **Customer / Account:** CVS",
-    "## Meeting Metadata\n- Category: Customer\n- Account / Project: CVS",
-    "## Meeting Metadata\n| Field | Value |\n| --- | --- |\n| Category | Customer |\n| **Account / Project** | CVS |",
+    "## Meeting Metadata\n- **Category:** Customer\n- **Account/Project:** XYZ",
+    "## Meeting Metadata\n- **Customer / Account:** XYZ",
+    "## Meeting Metadata\n- Category: Customer\n- Account / Project: XYZ",
+    "## Meeting Metadata\n| Field | Value |\n| --- | --- |\n| Category | Customer |\n| **Account / Project** | XYZ |",
   ]) {
-    assert.equal(parseReply(meta + "\n" + sections)?.account, "CVS", meta);
+    assert.equal(parseReply(meta + "\n" + sections)?.account, "XYZ", meta);
   }
 });
 
@@ -380,11 +380,11 @@ test("a Meeting Metadata block after the six sections is read and not filed into
   const reply = parseReply([
     "## Executive Summary", "Short.", "",
     "## Speakers", "| Transcript Reference | Identified Name |", "| --- | --- |", "| Speaker 0 | [[Ann Lee]] |", "",
-    "## Meeting Metadata", "- **Account / Project:** CVS", "- **Sentiment:** Positive",
+    "## Meeting Metadata", "- **Account / Project:** XYZ", "- **Sentiment:** Positive",
   ].join("\n"))!;
-  assert.equal(reply.account, "CVS");
+  assert.equal(reply.account, "XYZ");
   assert.equal(reply.sentiment, "Positive");
-  assert.doesNotMatch(reply.speakers.join("\n"), /Metadata|CVS/);
+  assert.doesNotMatch(reply.speakers.join("\n"), /Metadata|XYZ/);
 });
 
 test("unbolded Label: value lines outside the metadata block aren't read as metadata", () => {
@@ -393,26 +393,26 @@ test("unbolded Label: value lines outside the metadata block aren't read as meta
 });
 
 const SCRIBE_REPLY = `## 1. Executive Summary
-[[CVS]] and Zscaler reviewed the **ZIA** POV. The team agreed to pilot TLS Decryption.
+[[XYZ]] and ABC Corp reviewed the **ABC Cloud** POV. The team agreed to pilot TLS Decryption.
 ---
 **Core Elements for Next Meeting Continuity:**
-- Confirm the [[CVS]] POV success criteria
-- Review NSS Feed alerts volume
+- Confirm the [[XYZ]] POV success criteria
+- Review Log Feed alerts volume
 - Decide on the Cloud Connector rollout
 
 ---
 
 ## 2. Next Steps
-- [ ] **[[Danny Ward]]**: Send the TLS Decryption runbook (2026-10-09)
-- [ ] **[[Jeff Duke]], [[Brian Pavane]]**: Book the CVS architecture review ([TBD])
-- [ ] **[[CVS]] Network Team**: Open the firewall change
+- [ ] **[[Jane Doe]]**: Send the TLS Decryption runbook (2026-10-09)
+- [ ] **[[Tom Clark]], [[John Smith]]**: Book the XYZ architecture review ([TBD])
+- [ ] **[[XYZ]] Network Team**: Open the firewall change
 
 ## 3. Summary (by topic)
 ### TLS Decryption
-- [[Danny Ward]] reported a 2% error rate.
+- [[Jane Doe]] reported a 2% error rate.
 
 ## 4. Key Decisions/Agreements
-- **[[CVS]], [[Brian Pavane]]**: Pilot TLS Decryption for finance.
+- **[[XYZ]], [[John Smith]]**: Pilot TLS Decryption for finance.
 
 ## 5. Additional Items
 - No additional items noted.
@@ -420,38 +420,38 @@ const SCRIBE_REPLY = `## 1. Executive Summary
 ## 6. Speakers
 | Transcript Reference | Identified Name | Organization / Role | Identification Context |
 |---|---|---|---|
-| \`Speaker 0\` | [[Brian Pavane]] | Zscaler / Senior Director, Specialist SA | Self-identified |
-| \`Speaker 2\` | Speaker 2 -> [[Danny Ward]] (High confidence: addressed by name) | Zscaler | Addressed as Danny |`;
+| \`Speaker 0\` | [[John Smith]] | ABC Corp / Senior Director, Specialist SA | Self-identified |
+| \`Speaker 2\` | Speaker 2 -> [[Jane Doe]] (High confidence: addressed by name) | ABC Corp | Addressed as Jane |`;
 
 test("the Meeting Scribe reply: wiki-link owners, continuity points and the summary's horizontal rule", () => {
   const reply = parseReply(SCRIBE_REPLY)!;
   assert.deepEqual(reply.summary, [
-    "[[CVS]] and Zscaler reviewed the **ZIA** POV. The team agreed to pilot TLS Decryption.",
+    "[[XYZ]] and ABC Corp reviewed the **ABC Cloud** POV. The team agreed to pilot TLS Decryption.",
     "",
     "---",
     "",
     "**Core Elements for Next Meeting Continuity:**",
-    "- Confirm the [[CVS]] POV success criteria",
-    "- Review NSS Feed alerts volume",
+    "- Confirm the [[XYZ]] POV success criteria",
+    "- Review Log Feed alerts volume",
     "- Decide on the Cloud Connector rollout",
   ], "a blank line keeps the rule from turning the paragraph into a heading, and the trailing rule is dropped");
   assert.deepEqual(reply.actionItems.map((i) => actionLine(i)), [
-    "- [ ] Send the TLS Decryption runbook @[[Danny Ward]] 📅 2026-10-09",
-    "- [ ] Book the CVS architecture review ([TBD]) @[[Jeff Duke]] @[[Brian Pavane]]",
-    "- [ ] Open the firewall change (owner: [[CVS]] Network Team)",
+    "- [ ] Send the TLS Decryption runbook @[[Jane Doe]] 📅 2026-10-09",
+    "- [ ] Book the XYZ architecture review ([TBD]) @[[Tom Clark]] @[[John Smith]]",
+    "- [ ] Open the firewall change (owner: [[XYZ]] Network Team)",
   ]);
-  assert.deepEqual(reply.decisions, ["**[[CVS]], [[Brian Pavane]]**: Pilot TLS Decryption for finance."]);
-  assert.deepEqual(reply.topics, ["### TLS Decryption", "- [[Danny Ward]] reported a 2% error rate."]);
-  assert.deepEqual(reply.speakerNames, ["Brian Pavane", "Danny Ward"]);
+  assert.deepEqual(reply.decisions, ["**[[XYZ]], [[John Smith]]**: Pilot TLS Decryption for finance."]);
+  assert.deepEqual(reply.topics, ["### TLS Decryption", "- [[Jane Doe]] reported a 2% error rate."]);
+  assert.deepEqual(reply.speakerNames, ["John Smith", "Jane Doe"]);
 
   const filed = applyReply(blankNote, reply, true, "2026-10-08").content;
-  assert.match(filed, /## Executive Summary\n\n\[\[CVS\]\] and Zscaler[^\n]*\n\n---\n\n\*\*Core Elements/);
+  assert.match(filed, /## Executive Summary\n\n\[\[XYZ\]\] and ABC Corp[^\n]*\n\n---\n\n\*\*Core Elements/);
   assert.deepEqual(continuityItems(filed), [
-    "Confirm the [[CVS]] POV success criteria",
-    "Review NSS Feed alerts volume",
+    "Confirm the [[XYZ]] POV success criteria",
+    "Review Log Feed alerts volume",
     "Decide on the Cloud Connector rollout",
   ]);
-  assert.match(filed, /^speakers:\n {2}- "Brian Pavane"\n {2}- "Danny Ward"$/m);
+  assert.match(filed, /^speakers:\n {2}- "John Smith"\n {2}- "Jane Doe"$/m);
   assert.equal(applyReply(filed, reply, true, "2026-10-09").content, filed);
 });
 
@@ -459,25 +459,25 @@ test("a full Meeting Scribe reply with its Meeting Metadata block files sections
   const reply = parseReply([
     "## Meeting Metadata",
     "- **Category:** Customer",
-    "- **Account / Project:** CVS",
-    "- **Organizations:** Zscaler, CVS",
+    "- **Account / Project:** XYZ",
+    "- **Organizations:** ABC Corp, XYZ",
     "- **Key Topics:** TLS Decryption, Cloud Connector",
     "- **Sentiment:** Positive",
     "- **Outcome:** Progress",
-    "- **Search Tags:** #Customer #CVS #TLS-Decryption",
+    "- **Search Tags:** #Customer #XYZ #TLS-Decryption",
     "",
-    SCRIBE_REPLY.replace("- **[[CVS]], [[Brian Pavane]]**: Pilot TLS Decryption for finance.", "- None"),
+    SCRIBE_REPLY.replace("- **[[XYZ]], [[John Smith]]**: Pilot TLS Decryption for finance.", "- None"),
   ].join("\n"))!;
   assert.equal(reply.category, "Customer");
-  assert.equal(reply.account, "CVS");
-  assert.deepEqual(reply.organizations, ["Zscaler", "CVS"]);
+  assert.equal(reply.account, "XYZ");
+  assert.deepEqual(reply.organizations, ["ABC Corp", "XYZ"]);
   assert.deepEqual(reply.keyTopics, ["TLS Decryption", "Cloud Connector"]);
   assert.equal(reply.sentiment, "Positive");
   assert.equal(reply.outcome, "Progress");
-  assert.deepEqual(reply.tags, ["Customer", "CVS", "TLS-Decryption"]);
+  assert.deepEqual(reply.tags, ["Customer", "XYZ", "TLS-Decryption"]);
   assert.deepEqual(reply.decisions, []);
   assert.equal(reply.actionItems.length, 3);
-  assert.match(reply.summary[0], /^\[\[CVS\]\] and Zscaler/);
+  assert.match(reply.summary[0], /^\[\[XYZ\]\] and ABC Corp/);
 });
 
 test("Next Steps priorities in the brackets become Tasks priority marks, with or without a date", () => {
@@ -502,8 +502,8 @@ test("Next Steps priorities in the brackets become Tasks priority marks, with or
 });
 
 test("the copied meeting names the user, and the built-in instructions ask for capped priorities", () => {
-  const text = copyText("## Notes\n\n- Mine\n", { ...meeting, me: "Brian Pavane" }, DEFAULT_INSTRUCTIONS)!;
-  assert.match(text, /Attendees: Alice Smith, Bob Jones\nMe: Brian Pavane\n/);
+  const text = copyText("## Notes\n\n- Mine\n", { ...meeting, me: "John Smith" }, DEFAULT_INSTRUCTIONS)!;
+  assert.match(text, /Attendees: Alice Smith, Bob Jones\nMe: John Smith\n/);
   assert.match(DEFAULT_INSTRUCTIONS, /\(YYYY-MM-DD, Priority\)/);
   assert.match(DEFAULT_INSTRUCTIONS, /High, Medium, Low or Someday/);
   assert.match(DEFAULT_INSTRUCTIONS, /at most 5 High next steps per meeting across everyone, ideally 3 or fewer, and at most 2 of them owned by me/);

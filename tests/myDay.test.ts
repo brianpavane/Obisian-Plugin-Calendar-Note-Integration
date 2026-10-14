@@ -20,14 +20,14 @@ const input = (extra: Partial<DayInput> = {}): DayInput => ({
   notes: [
     meeting("M/Acme pilot 2", "2026-10-05", {
       id: "pilot::2026-10-05", account: "Acme",
-      openItems: [parseTaskMeta("Send runbook @[[Ann Lee]] 📅 2026-10-08"), parseTaskMeta("Fix certs @[[Brian Pavane]] 📅 2026-10-12"), parseTaskMeta("Chase legal @[[Cy Ong]] 📅 2026-10-01")],
+      openItems: [parseTaskMeta("Send runbook @[[Ann Lee]] 📅 2026-10-08"), parseTaskMeta("Fix certs @[[John Smith]] 📅 2026-10-12"), parseTaskMeta("Chase legal @[[Cy Ong]] 📅 2026-10-01")],
       doneItems: [parseTaskMeta("Book room ✅ 2026-10-12")],
     }),
     meeting("M/Other", "2026-10-09", { account: "Beta", openItems: [parseTaskMeta("Beta thing @[[Ann Lee]]")] }),
     meeting("M/Friday sync", "2026-10-11", { summarized: false }),
   ],
   todos: [meeting("Hub/My To-Dos", "", { openItems: [parseTaskMeta("Renew passport ⏫ ➕ 2026-10-11")] })],
-  myNames: ["Brian Pavane"],
+  myNames: ["John Smith"],
   unsummarized: [meeting("M/Friday sync", "2026-10-11")],
   recordings: 2,
   updated: "2026-10-12 12:30 AM",

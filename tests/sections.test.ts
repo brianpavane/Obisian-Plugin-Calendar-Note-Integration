@@ -36,7 +36,7 @@ test("headings in the frontmatter are not sections", () => {
 });
 
 test("continuityItems reads the bullets under the continuity label", () => {
-  const note = "---\ntitle: x\n---\n\n## Executive Summary\n\nWe met.\n\n---\n\n**Core Elements for Next Meeting Continuity:**\n- Confirm scope\n\n- [ ] Check certs\n* Ask [[Danny Ward]]\n\n## Next Steps\n\n- [ ] Other\n";
-  assert.deepEqual(continuityItems(note), ["Confirm scope", "Check certs", "Ask [[Danny Ward]]"]);
+  const note = "---\ntitle: x\n---\n\n## Executive Summary\n\nWe met.\n\n---\n\n**Core Elements for Next Meeting Continuity:**\n- Confirm scope\n\n- [ ] Check certs\n* Ask [[Jane Doe]]\n\n## Next Steps\n\n- [ ] Other\n";
+  assert.deepEqual(continuityItems(note), ["Confirm scope", "Check certs", "Ask [[Jane Doe]]"]);
   assert.deepEqual(continuityItems("## Executive Summary\n\nNo label here.\n"), []);
 });
