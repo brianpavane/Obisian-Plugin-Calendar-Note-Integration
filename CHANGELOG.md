@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+**Agent instructions use example names**
+The ready-made AI agent instructions in `docs/AGENT_INSTRUCTIONS.md` no longer name a real person, employer, customer or colleague. The agent now takes your name from the `Me:` line the plugin already sends, and the examples use placeholder names such as John Smith and ABC Corp. The docs now point out where to add your own product terms, customers and projects.
+
+---
+
 ## [6.24.1] – 2026-10-12
 
 ### Fixed
